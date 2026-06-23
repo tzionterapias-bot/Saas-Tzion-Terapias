@@ -6,3 +6,16 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Diagnostic scripts and scratch folders
+scratch/
+check_*.cjs
+check_*.ts
+check_*.sql
+test_*.cjs
+test_*.ts
+test.mjs
+update_agenda.cjs
+update_automations.cjs
+create_test_data.cjs
+add_meet_link.js
