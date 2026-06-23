@@ -769,17 +769,19 @@ async function startServer() {
     });
   }
 
-  // Start the background workers
-  startCampaignWorker();
-  startRemindersWorker();
-  startNpsWorker();
-  startFinancialSyncWorker();
-  startTicketCleanupWorker();
-  startRetentionWorker();
+  // Start the background workers and listen only when not running on Vercel
+  if (!process.env.VERCEL) {
+    startCampaignWorker();
+    startRemindersWorker();
+    startNpsWorker();
+    startFinancialSyncWorker();
+    startTicketCleanupWorker();
+    startRetentionWorker();
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 async function startCampaignWorker() {
@@ -1692,8 +1694,6 @@ async function startTicketCleanupWorker() {
   }, 15 * 60 * 1000);
 }
 
-if (!process.env.VERCEL) {
-  startServer();
-}
+startServer();
 
 export default app;
