@@ -19,3 +19,5 @@ update_agenda.cjs
 update_automations.cjs
 create_test_data.cjs
 add_meet_link.js
+
+.vercel

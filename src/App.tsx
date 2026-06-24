@@ -29,6 +29,7 @@ import ConfigPage from '@/src/pages/admin/ConfigPage';
 import ServiceCenterPage from '@/src/pages/admin/ServiceCenterPage';
 import TherapistPage from '@/src/pages/admin/TherapistPage';
 import UsersManager from '@/src/pages/admin/UsersManager';
+import TherapistsManagementPage from '@/src/pages/admin/TherapistsManagementPage';
 import WifiCaptivePortal from '@/src/components/crm/WifiCaptivePortal';
 import SiteEditorPage from '@/src/pages/admin/SiteEditorPage';
 import { cn } from '@/src/lib/utils';
@@ -128,6 +129,7 @@ export default function App() {
           <Route path="/admin/config" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><ConfigPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/portal-terapeuta" element={<RoleGuard allowedRoles={['admin', 'terapeuta']}><AdminLayout><TherapistPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/usuarios" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><UsersManager /></AdminLayout></RoleGuard>} />
+          <Route path="/admin/terapeutas" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><TherapistsManagementPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/editor-site" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><SiteEditorPage /></AdminLayout></RoleGuard>} />
 
           {/* Fallback */}

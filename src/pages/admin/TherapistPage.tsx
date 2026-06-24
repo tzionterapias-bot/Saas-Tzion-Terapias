@@ -12,6 +12,8 @@ import { supabase } from '@/src/lib/supabase';
 import PatientProfileModal from '@/src/components/patient/PatientProfileModal';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useActiveSession } from '@/src/contexts/ActiveSessionContext';
+import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
+import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 
 export default function TherapistPage() {
   const navigate = useNavigate();
@@ -31,6 +33,7 @@ export default function TherapistPage() {
   const [currentTherapist, setCurrentTherapist] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [defaultTherapistId, setDefaultTherapistId] = useState<string>('');
+  const [allTherapists, setAllTherapists] = useState<any[]>([]);
   const [patientAnamnesis, setPatientAnamnesis] = useState<any>(null);
   const [editAnamnesis, setEditAnamnesis] = useState({ complaint: '', family_history: '', lifestyle: '' });
   const [editResponses, setEditResponses] = useState<Record<string, any>>({});
@@ -39,6 +42,25 @@ export default function TherapistPage() {
   
   // Filter State
   const [periodFilter, setPeriodFilter] = useState('mes'); // 'mes', 'trimestre', 'ano'
+  
+  // Pagination & Filter States
+  const [historyPage, setHistoryPage] = useState(1);
+  const [patientsPage, setPatientsPage] = useState(1);
+  const [patientsSearch, setPatientsSearch] = useState('');
+  const [commissionsPage, setCommissionsPage] = useState(1);
+  const [payoutsPage, setPayoutsPage] = useState(1);
+  const [paymentsPage, setPaymentsPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setHistoryPage(1);
+    setCommissionsPage(1);
+    setPaymentsPage(1);
+  }, [periodFilter]);
+
+  useEffect(() => {
+    setPatientsPage(1);
+  }, [patientsSearch]);
   
   // Modals
   const [showRecordModal, setShowRecordModal] = useState(false);
@@ -67,17 +89,57 @@ export default function TherapistPage() {
       let therapistId = defaultTherapistId;
       let therapistInfo = currentTherapist;
 
-      if (!therapistId) {
-        let therapistQuery = supabase.from('therapists').select('id, name, commission_rate_clinic, commission_rate_self');
-        if (user?.role === 'terapeuta') {
-          therapistQuery = therapistQuery.eq('user_id', user.id);
+      // 1. Se for terapeuta logado, forçamos o ID a ser SEMPRE o seu próprio cadastro
+      if (user?.role === 'terapeuta') {
+        const { data: myTherapist } = await supabase
+          .from('therapists')
+          .select('id, name, user_id, commission_rate_clinic, commission_rate_self, avatar_url, professional_registration, bio, specialties, attendance_modes')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (!myTherapist) {
+          console.error("Nenhum terapeuta ativo encontrado para o seu usuário.");
+          setLoading(false);
+          return;
         }
-        const { data: tData } = await therapistQuery.limit(1).maybeSingle();
-        if (tData) {
-          therapistId = tData.id;
-          therapistInfo = tData;
-          setCurrentTherapist(tData);
-          setDefaultTherapistId(tData.id);
+
+        therapistId = myTherapist.id;
+        therapistInfo = myTherapist;
+        if (defaultTherapistId !== myTherapist.id) {
+          setDefaultTherapistId(myTherapist.id);
+          setCurrentTherapist(myTherapist);
+        }
+      } else {
+        // 2. Se for admin, carregamos a lista de todos os terapeutas ativos para o dropdown.
+        if (loadStatic || allTherapists.length === 0) {
+          const { data: allActive } = await supabase
+            .from('therapists')
+            .select('id, name, user_id, commission_rate_clinic, commission_rate_self, avatar_url, professional_registration, bio, specialties, attendance_modes')
+            .eq('active', true)
+            .order('name');
+          
+          const list = allActive || [];
+          setAllTherapists(list);
+
+          if (!therapistId && list.length > 0) {
+            therapistId = list[0].id;
+            therapistInfo = list[0];
+            setCurrentTherapist(list[0]);
+            setDefaultTherapistId(list[0].id);
+          }
+        }
+      }
+
+      // Se temos o ID do terapeuta, mas os detalhes dele não estão carregados
+      if (therapistId && (!therapistInfo || !therapistInfo.bio)) {
+        const { data: tFull } = await supabase
+          .from('therapists')
+          .select('id, name, user_id, commission_rate_clinic, commission_rate_self, avatar_url, professional_registration, bio, specialties, attendance_modes')
+          .eq('id', therapistId)
+          .maybeSingle();
+        if (tFull) {
+          therapistInfo = tFull;
+          setCurrentTherapist(tFull);
         }
       }
 
@@ -118,7 +180,7 @@ export default function TherapistPage() {
 
       if (loadStatic) {
         promises.push(Promise.resolve(supabase.from('patients').select('*').order('name')));
-        promises.push(Promise.resolve(supabase.from('therapist_profiles').select('*').limit(1).maybeSingle()));
+        promises.push(Promise.resolve(supabase.from('therapist_profiles').select('*').eq('id', therapistId).maybeSingle()));
         promises.push(Promise.resolve(supabase.from('rooms').select('id, name, color').eq('status', 'active')));
       }
 
@@ -137,6 +199,15 @@ export default function TherapistPage() {
         if (roomsRes?.data) setRooms(roomsRes.data);
         
         const pData = profRes?.data || {};
+        if (therapistInfo) {
+          if (!pData.id) pData.id = therapistId;
+          if (!pData.name) pData.name = therapistInfo.name || '';
+          if (!pData.photo_url) pData.photo_url = therapistInfo.avatar_url || '';
+          if (!pData.registration_number) pData.registration_number = therapistInfo.professional_registration || '';
+          if (!pData.bio) pData.bio = therapistInfo.bio || '';
+          if (!pData.specialties) pData.specialties = therapistInfo.specialties || [];
+          if (!pData.role) pData.role = (therapistInfo.specialties && therapistInfo.specialties[0]) || '';
+        }
         if (!pData.working_hours) {
           pData.working_hours = {
             "Segunda": ["08:00 às 12:00", "13:00 às 18:00"],
@@ -340,6 +411,28 @@ export default function TherapistPage() {
       setToastMessage('Erro ao salvar anamnese.');
       setTimeout(() => setToastMessage(null), 3500);
     }
+  };
+
+  const handleSendAnamnesisLink = async () => {
+    if (!selectedPatient?.phone) {
+      setToastMessage('Paciente não possui telefone cadastrado.');
+      setTimeout(() => setToastMessage(null), 3500);
+      return;
+    }
+    const baseUrl = await getSystemBaseUrl();
+    const link = `${baseUrl}/anamnese/${selectedPatient.anamnesis_token || selectedPatient.id}`;
+    const firstName = selectedPatient.name.split(' ')[0] || 'Paciente';
+    const msg = `[Ficha de Entrada - Tzion Terapias]\n\nOlá, *${firstName}*! ✨\n\nPor favor, preencha a sua Ficha de Anamnese antes da nossa próxima sessão. É bem rápido e nos ajuda a preparar o seu atendimento:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
+    
+    setLoading(true);
+    const sent = await sendWhatsAppMessage(selectedPatient.id, selectedPatient.phone, msg, 'anamnesis_invite');
+    setLoading(false);
+    if (sent) {
+      setToastMessage('Link de anamnese enviado com sucesso via WhatsApp!');
+    } else {
+      setToastMessage('Erro ao enviar link via WhatsApp.');
+    }
+    setTimeout(() => setToastMessage(null), 3500);
   };
   const handleAddRecord = async () => {
     if (!selectedPatient || !newRecord.content) return;
@@ -737,7 +830,7 @@ export default function TherapistPage() {
 
       // 2. Salva o link do Meet e o Event ID no banco (se devolvidos)
       const updateData: any = {};
-      if (meetLink) updateData.meet_link = meetLink;
+      if (meetLink && newApp.type === 'Online') updateData.meet_link = meetLink;
       if (googleEventId) updateData.google_event_id = googleEventId;
       
       if (Object.keys(updateData).length > 0) {
@@ -753,7 +846,7 @@ export default function TherapistPage() {
          mensagem += `⏰ *Horário:* ${horaFormatada}\n`;
          mensagem += `📍 *Modalidade:* ${newApp.type}\n\n`;
 
-         if (meetLink) {
+         if (meetLink && newApp.type === 'Online') {
              mensagem += `💻 *Acesso à Sessão Online:*\n🔗 ${meetLink}\n\n`;
              mensagem += `Acesse o link com uns minutinhos de antecedência. Qualquer imprevisto, é só nos avisar!\n\n`;
          } else if (newApp.type === 'Online') {
@@ -772,7 +865,7 @@ export default function TherapistPage() {
          msgTerapeuta += `📅 *Quando:* ${dataFormatada} às ${horaFormatada}\n`;
          msgTerapeuta += `📍 *Tipo:* ${newApp.type}\n`;
          
-         if (meetLink) {
+         if (meetLink && newApp.type === 'Online') {
              msgTerapeuta += `\n🔗 *Link do Meet da Sessão:*\n${meetLink}`;
          }
          await sendWhatsAppMessage(null, therapistData.phone, msgTerapeuta, 'appointment_created_therapist');
@@ -926,6 +1019,30 @@ export default function TherapistPage() {
 
   const totalCommissions = filteredCommissions.reduce((acc, curr) => acc + curr.amount, 0);
 
+  // Paginated History
+  const totalHistoryPages = Math.ceil(filteredHistory.length / itemsPerPage);
+  const paginatedHistory = filteredHistory.slice((historyPage - 1) * itemsPerPage, historyPage * itemsPerPage);
+
+  // Active Patients with search filter and pagination
+  const filteredAssignedPatients = assignedPatients.filter(p =>
+    p.name?.toLowerCase().includes(patientsSearch.toLowerCase()) ||
+    p.phone?.toLowerCase().includes(patientsSearch.toLowerCase())
+  );
+  const totalPatientsPages = Math.ceil(filteredAssignedPatients.length / itemsPerPage);
+  const paginatedPatients = filteredAssignedPatients.slice((patientsPage - 1) * itemsPerPage, patientsPage * itemsPerPage);
+
+  // Paginated Commissions
+  const totalCommissionsPages = Math.ceil(filteredCommissions.length / itemsPerPage);
+  const paginatedCommissions = filteredCommissions.slice((commissionsPage - 1) * itemsPerPage, commissionsPage * itemsPerPage);
+
+  // Paginated Repasses (Complete Payouts)
+  const totalPayoutsPages = Math.ceil(payouts.length / itemsPerPage);
+  const paginatedPayouts = payouts.slice((payoutsPage - 1) * itemsPerPage, payoutsPage * itemsPerPage);
+
+  // Paginated Payments List
+  const totalPaymentsPages = Math.ceil(therapistPayments.length / itemsPerPage);
+  const paginatedPaymentsList = therapistPayments.slice((paymentsPage - 1) * itemsPerPage, paymentsPage * itemsPerPage);
+
   const handleCallPatient = async (appId: string) => {
      try {
          const { error } = await supabase.from('appointments').update({
@@ -960,7 +1077,7 @@ export default function TherapistPage() {
              type: app.type || 'Presencial',
              therapy: app.service_type || 'Terapia Integrativa',
              therapistId: app.therapist_id,
-             therapist: profile?.name || 'Terapeuta'
+             therapist: currentTherapist?.name || 'Terapeuta'
          });
 
          // Redireciona diretamente para o registro das sessões
@@ -979,42 +1096,72 @@ export default function TherapistPage() {
           <PatientProfileModal patient={profilePatient} onClose={() => setShowProfileModal(false)} />
       )}
       {/* Welcome Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm">
-        <div className="flex items-center gap-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6 bg-white p-6 sm:p-10 rounded-[2rem] sm:rounded-[3rem] border border-slate-100 shadow-sm">
+        <div className="flex items-center gap-4 sm:gap-6 min-w-0 flex-1">
           {profile?.photo_url ? (
-            <img src={profile.photo_url} alt="Profile" className="w-20 h-20 rounded-3xl object-cover shadow-xl shadow-indigo-100 border-2 border-white" />
+            <img src={profile.photo_url} alt="Profile" className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl object-cover shadow-xl shadow-indigo-100 border-2 border-white shrink-0" />
           ) : (
-            <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center text-white text-3xl font-bold shadow-xl shadow-indigo-100">
-              {profile?.name?.charAt(0) || 'T'}
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-indigo-600 rounded-3xl flex items-center justify-center text-white text-2xl sm:text-3xl font-bold shadow-xl shadow-indigo-100 shrink-0">
+              {currentTherapist?.name?.charAt(0) || 'T'}
             </div>
           )}
-          <div>
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Olá, {profile?.name?.split(' ')[0] || 'Terapeuta'}</h2>
-            <p className="text-slate-500 font-medium">Você tem {appointments.length} atendimentos agendados para hoje.</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight truncate">Olá, {currentTherapist?.name?.split(' ')[0] || 'Terapeuta'}</h2>
+              {user?.role === 'admin' && allTherapists.length > 0 && (
+                <select
+                  value={defaultTherapistId}
+                  onChange={(e) => {
+                    const selectedId = e.target.value;
+                    const selectedT = allTherapists.find(t => t.id === selectedId);
+                    if (selectedT) {
+                      setDefaultTherapistId(selectedId);
+                      setCurrentTherapist(selectedT);
+                      // Force local reload after updating state
+                      setTimeout(() => {
+                        fetchData(true);
+                      }, 50);
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold rounded-xl text-xs outline-none cursor-pointer hover:bg-indigo-100 transition-all shrink-0"
+                >
+                  {allTherapists.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <p className="text-xs sm:text-sm text-slate-500 font-medium leading-relaxed mt-1">
+              {user?.role === 'admin' ? (
+                <span>Visualizando agenda do terapeuta <strong className="text-indigo-600 font-bold">{currentTherapist?.name}</strong>.</span>
+              ) : (
+                <span>Você tem {appointments.length} atendimentos agendados para hoje.</span>
+              )}
+            </p>
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full md:w-auto mt-6 md:mt-0">
-          <button className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:text-indigo-600 transition-all border border-slate-100 w-full sm:w-auto flex justify-center"><Bell className="w-6 h-6" /></button>
-          <button onClick={() => setShowAppointmentModal(true)} className="px-6 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 w-full sm:w-auto">
-            <Plus className="w-5 h-5" /> Novo Agendamento
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto mt-4 md:mt-0 shrink-0">
+          <button className="p-3.5 sm:p-4 bg-slate-50 text-slate-400 rounded-2xl hover:text-indigo-600 transition-all border border-slate-100 w-full sm:w-auto flex justify-center"><Bell className="w-5 h-5 sm:w-6 sm:h-6" /></button>
+          <button onClick={() => setShowAppointmentModal(true)} className="px-5 py-3 sm:px-6 sm:py-4 bg-indigo-600 text-white rounded-2xl text-xs sm:text-sm font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 w-full sm:w-auto">
+            <Plus className="w-4 h-4 sm:w-5 sm:h-5" /> Novo Agendamento
           </button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex p-1.5 bg-slate-100 rounded-2xl w-full md:w-fit border border-slate-200 overflow-x-auto hide-scrollbar">
+      <div className="flex p-1 bg-slate-100 rounded-2xl w-full md:w-fit border border-slate-200 overflow-x-auto scrollbar-thin">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              "flex items-center gap-2 px-8 py-4 rounded-xl font-bold text-sm transition-all whitespace-nowrap",
+              "flex items-center gap-1.5 sm:gap-2 px-4 py-2.5 sm:px-8 sm:py-4 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap",
               activeTab === tab.id 
                 ? "bg-white text-indigo-600 shadow-md" 
                 : "text-slate-500 hover:text-slate-700 hover:bg-white/50"
             )}
           >
-            <tab.icon className="w-4 h-4" />
+            <tab.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             {tab.label}
           </button>
         ))}
@@ -1055,7 +1202,7 @@ export default function TherapistPage() {
                      <button onClick={() => handleCallPatient(app.id)} className="flex-1 sm:flex-none px-4 py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg flex items-center justify-center animate-bounce">
                         Liberar Sala
                      </button>
-                  ) : app.status === 'calling' ? (
+                  ) : (app.status === 'calling' || app.status === 'scheduled') ? (
                      <button onClick={() => handleStartSession(app)} className="flex-1 sm:flex-none px-4 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all shadow-lg flex items-center justify-center group gap-2">
                         <span>Iniciar Sessão</span>
                         <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
@@ -1180,7 +1327,7 @@ export default function TherapistPage() {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                        {filteredHistory.map((app) => (
+                        {paginatedHistory.map((app) => (
                             <tr key={app.id} className="hover:bg-slate-50/50 transition-all">
                                 <td className="px-10 py-6">
                                    <p className="font-bold text-slate-900">{new Date(app.start_time).toLocaleDateString()}</p>
@@ -1210,6 +1357,25 @@ export default function TherapistPage() {
                     </tbody>
                 </table>
             </div>
+            {totalHistoryPages > 1 && (
+              <div className="p-6 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                <button 
+                  onClick={() => setHistoryPage(p => Math.max(p - 1, 1))} 
+                  disabled={historyPage === 1}
+                  className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold disabled:opacity-40 text-sm hover:bg-slate-50 cursor-pointer animate-in fade-in"
+                >
+                  Anterior
+                </button>
+                <span className="text-sm font-bold text-slate-400">Pág. {historyPage} / {totalHistoryPages}</span>
+                <button 
+                  onClick={() => setHistoryPage(p => Math.min(p + 1, totalHistoryPages))} 
+                  disabled={historyPage === totalHistoryPages}
+                  className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold disabled:opacity-40 text-sm hover:bg-slate-50 cursor-pointer animate-in fade-in"
+                >
+                  Próxima
+                </button>
+              </div>
+            )}
         </div>
       )}
 
@@ -1220,11 +1386,16 @@ export default function TherapistPage() {
                     <h3 className="text-2xl font-bold text-slate-900">Meus Pacientes Ativos</h3>
                     <div className="relative">
                         <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                        <input className="pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none w-full md:w-80 font-medium" placeholder="Buscar paciente..." />
+                        <input 
+                          value={patientsSearch}
+                          onChange={(e) => setPatientsSearch(e.target.value)}
+                          className="pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none w-full md:w-80 font-medium" 
+                          placeholder="Buscar paciente..." 
+                        />
                     </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {assignedPatients.map((p, idx) => (
+                    {paginatedPatients.map((p, idx) => (
                         <div key={p.id} className="p-8 rounded-[2.5rem] border border-slate-100 bg-slate-50/30 hover:bg-white hover:shadow-xl transition-all group">
                             <div className="flex items-center justify-between mb-6">
                                 <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center font-bold text-xl shadow-sm text-indigo-600">
@@ -1254,7 +1425,29 @@ export default function TherapistPage() {
                             </div>
                         </div>
                     ))}
+                    {filteredAssignedPatients.length === 0 && (
+                      <p className="col-span-full py-10 text-center text-slate-400 font-medium">Nenhum paciente ativo encontrado.</p>
+                    )}
                 </div>
+                {totalPatientsPages > 1 && (
+                  <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between">
+                    <button 
+                      onClick={() => setPatientsPage(p => Math.max(p - 1, 1))} 
+                      disabled={patientsPage === 1}
+                      className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold disabled:opacity-40 text-sm hover:bg-slate-50 cursor-pointer animate-in fade-in"
+                    >
+                      Anterior
+                    </button>
+                    <span className="text-sm font-bold text-slate-400">Pág. {patientsPage} / {totalPatientsPages}</span>
+                    <button 
+                      onClick={() => setPatientsPage(p => Math.min(p + 1, totalPatientsPages))} 
+                      disabled={patientsPage === totalPatientsPages}
+                      className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold disabled:opacity-40 text-sm hover:bg-slate-50 cursor-pointer animate-in fade-in"
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                )}
             </div>
         </div>
       )}
@@ -1314,7 +1507,7 @@ export default function TherapistPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                            {filteredCommissions.map((c) => (
+                            {paginatedCommissions.map((c) => (
                                 <tr key={c.id} className="hover:bg-slate-50/50 transition-all">
                                     <td className="px-10 py-6 font-medium text-slate-500">{new Date(c.calculated_at).toLocaleDateString()}</td>
                                     <td className="px-10 py-6 font-bold text-slate-900">Sessão Realizada</td>
@@ -1330,6 +1523,25 @@ export default function TherapistPage() {
                         </tbody>
                     </table>
                 </div>
+                {totalCommissionsPages > 1 && (
+                  <div className="p-6 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                    <button 
+                      onClick={() => setCommissionsPage(p => Math.max(p - 1, 1))} 
+                      disabled={commissionsPage === 1}
+                      className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold disabled:opacity-40 text-sm hover:bg-slate-50 cursor-pointer animate-in fade-in"
+                    >
+                      Anterior
+                    </button>
+                    <span className="text-sm font-bold text-slate-400">Pág. {commissionsPage} / {totalCommissionsPages}</span>
+                    <button 
+                      onClick={() => setCommissionsPage(p => Math.min(p + 1, totalCommissionsPages))} 
+                      disabled={commissionsPage === totalCommissionsPages}
+                      className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold disabled:opacity-40 text-sm hover:bg-slate-50 cursor-pointer animate-in fade-in"
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                )}
             </div>
         </div>
       )}
@@ -1417,7 +1629,7 @@ export default function TherapistPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {payouts.map((p: any) => (
+                  {paginatedPayouts.map((p: any) => (
                     <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-8 py-5 font-bold text-slate-900">{MONTHS[(p.month || 1) - 1]} / {p.year}</td>
                       <td className="px-8 py-5 text-xs text-slate-600 font-semibold max-w-[200px] truncate" title={getPatientsForPayout(p)}>{getPatientsForPayout(p)}</td>
@@ -1452,6 +1664,25 @@ export default function TherapistPage() {
                 </tbody>
               </table>
             </div>
+            {totalPayoutsPages > 1 && (
+              <div className="p-6 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                <button 
+                  onClick={() => setPayoutsPage(p => Math.max(p - 1, 1))} 
+                  disabled={payoutsPage === 1}
+                  className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold disabled:opacity-40 text-sm hover:bg-slate-50 cursor-pointer animate-in fade-in"
+                >
+                  Anterior
+                </button>
+                <span className="text-sm font-bold text-slate-400">Pág. {payoutsPage} / {totalPayoutsPages}</span>
+                <button 
+                  onClick={() => setPayoutsPage(p => Math.min(p + 1, totalPayoutsPages))} 
+                  disabled={payoutsPage === totalPayoutsPages}
+                  className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold disabled:opacity-40 text-sm hover:bg-slate-50 cursor-pointer animate-in fade-in"
+                >
+                  Próxima
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Extrato Detalhado de Atendimentos */}
@@ -1476,7 +1707,7 @@ export default function TherapistPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {therapistPayments.map((p: any) => {
+                  {paginatedPaymentsList.map((p: any) => {
                     const clinicRate = (p.referral_source || 'therapist') === 'clinic'
                       ? (currentTherapist?.commission_rate_clinic ?? 50)
                       : (currentTherapist?.commission_rate_self ?? 25);
@@ -1527,6 +1758,25 @@ export default function TherapistPage() {
                 </tbody>
               </table>
             </div>
+            {totalPaymentsPages > 1 && (
+              <div className="p-6 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                <button 
+                  onClick={() => setPaymentsPage(p => Math.max(p - 1, 1))} 
+                  disabled={paymentsPage === 1}
+                  className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold disabled:opacity-40 text-sm hover:bg-slate-50 cursor-pointer animate-in fade-in"
+                >
+                  Anterior
+                </button>
+                <span className="text-sm font-bold text-slate-400">Pág. {paymentsPage} / {totalPaymentsPages}</span>
+                <button 
+                  onClick={() => setPaymentsPage(p => Math.min(p + 1, totalPaymentsPages))} 
+                  disabled={paymentsPage === totalPaymentsPages}
+                  className="px-5 py-2 bg-white border border-slate-200 rounded-xl font-bold disabled:opacity-40 text-sm hover:bg-slate-50 cursor-pointer animate-in fade-in"
+                >
+                  Próxima
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Explanation Box */}
@@ -1889,6 +2139,12 @@ export default function TherapistPage() {
                          )}
                          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                            <button onClick={() => { setShowRecordModal(false); setSelectedPatient(null); }} className="px-8 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all">Fechar</button>
+                           <button 
+                             onClick={handleSendAnamnesisLink}
+                             className="px-8 py-4 bg-emerald-50 text-emerald-600 rounded-2xl font-bold hover:bg-emerald-100 transition-all flex items-center gap-2 border border-emerald-200"
+                           >
+                             <MessageSquare className="w-5 h-5" /> Enviar Ficha (WhatsApp)
+                           </button>
                            <button 
                              onClick={handleSaveAnamnesis}
                              className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2"

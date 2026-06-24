@@ -258,29 +258,32 @@ export default function SessionLogger() {
 
         <div className="grid grid-cols-1 gap-4">
           {appointments.map((apt) => (
-            <div key={apt.id} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all group flex flex-col sm:flex-row items-center justify-between gap-6">
-              <div className="flex items-center gap-6 w-full sm:w-auto">
-                <div className="text-center min-w-[60px]">
-                  <p className="text-2xl font-bold text-slate-900 leading-none">{apt.time}</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-widest">Início</p>
+            <div key={apt.id} className="bg-white p-4 sm:p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all group flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4 sm:gap-6 w-full sm:w-auto min-w-0 flex-1">
+                <div className="text-center min-w-[60px] shrink-0">
+                  <p className="text-xl sm:text-2xl font-bold text-slate-900 leading-none">{apt.time}</p>
+                  <p className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-widest">Início</p>
                 </div>
-                <div className="h-12 w-px bg-slate-100 hidden sm:block" />
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold text-xl group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-all shadow-sm">
+                <div className="h-12 w-px bg-slate-100 hidden sm:block shrink-0" />
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-bold text-lg sm:text-xl group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-all shadow-sm shrink-0">
                     {apt.patient.charAt(0)}
                   </div>
-                  <div>
-                    <h3 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition-colors">{apt.patient}</h3>
-                    <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
-                      <FileText className="w-3 h-3" /> {apt.therapy} • <span className={cn(apt.type === 'Online' ? "text-blue-500" : "text-slate-500")}>{apt.type}</span>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-bold text-base sm:text-lg text-slate-900 group-hover:text-indigo-600 transition-colors truncate">{apt.patient}</h3>
+                    <p className="text-xs text-slate-500 font-medium flex flex-wrap items-center gap-1">
+                      <FileText className="w-3 h-3 shrink-0" />
+                      <span className="truncate max-w-[120px] sm:max-w-none">{apt.therapy}</span>
+                      <span className="text-slate-300">•</span>
+                      <span className={cn(apt.type === 'Online' ? "text-blue-500" : "text-slate-500", "shrink-0")}>{apt.type}</span>
                     </p>
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2 w-full sm:w-auto border-t border-slate-100 sm:border-0 pt-3 sm:pt-0 mt-1 sm:mt-0 shrink-0">
                 <button 
                   onClick={() => handleStartSession(apt)}
-                  className="flex-1 sm:flex-none px-8 py-3.5 bg-indigo-600 text-white rounded-2xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-100 active:scale-95 transition-all"
+                  className="flex-1 sm:flex-none px-6 py-3 bg-indigo-600 text-white rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 shadow-lg shadow-indigo-100 active:scale-95 transition-all w-full"
                 >
                   <PlayCircle className="w-4 h-4" /> Iniciar Atendimento
                 </button>

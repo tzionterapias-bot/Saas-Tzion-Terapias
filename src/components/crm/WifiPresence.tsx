@@ -144,6 +144,7 @@ export default function WifiPresence() {
     }, [activeTab, settings.session_duration_minutes]);
 
     const portalLink = useMemo(() => {
+        // Exibido na UI do admin — usa origin atual (correto para QR code local)
         return `${window.location.origin}/wifi`;
     }, []);
 

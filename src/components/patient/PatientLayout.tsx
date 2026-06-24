@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Calendar, CreditCard, LogOut, Heart, Key, Eye, EyeOff, Loader2, CheckCircle2, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, Calendar, CreditCard, LogOut, Heart, Key, Eye, EyeOff, Loader2, CheckCircle2, Sun, Moon, Menu, X } from 'lucide-react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
 import { useAuth } from '@/src/contexts/AuthContext';
@@ -26,6 +26,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [whiteLabel, setWhiteLabel] = useState<any>(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     async function loadWhiteLabel() {
@@ -137,20 +138,39 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
     : 'P';
 
   return (
-    <div className="flex min-h-screen bg-indigo-50/30">
+    <div className="flex min-h-screen bg-indigo-50/30 overflow-hidden">
+      {/* Mobile Backdrop */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 md:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-indigo-100 sticky top-0 h-screen hidden md:flex flex-col justify-between">
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-indigo-100 transition-transform duration-300 md:translate-x-0 md:static md:h-screen md:flex flex-col justify-between",
+        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="p-8 pb-6">
-            <div className={cn("flex items-center", whiteLabel?.logoUrl ? "justify-center w-full" : "gap-2 font-bold text-xl")} style={{ color: whiteLabel?.primaryColor || '#4f46e5' }}>
-              {whiteLabel?.logoUrl ? (
-                 <img src={whiteLabel.logoUrl} alt="Logo" className="max-h-12 max-w-full object-contain" />
-              ) : (
-                 <>
-                   <Heart className="w-8 h-8" style={{ fill: whiteLabel?.primaryColor || '#4f46e5' }} />
-                   <span>{whiteLabel?.portalName || 'TZION'}</span>
-                 </>
-              )}
+            <div className="flex items-center justify-between gap-2">
+              <div className={cn("flex items-center", whiteLabel?.logoUrl ? "justify-center w-full" : "gap-2 font-bold text-xl")} style={{ color: whiteLabel?.primaryColor || '#4f46e5' }}>
+                {whiteLabel?.logoUrl ? (
+                   <img src={whiteLabel.logoUrl} alt="Logo" className="max-h-12 max-w-full object-contain" />
+                ) : (
+                   <>
+                     <Heart className="w-8 h-8" style={{ fill: whiteLabel?.primaryColor || '#4f46e5' }} />
+                     <span>{whiteLabel?.portalName || 'TZION'}</span>
+                   </>
+                )}
+              </div>
+              <button 
+                className="md:hidden p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <X className="w-5 h-5" style={{ color: whiteLabel?.primaryColor || '#4f46e5' }} />
+              </button>
             </div>
             {!whiteLabel?.logoUrl && (
               <p className="text-[10px] font-bold uppercase tracking-widest mt-1 text-center" style={{ color: whiteLabel?.primaryColor || '#4f46e5', opacity: 0.7 }}>Portal do Paciente</p>
@@ -167,6 +187,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
                     <Link
                       key={item.path}
                       to={item.path}
+                      onClick={() => setIsMobileMenuOpen(false)}
                       className={cn(
                         "flex items-center gap-3 px-5 py-4 rounded-2xl text-sm font-bold transition-all group",
                         isActive 
@@ -198,13 +219,21 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
 
 
       {/* Main Content */}
-      <main className="flex-1 max-w-[1200px] mx-auto p-6 md:p-12 space-y-10 w-full">
-        <header className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">Olá, {user?.name || 'Paciente'}!</h2>
-            <p className="text-slate-500 font-medium">Bem-vindo à sua área de saúde integrada.</p>
-          </div>
+      <main className="flex-1 max-w-[1200px] mx-auto p-6 md:p-12 space-y-10 w-full overflow-y-auto h-screen">
+        <header className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">
+            <button 
+              className="md:hidden p-2.5 bg-white rounded-xl text-slate-600 shadow-sm border border-indigo-50 flex items-center justify-center shrink-0"
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Menu className="w-5 h-5" style={{ color: whiteLabel?.primaryColor || '#4f46e5' }} />
+            </button>
+            <div>
+              <h2 className="text-2xl font-bold text-slate-900 leading-tight">Olá, {user?.name || 'Paciente'}!</h2>
+              <p className="text-slate-500 font-medium text-sm hidden sm:block">Bem-vindo à sua área de saúde integrada.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 sm:gap-4 shrink-0">
             <button
               onClick={toggleTheme}
               className="p-3 bg-white text-slate-400 hover:text-indigo-600 rounded-2xl shadow-sm border border-indigo-50 transition-all flex items-center justify-center cursor-pointer"
@@ -216,7 +245,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
                 <Moon className="w-6 h-6 text-slate-400" />
               )}
             </button>
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-xl" style={{ backgroundColor: whiteLabel?.primaryColor || '#4f46e5', boxShadow: `0 10px 15px -3px ${whiteLabel?.primaryColor || '#4f46e5'}40` }}>
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center text-white font-bold text-lg sm:text-xl shadow-xl shrink-0" style={{ backgroundColor: whiteLabel?.primaryColor || '#4f46e5', boxShadow: `0 10px 15px -3px ${whiteLabel?.primaryColor || '#4f46e5'}40` }}>
               {initials}
             </div>
           </div>

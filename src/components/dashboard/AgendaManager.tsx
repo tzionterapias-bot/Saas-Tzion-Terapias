@@ -27,7 +27,7 @@ export default function AgendaManager() {
   const [patientPackages, setPatientPackages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('month');
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('week');
   
   // Wizard State
   const [wizardStep, setWizardStep] = useState(1);
@@ -69,7 +69,7 @@ export default function AgendaManager() {
 
       const promises: Promise<any>[] = [
         Promise.resolve(supabase.from('appointments')
-          .select('*')
+          .select('*, patients(name), therapists(name)')
           .gte('start_time', startStr)
           .lte('start_time', endStr)
           .order('start_time', { ascending: true }))
@@ -77,7 +77,7 @@ export default function AgendaManager() {
 
       if (loadStatic) {
         promises.push(Promise.resolve(supabase.from('patients').select('id, name')));
-        promises.push(Promise.resolve(supabase.from('therapists').select('id, name, room_id')));
+        promises.push(Promise.resolve(supabase.from('therapists').select('id, name, room_id').eq('active', true)));
         promises.push(Promise.resolve(supabase.from('patient_packages').select('*, services(name), patient_package_items(*, services(name))').eq('status', 'active')));
         promises.push(Promise.resolve(supabase.from('rooms').select('id, name, color').eq('status', 'active')));
       }
@@ -113,8 +113,8 @@ export default function AgendaManager() {
         id: a.id,
         patient_id: a.patient_id,
         therapist_id: a.therapist_id,
-        patient_name: patientsMap.get(a.patient_id) || 'Paciente Não Encontrado',
-        therapist_name: therapistsMap.get(a.therapist_id) || 'Terapeuta',
+        patient_name: a.patients?.name || 'Paciente Não Encontrado',
+        therapist_name: a.therapists?.name || 'Terapeuta',
         start_time: a.start_time,
         end_time: a.end_time,
         type: a.type || 'Presencial',
@@ -382,7 +382,7 @@ export default function AgendaManager() {
 
       // 3. Salva o link do Meet e o Event ID no banco (se devolvidos)
       const updateData: any = {};
-      if (meetLink) updateData.meet_link = meetLink;
+      if (meetLink && newAppt.type === 'Online') updateData.meet_link = meetLink;
       if (googleEventId) updateData.google_event_id = googleEventId;
       
       if (Object.keys(updateData).length > 0) {
@@ -391,37 +391,37 @@ export default function AgendaManager() {
 
       // 4. Envia as mensagens no WhatsApp formatadas
       if (patientData && patientData.phone) {
-         const firstName = patientData.name.split(' ')[0];
-         let mensagem = `Olá, *${firstName}*! ✨\n\n`;
-         mensagem += `Seu agendamento na *Clínica Tzion Terapias* está confirmado!\n\n`;
-         mensagem += `📅 *Data:* ${dataFormatada}\n`;
-         mensagem += `⏰ *Horário:* ${newAppt.time}\n`;
-         mensagem += `📍 *Modalidade:* ${newAppt.type}\n\n`;
+          const firstName = patientData.name.split(' ')[0];
+          let mensagem = `Olá, *${firstName}*! ✨\n\n`;
+          mensagem += `Seu agendamento na *Clínica Tzion Terapias* está confirmado!\n\n`;
+          mensagem += `📅 *Data:* ${dataFormatada}\n`;
+          mensagem += `⏰ *Horário:* ${newAppt.time}\n`;
+          mensagem += `📍 *Modalidade:* ${newAppt.type}\n\n`;
 
-         if (meetLink) {
-             mensagem += `💻 *Acesso à Sessão Online:*\n🔗 ${meetLink}\n\n`;
-             mensagem += `Acesse o link com uns minutinhos de antecedência. Qualquer imprevisto, é só nos avisar!\n\n`;
-         } else if (newAppt.type === 'Online') {
-             mensagem += `💻 *Sessão Online:*\nO link seguro do Google Meet será gerado pelo seu terapeuta e enviado logo antes da sessão. Fique de olho!\n\n`;
-         } else {
-             mensagem += `📍 *Local Presencial:*\nNosso consultório está de portas abertas para te receber.\n\n`;
-         }
-         mensagem += `Um abraço e te esperamos! 💙`;
-         
-         await sendWhatsAppMessage(newAppt.patient_id, patientData.phone, mensagem, 'appointment_created');
+          if (meetLink && newAppt.type === 'Online') {
+              mensagem += `💻 *Acesso à Sessão Online:*\n🔗 ${meetLink}\n\n`;
+              mensagem += `Acesse o link com uns minutinhos de antecedência. Qualquer imprevisto, é só nos avisar!\n\n`;
+          } else if (newAppt.type === 'Online') {
+              mensagem += `💻 *Sessão Online:*\nO link seguro do Google Meet será gerado pelo seu terapeuta e enviado logo antes da sessão. Fique de olho!\n\n`;
+          } else {
+              mensagem += `📍 *Local Presencial:*\nNosso consultório está de portas abertas para te receber.\n\n`;
+          }
+          mensagem += `Um abraço e te esperamos! 💙`;
+          
+          await sendWhatsAppMessage(newAppt.patient_id, patientData.phone, mensagem, 'appointment_created');
       }
 
       if (therapistData && therapistData.phone) {
-         let msgTerapeuta = `Olá, *${therapistData.name.split(' ')[0]}*! 👋\n\n`;
-         msgTerapeuta += `Você tem um novo agendamento marcado.\n\n`;
-         msgTerapeuta += `👤 *Paciente:* ${patientData?.name || 'Não informado'}\n`;
-         msgTerapeuta += `📅 *Quando:* ${dataFormatada} às ${newAppt.time}\n`;
-         msgTerapeuta += `📍 *Tipo:* ${newAppt.type}\n`;
-         
-         if (meetLink) {
-             msgTerapeuta += `\n🔗 *Link do Meet da Sessão:*\n${meetLink}`;
-         }
-         await sendWhatsAppMessage(null, therapistData.phone, msgTerapeuta, 'appointment_created_therapist');
+          let msgTerapeuta = `Olá, *${therapistData.name.split(' ')[0]}*! 👋\n\n`;
+          msgTerapeuta += `Você tem um novo agendamento marcado.\n\n`;
+          msgTerapeuta += `👤 *Paciente:* ${patientData?.name || 'Não informado'}\n`;
+          msgTerapeuta += `📅 *Quando:* ${dataFormatada} às ${newAppt.time}\n`;
+          msgTerapeuta += `📍 *Tipo:* ${newAppt.type}\n`;
+          
+          if (meetLink && newAppt.type === 'Online') {
+              msgTerapeuta += `\n🔗 *Link do Meet da Sessão:*\n${meetLink}`;
+          }
+          await sendWhatsAppMessage(null, therapistData.phone, msgTerapeuta, 'appointment_created_therapist');
       }
 
       fetchData();
@@ -831,6 +831,24 @@ export default function AgendaManager() {
          
          if (error) throw error;
          
+         // Notificar o terapeuta via WhatsApp
+         try {
+             const { data: therapistData } = await supabase
+                 .from('therapists')
+                 .select('name, phone')
+                 .eq('id', event.therapist_id)
+                 .maybeSingle();
+
+             if (therapistData && therapistData.phone) {
+                 const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
+                 const time = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                 const msg = `Olá, *${therapistData.name.split(' ')[0]}*! 🔔\n\nSeu paciente *${event.patient_name}* acabou de realizar o check-in na recepção para a sessão das ${time}. Ele(a) já está te aguardando!`;
+                 await sendWhatsAppMessage(null, therapistData.phone, msg, 'patient_arrived_therapist');
+             }
+         } catch (notifyError) {
+             console.error('Erro ao enviar notificação de check-in para o terapeuta:', notifyError);
+         }
+         
          setToastMessage('Check-in realizado! Terapeuta notificado.');
          setTimeout(() => setToastMessage(null), 3500);
          fetchData(); 
@@ -956,32 +974,34 @@ export default function AgendaManager() {
     const daysToRender = getDaysForView();
 
     return (
-      <div className={cn("grid gap-px rounded-[2rem] overflow-hidden border border-slate-200 shadow-sm bg-slate-200", viewMode === 'week' ? "grid-cols-7" : "grid-cols-1")}>
-        {daysToRender.map((date, i) => (
-          <div key={i} className="bg-slate-50 p-4 text-center border-b border-slate-200">
-             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-               {date.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })}
-             </span>
-          </div>
-        ))}
-        {daysToRender.map((date, i) => {
-          const dayAppts = appointments.filter(a => new Date(a.start_time).toDateString() === date.toDateString());
-          return (
-            <div key={`content-${i}`} className="bg-white min-h-[400px] max-h-[600px] overflow-y-auto hide-scrollbar p-4 space-y-3">
-               {dayAppts.length === 0 && <p className="text-sm text-slate-400 text-center mt-10">Livre</p>}
-               {dayAppts.map(appt => (
-                 <div key={appt.id} className="p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex flex-col gap-2 hover:border-indigo-300 transition-colors cursor-pointer">
-                   <div className="flex items-center justify-between">
-                     <span className="text-indigo-700 font-black text-xs">{new Date(appt.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                     <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-400">{appt.type}</span>
-                   </div>
-                   <h4 className="font-bold text-slate-900 text-sm leading-tight">{appt.patient_name}</h4>
-                   <p className="text-xs text-slate-500 font-medium">Com {appt.therapist_name}</p>
-                 </div>
-               ))}
+      <div className={cn(viewMode === 'week' ? "overflow-x-auto w-full rounded-[2rem] border border-slate-200 shadow-sm bg-slate-200 custom-scrollbar" : "")}>
+        <div className={cn("grid gap-px overflow-hidden", viewMode === 'week' ? "grid-cols-7 min-w-[1050px]" : "grid-cols-1 rounded-[2rem] border border-slate-200 shadow-sm bg-slate-200")}>
+          {daysToRender.map((date, i) => (
+            <div key={i} className="bg-slate-50 p-4 text-center border-b border-slate-200">
+               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                 {date.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })}
+               </span>
             </div>
-          );
-        })}
+          ))}
+          {daysToRender.map((date, i) => {
+            const dayAppts = appointments.filter(a => new Date(a.start_time).toDateString() === date.toDateString());
+            return (
+              <div key={`content-${i}`} className="bg-white h-[380px] overflow-y-auto custom-scrollbar p-2 sm:p-4 space-y-2 sm:space-y-3">
+                 {dayAppts.length === 0 && <p className="text-xs sm:text-sm text-slate-400 text-center mt-10">Livre</p>}
+                 {dayAppts.map(appt => (
+                   <div key={appt.id} className="p-2 sm:p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex flex-col gap-1.5 hover:border-indigo-300 transition-colors cursor-pointer min-w-0">
+                     <div className="flex flex-wrap items-center justify-between gap-1">
+                       <span className="text-indigo-700 font-black text-[10px] sm:text-xs shrink-0">{new Date(appt.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                       <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-indigo-400 shrink-0">{appt.type}</span>
+                     </div>
+                     <h4 className="font-bold text-slate-900 text-xs sm:text-sm leading-tight truncate">{appt.patient_name}</h4>
+                     <p className="text-[10px] sm:text-xs text-slate-500 font-medium truncate">Com {appt.therapist_name}</p>
+                   </div>
+                 ))}
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   };
@@ -1023,79 +1043,79 @@ export default function AgendaManager() {
           <h3 className="text-xl font-bold text-slate-900 tracking-tight">Sessões do Dia ({new Date().toLocaleDateString('pt-BR')})</h3>
           <div className="space-y-4">
             {todayEvents.map((event, i) => (
-              <div key={i} className="group p-6 border border-slate-100 rounded-3xl hover:border-indigo-200 hover:bg-slate-50/50 transition-all flex items-center justify-between">
-                <div className="flex items-center gap-6">
-                  <div className="text-indigo-600 font-mono font-bold text-xl">
+              <div key={i} className="group p-4 sm:p-6 border border-slate-100 rounded-3xl hover:border-indigo-200 hover:bg-slate-50/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4 sm:gap-6 min-w-0 flex-1 w-full sm:w-auto">
+                  <div className="text-indigo-600 font-mono font-bold text-lg sm:text-xl shrink-0">
                     {new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                   </div>
-                  <div className="h-10 w-px bg-slate-200" />
-                  <div>
-                    <h4 className="font-bold text-lg text-slate-900 group-hover:text-indigo-600 transition-colors">{event.patient_name}</h4>
-                    <p className="text-sm text-slate-500 font-medium">Com {event.therapist_name}</p>
+                  <div className="h-10 w-px bg-slate-200 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <h4 className="font-bold text-base sm:text-lg text-slate-900 group-hover:text-indigo-600 transition-colors truncate">{event.patient_name}</h4>
+                    <p className="text-xs sm:text-sm text-slate-500 font-medium truncate">Com {event.therapist_name}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 sm:gap-4 flex-wrap w-full sm:w-auto justify-end border-t border-slate-100 sm:border-0 pt-3 sm:pt-0">
                   <div className={cn(
-                    "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest",
+                    "flex items-center gap-1.5 px-3 py-1 sm:px-4 sm:py-1.5 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-widest shrink-0",
                     event.type === 'Online' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'
                   )}>
-                    {event.type === 'Online' ? <Video className="w-3.5 h-3.5" /> : <MapPin className="w-3.5 h-3.5" />}
+                    {event.type === 'Online' ? <Video className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> : <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
                     {event.type}
                   </div>
                   <button 
                     onClick={() => handleSendReminder(event)}
                     title="Enviar Lembrete por WhatsApp"
-                    className="p-2 hover:bg-emerald-100 hover:text-emerald-600 rounded-xl transition-colors text-slate-400"
+                    className="p-2 hover:bg-emerald-100 hover:text-emerald-600 rounded-xl transition-colors text-slate-400 shrink-0"
                   >
-                    <MessageCircle className="w-5 h-5" />
+                    <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
                   {event.status === 'completed' ? (
-                     <div title="Sessão Finalizada" className="p-2 bg-emerald-50 text-emerald-500 rounded-xl flex items-center gap-1.5 font-bold text-xs">
+                     <div title="Sessão Finalizada" className="p-2 bg-emerald-50 text-emerald-500 rounded-xl flex items-center gap-1.5 font-bold text-xs shrink-0">
                         <CheckCircle2 className="w-4 h-4" /> Finalizado
                      </div>
                   ) : event.status === 'calling' ? (
-                     <div title="Sala Liberada pelo Terapeuta" className="flex items-center gap-2 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold animate-pulse shadow-sm">
+                     <div title="Sala Liberada pelo Terapeuta" className="flex items-center gap-2 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold animate-pulse shadow-sm shrink-0">
                         <CheckCircle2 className="w-4 h-4" /> Sala Liberada!
                      </div>
                   ) : event.status === 'in_progress' ? (
-                     <div title="Em Atendimento" className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold shadow-sm">
+                     <div title="Em Atendimento" className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold shadow-sm shrink-0">
                         <Activity className="w-4 h-4" /> Em Atendimento
                      </div>
                   ) : event.status === 'arrived' ? (
-                     <div title="Aguardando na Recepção" className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold">
+                     <div title="Aguardando na Recepção" className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold shrink-0">
                         <Clock className="w-4 h-4" /> Aguardando
                      </div>
                   ) : (
                      <button 
                         onClick={() => handleCheckin(event)}
                         title="Fazer Check-in (Paciente Chegou)"
-                        className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm"
+                        className="px-3 py-1.5 sm:px-4 sm:py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm shrink-0"
                      >
                         <User className="w-4 h-4" /> Check-in
                      </button>
                   )}
                   {event.status !== 'completed' && (
-                     <div className="flex gap-1">
+                     <div className="flex gap-1 shrink-0">
                       <button 
                         onClick={() => handleOpenRescheduleModal(event)}
                         title="Reagendar Sessão"
                         className="p-2 hover:bg-slate-100 hover:text-indigo-600 rounded-xl transition-colors text-slate-300"
                       >
-                        <CalendarIcon className="w-5 h-5" />
+                        <CalendarIcon className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
                       </button>
                       <button 
                         onClick={() => handleCancelAppointment(event)}
                         title="Desmarcar Sessão"
                         className="p-2 hover:bg-slate-100 hover:text-rose-600 rounded-xl transition-colors text-slate-300"
                       >
-                        <X className="w-5 h-5" />
+                        <X className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
                       </button>
                       <button 
                         onClick={() => handleFinishSession(event)}
                         title="Finalizar Sessão"
                         className="p-2 hover:bg-slate-100 hover:text-emerald-600 rounded-xl transition-colors text-slate-300"
                       >
-                        <CheckCircle2 className="w-5 h-5" />
+                        <CheckCircle2 className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
                       </button>
                      </div>
                   )}

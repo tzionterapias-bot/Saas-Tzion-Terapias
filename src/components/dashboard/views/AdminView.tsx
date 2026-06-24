@@ -221,7 +221,7 @@ export default function AdminView() {
       {/* Alert Banner for pending therapist registrations */}
       {pendingTherapistsCount > 0 && (
         <Link 
-          to="/admin/usuarios"
+          to="/admin/terapeutas"
           className="flex items-center justify-between p-5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/15 hover:to-orange-500/15 border border-amber-500/20 rounded-3xl transition-all duration-300 group shadow-sm animate-in slide-in-from-top duration-300"
         >
           <div className="flex items-center gap-4">

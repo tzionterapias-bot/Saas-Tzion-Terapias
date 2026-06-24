@@ -14,6 +14,7 @@ import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
 import { useAuth } from '@/src/contexts/AuthContext';
+import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -705,7 +706,8 @@ export default function FinancialPage() {
 
                 if (contract && patient.phone) {
                   const firstName = patient.name.split(' ')[0];
-                  const link = `${window.location.origin}/contrato/${contract.id}`;
+                  const baseUrl = await getSystemBaseUrl();
+                  const link = `${baseUrl}/contrato/${contract.id}`;
                   const msg = `Olá, *${firstName}*! ✨\n\nSeu pacote foi iniciado! Por favor, assine o termo de serviço:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
                   await sendWhatsAppMessage(patient.id, patient.phone, msg, 'contract_sent');
                 }
@@ -996,33 +998,44 @@ export default function FinancialPage() {
           </div>
 
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-            {(() => {
-              const { grossIncome, grossExpense, totalTherapistShare, clinicShareGross, clinicNetRealized } = dashboardStats;
-              return [
-                { label: 'Faturamento Bruto', value: grossIncome, icon: TrendingUp, color: 'emerald', sub: `Clínica: R$ ${fmt(clinicShareGross)} | Terapeutas: R$ ${fmt(totalTherapistShare)}` },
-                { label: 'Despesas Pagas', value: grossExpense, icon: TrendingDown, color: 'rose', sub: 'Saídas operacionais do período' },
-                { label: 'Lucro Líquido Clínica', value: clinicNetRealized, icon: DollarSign, color: clinicNetRealized >= 0 ? 'indigo' : 'rose', sub: 'Faturamento Clínica − Despesas' },
-                { label: 'A Receber', value: pendingIncome, icon: Clock, color: 'amber', sub: 'Lançamentos pendentes' },
-              ].map((c, i) => (
-                <div key={i} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden group">
-                  <div className={cn(
-                    "w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-lg",
-                    c.color === 'emerald' ? "bg-emerald-500 shadow-emerald-100 text-white" :
-                    c.color === 'rose' ? "bg-rose-500 shadow-rose-100 text-white" :
-                    c.color === 'amber' ? "bg-amber-500 shadow-amber-100 text-white" :
-                    "bg-indigo-500 shadow-indigo-100 text-white"
-                  )}>
-                    <c.icon className="w-6 h-6" />
-                  </div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{c.label}</p>
-                  <h3 className={cn("text-2xl font-black mb-1", c.color === 'rose' && c.label !== 'Despesas Pagas' ? "text-rose-600" : "text-slate-900")}>
-                    R$ {fmt(c.value)}
-                  </h3>
-                  <p className="text-[10px] text-slate-400 font-medium">{c.sub}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {loading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="bg-white p-6 sm:p-8 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden animate-pulse">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 mb-4" />
+                  <div className="w-24 h-3 bg-slate-200 rounded-full mb-3" />
+                  <div className="w-32 h-6 bg-slate-200 rounded-full mb-3" />
+                  <div className="w-40 h-3 bg-slate-200 rounded-full" />
                 </div>
-              ));
-            })()}
+              ))
+            ) : (
+              (() => {
+                const { grossIncome, grossExpense, totalTherapistShare, clinicShareGross, clinicNetRealized } = dashboardStats;
+                return [
+                  { label: 'Faturamento Bruto', value: grossIncome, icon: TrendingUp, color: 'emerald', sub: `Clínica: R$ ${fmt(clinicShareGross)} | Terapeutas: R$ ${fmt(totalTherapistShare)}` },
+                  { label: 'Despesas Pagas', value: grossExpense, icon: TrendingDown, color: 'rose', sub: 'Saídas operacionais do período' },
+                  { label: 'Lucro Líquido Clínica', value: clinicNetRealized, icon: DollarSign, color: clinicNetRealized >= 0 ? 'indigo' : 'rose', sub: 'Faturamento Clínica − Despesas' },
+                  { label: 'A Receber', value: pendingIncome, icon: Clock, color: 'amber', sub: 'Lançamentos pendentes' },
+                ].map((c, i) => (
+                  <div key={i} className="bg-white p-6 sm:p-8 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden group">
+                    <div className={cn(
+                      "w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-lg",
+                      c.color === 'emerald' ? "bg-emerald-500 shadow-emerald-100 text-white" :
+                      c.color === 'rose' ? "bg-rose-500 shadow-rose-100 text-white" :
+                      c.color === 'amber' ? "bg-amber-500 shadow-amber-100 text-white" :
+                      "bg-indigo-500 shadow-indigo-100 text-white"
+                    )}>
+                      <c.icon className="w-6 h-6" />
+                    </div>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{c.label}</p>
+                    <h3 className={cn("text-xl sm:text-2xl font-black mb-1", c.color === 'rose' && c.label !== 'Despesas Pagas' ? "text-rose-600" : "text-slate-900")}>
+                      R$ {fmt(c.value)}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-medium leading-relaxed">{c.sub}</p>
+                  </div>
+                ));
+              })()
+            )}
           </div>
 
           {/* Chart */}

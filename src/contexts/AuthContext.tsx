@@ -129,7 +129,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         const profile = await loadProfile(session.user.id, session.user.email ?? undefined);
-        setUser(profile);
+        setUser(prev => {
+          if (prev?.id === profile?.id && prev?.role === profile?.role && prev?.name === profile?.name) {
+            return prev;
+          }
+          return profile;
+        });
         setLoading(false);
         localStorage.removeItem('@tzion:user');
       } else if (event === 'SIGNED_OUT') {

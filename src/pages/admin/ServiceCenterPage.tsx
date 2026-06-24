@@ -32,18 +32,20 @@ export default function ServiceCenterPage() {
 
   return (
     <div className="flex h-[calc(100vh-11rem)] lg:h-[calc(100vh-14rem)] min-h-[500px] bg-white/40 backdrop-blur-3xl rounded-[3rem] border border-white/60 overflow-hidden shadow-[0_8px_40px_rgba(0,0,0,0.04)] animate-in fade-in zoom-in-95 duration-500">
-      <DepartmentSidebar 
-        activeDept={selectedDeptId} 
-        onSelect={(id) => {
-          setSelectedDeptId(id);
-          setSelectedTicket(null);
-          // Removemos o reset de aba aqui para que o usuário continue na aba que ele escolheu ver
-        }} 
-      />
+      <div className={cn("h-full shrink-0 z-20", selectedTicket ? "hidden lg:block" : "block")}>
+        <DepartmentSidebar 
+          activeDept={selectedDeptId} 
+          onSelect={(id) => {
+            setSelectedDeptId(id);
+            setSelectedTicket(null);
+            // Removemos o reset de aba aqui para que o usuário continue na aba que ele escolheu ver
+          }} 
+        />
+      </div>
       
       <div className="flex flex-1 flex-col overflow-hidden relative">
         {/* Header de Visualização (Tabs) */}
-        <div className="bg-white/60 backdrop-blur-xl border-b border-white/50 p-4 flex items-center justify-center relative z-20">
+        <div className={cn("bg-white/60 backdrop-blur-xl border-b border-white/50 p-4 flex items-center justify-center relative z-20", selectedTicket ? "hidden lg:flex" : "flex")}>
           <div className="bg-slate-100/80 backdrop-blur-md p-1.5 rounded-2xl flex items-center gap-1 shadow-inner border border-white/20">
             {views.map((view) => (
               <button
@@ -66,17 +68,19 @@ export default function ServiceCenterPage() {
         </div>
 
         <div className="flex flex-1 overflow-hidden relative">
-          <TicketList 
-            filterDeptId={selectedDeptId}
-            activeTicketId={selectedTicket?.id}
-            onSelectTicket={setSelectedTicket}
-            view={activeView}
-          />
+          <div className={cn("h-full shrink-0", selectedTicket ? "hidden lg:block" : "flex-1 lg:flex-none lg:w-[400px]")}>
+            <TicketList 
+              filterDeptId={selectedDeptId}
+              activeTicketId={selectedTicket?.id}
+              onSelectTicket={setSelectedTicket}
+              view={activeView}
+            />
+          </div>
         
         {selectedTicket ? (
-          <ChatWindow ticket={selectedTicket} />
+          <ChatWindow ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center bg-transparent p-20 text-center space-y-8 relative overflow-hidden">
+          <div className="hidden lg:flex flex-1 flex-col items-center justify-center bg-transparent p-20 text-center space-y-8 relative overflow-hidden">
              <div className="relative z-10 space-y-6">
                 <div className="w-40 h-40 bg-white/80 backdrop-blur-2xl rounded-[4rem] shadow-[0_20px_60px_-15px_rgba(79,70,229,0.3)] flex items-center justify-center mx-auto group hover:scale-110 transition-all duration-700 hover:shadow-[0_20px_60px_-15px_rgba(16,185,129,0.3)] border border-white">
                    <MessageSquare className="w-16 h-16 text-indigo-500 group-hover:rotate-12 transition-transform duration-500 group-hover:text-emerald-500" />

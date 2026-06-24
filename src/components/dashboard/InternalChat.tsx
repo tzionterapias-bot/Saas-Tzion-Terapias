@@ -41,7 +41,7 @@ export default function InternalChat() {
 
   // Fetch therapists to build contact list
   useEffect(() => {
-    supabase.from('therapists').select('id, name, specialty').then(({ data }) => {
+    supabase.from('therapists').select('id, name, specialty').eq('active', true).then(({ data }) => {
       setTherapists(data || []);
     });
   }, []);

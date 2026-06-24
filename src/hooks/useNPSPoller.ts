@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { supabase } from '@/src/lib/supabase';
+import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 
 export function useNPSPoller() {
   useEffect(() => {
@@ -34,7 +35,7 @@ export function useNPSPoller() {
               const firstName = patientData.name.split(' ')[0];
               
               // Opcionalmente substituir variáveis no template
-              const baseUrl = window.location.origin;
+              const baseUrl = await getSystemBaseUrl();
               const npsLink = `${baseUrl}/avaliacao/${app.id}`;
               let finalMessage = messageTemplate.replace('{{nome}}', firstName);
               finalMessage += `\n\nAcesse o link para avaliar: ${npsLink}`;

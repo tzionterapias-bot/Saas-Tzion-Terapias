@@ -3,12 +3,14 @@ import { supabase } from '@/src/lib/supabase';
 import { 
   LayoutDashboard, Users, Calendar, Banknote, MessageSquare, 
   BookOpen, Settings, LogOut, Heart, Headset, Menu, X, Bell, Search, User, Award,
-  Sun, Moon, Shield, Megaphone, PieChart, Globe
+  Sun, Moon, Shield, Megaphone, PieChart, Globe, Monitor, UserCog
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { processDailyReminders, processDailyBirthdays } from '@/src/lib/reminders';
+import MobilePatientList from './MobilePatientList';
+import MobileDashboard from './MobileDashboard';
 const menuCategories = [
   {
     title: 'Visão Geral',
@@ -40,6 +42,7 @@ const menuCategories = [
     items: [
       { icon: Settings, label: 'Configurações', path: '/admin/config', roles: ['admin'] },
       { icon: Globe, label: 'Editor do Site', path: '/admin/editor-site', roles: ['admin'] },
+      { icon: UserCog, label: 'Terapeutas', path: '/admin/terapeutas', roles: ['admin'] },
       { icon: Shield, label: 'Gestão de Usuários', path: '/admin/usuarios', roles: ['admin'] },
     ]
   }
@@ -223,8 +226,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       navigate('/login');
     } else {
       // Quando o sistema carregar e o usuário estiver logado, dispara os lembretes diários e aniversários.
-      // processDailyReminders();
-      // processDailyBirthdays();
+      processDailyReminders();
+      processDailyBirthdays();
       loadDynamicNotifications();
     }
   }, [user, navigate]);
@@ -257,28 +260,36 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       )}>
         <div className="flex flex-col h-full">
           <div className="p-8">
-            <div className={cn("flex items-center", whiteLabel?.logoUrl ? "justify-center w-full" : "gap-3")}>
-              {whiteLabel?.logoUrl ? (
-                <img src={whiteLabel.logoUrl} alt="Logo" className="max-h-12 max-w-full object-contain" />
-              ) : (
-                <>
-                  <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 shrink-0">
-                    <Heart className="w-6 h-6 text-white fill-white/20" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    {whiteLabel?.portalName ? (
-                      <h2 className="font-black text-base text-slate-900 leading-tight break-words">
-                        {whiteLabel.portalName}
-                      </h2>
-                    ) : (
-                      <>
-                        <h2 className="font-black text-xl text-slate-900 leading-none">TZION</h2>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Terapias</p>
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
+            <div className="flex items-center justify-between gap-4">
+              <div className={cn("flex items-center", whiteLabel?.logoUrl ? "justify-center w-full" : "gap-3")}>
+                {whiteLabel?.logoUrl ? (
+                  <img src={whiteLabel.logoUrl} alt="Logo" className="max-h-12 max-w-full object-contain" />
+                ) : (
+                  <>
+                    <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 shrink-0">
+                      <Heart className="w-6 h-6 text-white fill-white/20" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {whiteLabel?.portalName ? (
+                        <h2 className="font-black text-base text-slate-900 leading-tight break-words">
+                          {whiteLabel.portalName}
+                        </h2>
+                      ) : (
+                        <>
+                          <h2 className="font-black text-xl text-slate-900 leading-none">TZION</h2>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Terapias</p>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button 
+                className="lg:hidden p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
           </div>
 
@@ -353,7 +364,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
-        <header className="h-20 bg-white border-b border-slate-200 px-8 flex items-center justify-between sticky top-0 z-30">
+        <header className="h-14 lg:h-20 bg-white border-b border-slate-200 px-4 lg:px-8 flex items-center justify-between sticky top-0 z-30">
           <div className="flex items-center gap-4">
             <button 
               className="lg:hidden p-2 bg-slate-50 rounded-xl text-slate-600"
@@ -497,9 +508,66 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           "flex-1 min-h-0",
           location.pathname === '/admin/editor-site'
             ? "overflow-hidden flex flex-col"
-            : "overflow-y-auto p-8 lg:p-12"
+            : "overflow-y-auto p-4 lg:p-8 xl:p-12"
         )}>
-          {children}
+          {(() => {
+            // Rotas com versão mobile simplificada
+            const mobileViews: Record<string, React.ReactNode> = {
+              '/admin': <MobileDashboard />,
+              '/admin/pacientes': <MobilePatientList />,
+            };
+
+            // Rotas bloqueadas em mobile (sem versão mobile)
+            const desktopOnlyPaths = [
+              '/admin/relatorios',
+              '/admin/insumos',
+              '/admin/usuarios',
+              '/admin/config',
+              '/admin/financeiro',
+              '/admin/atendimento',
+              '/admin/crm',
+              '/admin/campanhas',
+              '/admin/editor-site',
+            ];
+
+            const mobileView = mobileViews[location.pathname];
+            const isDesktopOnly = desktopOnlyPaths.includes(location.pathname);
+
+            // Rota com versão mobile dedicada
+            if (mobileView) {
+              return (
+                <>
+                  {/* Mobile: versão simplificada */}
+                  <div className="lg:hidden h-full">{mobileView}</div>
+                  {/* Desktop: versão completa */}
+                  <div className="hidden lg:block h-full">{children}</div>
+                </>
+              );
+            }
+
+            // Rota bloqueada em mobile
+            if (isDesktopOnly) {
+              return (
+                <>
+                  <div className="lg:hidden flex flex-col items-center justify-center py-20 px-6 text-center bg-white rounded-[2rem] border border-slate-100 shadow-sm space-y-6 mx-auto my-10 max-w-sm">
+                    <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center shadow-inner border border-slate-100 shrink-0">
+                      <Monitor className="w-8 h-8 text-indigo-600" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-bold text-slate-900 tracking-tight">Disponível apenas no PC</h3>
+                      <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                        Esta ferramenta administrativa foi otimizada para telas grandes e não está disponível em celulares ou tablets. Por favor, acesse pelo computador.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="hidden lg:block h-full">{children}</div>
+                </>
+              );
+            }
+
+            // Demais rotas: render normal (agenda, sessoes, portal-terapeuta, etc.)
+            return children;
+          })()}
         </div>
       </main>
 

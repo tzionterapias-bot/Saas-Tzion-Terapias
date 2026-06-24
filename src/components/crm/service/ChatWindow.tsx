@@ -1,5 +1,5 @@
 import React from 'react';
-import { Send, Smile, Paperclip, MoreVertical, Phone, Video, CheckCheck, User, Shield, ArrowRightLeft, Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { Send, Smile, Paperclip, MoreVertical, Phone, Video, CheckCheck, User, Shield, ArrowRightLeft, Loader2, CheckCircle2, AlertCircle, X, ChevronLeft } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { Ticket } from './TicketList';
 import { supabase } from '@/src/lib/supabase';
@@ -42,9 +42,10 @@ interface Message {
 
 interface Props {
   ticket: Ticket;
+  onBack?: () => void;
 }
 
-export default function ChatWindow({ ticket }: Props) {
+export default function ChatWindow({ ticket, onBack }: Props) {
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [inputValue, setInputValue] = React.useState('');
   const [loading, setLoading] = React.useState(false);
@@ -323,21 +324,30 @@ export default function ChatWindow({ ticket }: Props) {
 
   return (
     <div className="flex-1 flex flex-col bg-white h-full relative overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-white z-20 shadow-sm">
-        <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-full bg-slate-900 flex items-center justify-center text-white text-sm font-bold shadow-sm">
+      <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex flex-col sm:flex-row gap-3 sm:items-center justify-between bg-white z-20 shadow-sm">
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+          {onBack && (
+            <button 
+              onClick={onBack}
+              className="lg:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+              title="Voltar"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+          )}
+          <div className="w-11 h-11 rounded-full bg-slate-900 flex items-center justify-center text-white text-sm font-bold shadow-sm shrink-0">
             {getInitials(ticket.customerName)}
           </div>
-          <div>
-            <h3 className="font-bold text-slate-800 text-[15px] leading-tight mb-0.5">{ticket.customerName}</h3>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-bold text-slate-800 text-[15px] leading-tight mb-0.5 truncate">{ticket.customerName}</h3>
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-sm" />
-              <span className="text-xs font-semibold text-slate-500">{formatPhone(ticket.phone)}</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-sm shrink-0" />
+              <span className="text-xs font-semibold text-slate-500 truncate">{formatPhone(ticket.phone)}</span>
             </div>
           </div>
         </div>
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t border-slate-100 sm:border-0 pt-2 sm:pt-0 shrink-0">
            <select 
              value={selectedCategory}
              onChange={(e) => handleUpdateCategory(e.target.value)}
@@ -351,7 +361,7 @@ export default function ChatWindow({ ticket }: Props) {
              <option value="Reclamação">Reclamação</option>
            </select>
 
-           <div className="w-px h-6 bg-slate-200 mx-1"></div>
+           <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
 
            <button 
              onClick={() => setShowTransferModal(true)}

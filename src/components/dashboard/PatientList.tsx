@@ -5,6 +5,7 @@ import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
+import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 import { useAuth } from '@/src/contexts/AuthContext';
 
 export default function PatientList() {
@@ -222,13 +223,14 @@ export default function PatientList() {
         });
     });
 
+    const baseUrlForContracts = await getSystemBaseUrl();
     contracts.forEach(contract => {
         events.push({
             id: `contract-${contract.id}`,
             type: 'contract',
             date: new Date(contract.created_at),
             title: `Contrato de Serviço ${contract.status === 'signed' ? '(Assinado)' : '(Pendente)'}`,
-            description: `Acesse o termo no link: ${window.location.origin}/contrato/${contract.id}`,
+            description: `Acesse o termo no link: ${baseUrlForContracts}/contrato/${contract.id}`,
             status: contract.status
         });
     });
@@ -346,7 +348,8 @@ export default function PatientList() {
 
       // 7. Notificar via WhatsApp
       const firstName = newPatient.name.split(' ')[0] || 'Paciente';
-      const msgText = `Olá, *${firstName}*! ✨ Bem-vindo(a) à Tzion Terapias.\n\nSua conta de paciente foi criada com sucesso! Para acessar o seu portal, utilize os dados abaixo:\n\n📧 *E-mail:* ${newPatient.email}\n🔑 *Senha Temporária:* ${tempPassword}\n\n🔗 *Acesse:* ${window.location.origin}/login\n\n⚠️ *Importante:* Por segurança, você deve alterar sua senha provisória já no primeiro acesso.\n\nQualquer dúvida, estamos à disposição! 💙`;
+      const baseUrl = await getSystemBaseUrl();
+      const msgText = `Olá, *${firstName}*! ✨ Bem-vindo(a) à Tzion Terapias.\n\nSua conta de paciente foi criada com sucesso! Para acessar o seu portal, utilize os dados abaixo:\n\n📧 *E-mail:* ${newPatient.email}\n🔑 *Senha Temporária:* ${tempPassword}\n\n🔗 *Acesse:* ${baseUrl}/login\n\n⚠️ *Importante:* Por segurança, você deve alterar sua senha provisória já no primeiro acesso.\n\nQualquer dúvida, estamos à disposição! 💙`;
       
       await sendWhatsAppMessage(userId, newPatient.phone, msgText, 'patient_welcome');
 
@@ -493,7 +496,8 @@ export default function PatientList() {
       setToastMessage('Paciente não possui telefone cadastrado.');
       return;
     }
-    const link = `${window.location.origin}/anamnese/${selectedPatient.anamnesis_token || selectedPatient.id}`;
+    const baseUrl = await getSystemBaseUrl();
+    const link = `${baseUrl}/anamnese/${selectedPatient.anamnesis_token || selectedPatient.id}`;
     const firstName = selectedPatient.name.split(' ')[0] || 'Paciente';
     const msg = `[Ficha de Entrada - Tzion Terapias]\n\nOlá, *${firstName}*! ✨\n\nPor favor, preencha a sua Ficha de Anamnese antes da nossa próxima sessão. É bem rápido e nos ajuda a preparar o seu atendimento:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
     
@@ -536,7 +540,8 @@ export default function PatientList() {
         throw new Error(`Erro ao salvar código no banco: ${updateError.message}`);
       }
 
-      const directLink = `${window.location.origin}/login?email=${encodeURIComponent(selectedPatient.email)}&code=${code}`;
+      const baseUrl = await getSystemBaseUrl();
+      const directLink = `${baseUrl}/login?email=${encodeURIComponent(selectedPatient.email)}&code=${code}`;
 
       const firstName = selectedPatient.name.split(' ')[0] || 'Paciente';
       const msg = `[Código de Acesso - Tzion Terapias]\n\nOlá, *${firstName}*! ✨\n\nVocê solicitou acesso ao portal do paciente sem precisar de senha.\n\n🔑 Seu código de acesso de uso único é: *${code}*\n\nOu clique no link abaixo para entrar diretamente:\n🔗 ${directLink}\n\n*Nota:* Este código expira em 15 minutos.\n\nQualquer dúvida, estamos à disposição! 💙`;
@@ -591,7 +596,8 @@ export default function PatientList() {
         setToastMessage('Paciente não possui telefone cadastrado.');
         return;
     }
-    const link = `${window.location.origin}/contrato/${contractId}`;
+    const baseUrl = await getSystemBaseUrl();
+    const link = `${baseUrl}/contrato/${contractId}`;
     const firstName = patientName?.split(' ')[0] || 'Paciente';
     let msg = `[Contrato - Tzion Terapias]\n\n`;
     msg += `Olá, *${firstName}*! ✨\n\n`;
@@ -678,9 +684,22 @@ export default function PatientList() {
     }
   };
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
   const filteredPatients = patients.filter(p => 
     p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
     p.email?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(filteredPatients.length / itemsPerPage);
+  const paginatedPatients = filteredPatients.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
   );
 
   const renderIcon = (type: string) => {
@@ -749,7 +768,7 @@ export default function PatientList() {
                 <tbody className="divide-y divide-slate-50">
                   {loading ? (
                     <tr><td colSpan={5} className="py-20 text-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-600 mx-auto" /></td></tr>
-                  ) : filteredPatients.map((patient) => (
+                  ) : paginatedPatients.map((patient) => (
                     <tr 
                       key={patient.id} 
                       onClick={() => handleSelectPatient(patient)}
@@ -808,6 +827,36 @@ export default function PatientList() {
                   <Search className="w-8 h-8 text-slate-200" />
                 </div>
                 <p className="text-slate-500 font-medium">Nenhum paciente encontrado.</p>
+              </div>
+            )}
+            
+            {!loading && totalPages > 1 && (
+              <div className="px-8 py-5 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Página {currentPage} de {totalPages} ({filteredPatients.length} pacientes)
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentPage(prev => Math.max(prev - 1, 1));
+                    }}
+                    disabled={currentPage === 1}
+                    className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none transition-all cursor-pointer"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentPage(prev => Math.min(prev + 1, totalPages));
+                    }}
+                    disabled={currentPage === totalPages}
+                    className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none transition-all cursor-pointer"
+                  >
+                    Próxima
+                  </button>
+                </div>
               </div>
             )}
           </div>

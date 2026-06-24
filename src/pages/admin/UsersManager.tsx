@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/src/lib/supabase';
-import { Shield, UserPlus, Trash2, Edit2, CheckCircle2, ShieldAlert, Loader2, Search, User, X, AlertCircle } from 'lucide-react';
+import { Shield, UserPlus, Trash2, Edit2, CheckCircle2, ShieldAlert, Loader2, Search, User, X, AlertCircle, UserCheck, UserX } from 'lucide-react';
 
 interface UserProfile {
   id: string;
@@ -234,6 +234,79 @@ export default function UsersManager() {
     setEditStatus(user.status);
   };
 
+  const handleApproveUser = async (user: UserProfile) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ status: 'active', updated_at: new Date().toISOString() })
+        .eq('id', user.id);
+      if (error) throw error;
+
+      // Se for terapeuta, certificar que está ativo na tabela de terapeutas também
+      if (user.role === 'terapeuta') {
+        // Primeiro verificamos se o registro existe na tabela therapists
+        const { data: existing } = await supabase
+          .from('therapists')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (existing) {
+          await supabase
+            .from('therapists')
+            .update({ active: true })
+            .eq('id', existing.id);
+        } else {
+          await supabase
+            .from('therapists')
+            .insert([{
+              user_id: user.id,
+              name: user.name || user.email.split('@')[0],
+              email: user.email,
+              phone: user.phone || null,
+              active: true,
+              commission_rate: 0
+            }]);
+        }
+      }
+
+      fetchUsers();
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao aprovar usuário.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRejectUser = async (user: UserProfile) => {
+    if (confirm(`Tem certeza que deseja inativar o acesso de ${user.name || user.email}?`)) {
+      setSaving(true);
+      try {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ status: 'inactive', updated_at: new Date().toISOString() })
+          .eq('id', user.id);
+        if (error) throw error;
+
+        if (user.role === 'terapeuta') {
+          await supabase
+            .from('therapists')
+            .update({ active: false })
+            .eq('user_id', user.id);
+        }
+
+        fetchUsers();
+      } catch (err) {
+        console.error(err);
+        alert('Erro ao inativar usuário.');
+      } finally {
+        setSaving(false);
+      }
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -310,11 +383,39 @@ export default function UsersManager() {
                       </span>
                     </td>
                     <td className="p-6 text-right">
-                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => startEdit(user)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all">
+                      <div className="flex justify-end gap-2 items-center">
+                        {user.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => handleApproveUser(user)}
+                              title="Aprovar Usuário"
+                              className="px-2.5 py-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                            >
+                              <UserCheck className="w-3.5 h-3.5" />
+                              <span>Aprovar</span>
+                            </button>
+                            <button
+                              onClick={() => handleRejectUser(user)}
+                              title="Inativar/Recusar"
+                              className="px-2.5 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                            >
+                              <UserX className="w-3.5 h-3.5" />
+                              <span>Recusar</span>
+                            </button>
+                          </>
+                        )}
+                        <button 
+                          onClick={() => startEdit(user)} 
+                          title="Editar Permissões"
+                          className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl border border-slate-100 hover:border-indigo-100 transition-all"
+                        >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleDelete(user)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all">
+                        <button 
+                          onClick={() => handleDelete(user)} 
+                          title="Revogar Acesso"
+                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-slate-100 hover:border-rose-100 transition-all"
+                        >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>

@@ -4,6 +4,7 @@ import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
+import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 
 interface Lead {
   id: string;
@@ -152,7 +153,8 @@ export default function KanbanBoard() {
       
       // 7. Notificar via WhatsApp
       const firstName = convertingLead.name.split(' ')[0] || 'Paciente';
-      const msgText = `Olá, *${firstName}*! ✨ Bem-vindo(a) à Tzion Terapias.\n\nSua conta de paciente foi criada com sucesso! Para acessar o seu portal, utilize os dados abaixo:\n\n📧 *E-mail:* ${patientData.email}\n🔑 *Senha Temporária:* ${tempPassword}\n\n🔗 *Acesse:* ${window.location.origin}/login\n\n⚠️ *Importante:* Por segurança, você deve alterar sua senha provisória já no primeiro acesso.\n\nQualquer dúvida, estamos à disposição! 💙`;
+      const loginBaseUrl = await getSystemBaseUrl();
+      const msgText = `Olá, *${firstName}*! ✨ Bem-vindo(a) à Tzion Terapias.\n\nSua conta de paciente foi criada com sucesso! Para acessar o seu portal, utilize os dados abaixo:\n\n📧 *E-mail:* ${patientData.email}\n🔑 *Senha Temporária:* ${tempPassword}\n\n🔗 *Acesse:* ${loginBaseUrl}/login\n\n⚠️ *Importante:* Por segurança, você deve alterar sua senha provisória já no primeiro acesso.\n\nQualquer dúvida, estamos à disposição! 💙`;
       
       await sendWhatsAppMessage(userId, convertingLead.phone, msgText, 'patient_welcome');
 

@@ -84,6 +84,15 @@ export default function CampaignsPage() {
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [selectedCampaignLogs, setSelectedCampaignLogs] = useState<CampaignLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logsPage, setLogsPage] = useState(1);
+  const logsPerPage = 10;
+
+  useEffect(() => {
+    setLogsPage(1);
+  }, [selectedCampaign]);
+
+  const totalLogsPages = Math.ceil(selectedCampaignLogs.length / logsPerPage);
+  const paginatedLogs = selectedCampaignLogs.slice((logsPage - 1) * logsPerPage, logsPage * logsPerPage);
 
   // Local Dispatch Loop state
   const [localRunningCampaignId, setLocalRunningCampaignId] = useState<string | null>(null);
@@ -848,42 +857,65 @@ export default function CampaignsPage() {
                 {loadingLogs ? (
                   <div className="py-10 flex justify-center"><Loader2 className="w-8 h-8 text-indigo-600 animate-spin" /></div>
                 ) : (
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white max-h-[300px] overflow-y-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                          <th className="px-6 py-4">Paciente</th>
-                          <th className="px-6 py-4">Telefone</th>
-                          <th className="px-6 py-4">Data Envio</th>
-                          <th className="px-6 py-4">Status</th>
-                          <th className="px-6 py-4">Detalhes Erro</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
-                        {selectedCampaignLogs.map(log => (
-                          <tr key={log.id} className="hover:bg-slate-50/50">
-                            <td className="px-6 py-3.5">{log.patients?.name || 'Não cadastrado'}</td>
-                            <td className="px-6 py-3.5">{log.patient_phone}</td>
-                            <td className="px-6 py-3.5">
-                              {log.sent_at ? new Date(log.sent_at).toLocaleString('pt-BR') : '-'}
-                            </td>
-                            <td className="px-6 py-3.5">
-                              <span className={cn(
-                                "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider",
-                                log.status === 'sent' && "bg-emerald-50 text-emerald-600",
-                                log.status === 'failed' && "bg-rose-50 text-rose-600",
-                                log.status === 'pending' && "bg-slate-100 text-slate-500 animate-pulse"
-                              )}>
-                                {log.status === 'sent' ? 'Enviado' : log.status === 'failed' ? 'Falhou' : 'Pendente'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-3.5 text-slate-400 text-[10px] font-normal italic">
-                              {log.error_message || '-'}
-                            </td>
+                  <div className="space-y-4">
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white max-h-[300px] overflow-y-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            <th className="px-6 py-4">Paciente</th>
+                            <th className="px-6 py-4">Telefone</th>
+                            <th className="px-6 py-4">Data Envio</th>
+                            <th className="px-6 py-4">Status</th>
+                            <th className="px-6 py-4">Detalhes Erro</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
+                          {paginatedLogs.map(log => (
+                            <tr key={log.id} className="hover:bg-slate-50/50">
+                              <td className="px-6 py-3.5">{log.patients?.name || 'Não cadastrado'}</td>
+                              <td className="px-6 py-3.5">{log.patient_phone}</td>
+                              <td className="px-6 py-3.5">
+                                {log.sent_at ? new Date(log.sent_at).toLocaleString('pt-BR') : '-'}
+                              </td>
+                              <td className="px-6 py-3.5">
+                                <span className={cn(
+                                  "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider",
+                                  log.status === 'sent' && "bg-emerald-50 text-emerald-600",
+                                  log.status === 'failed' && "bg-rose-50 text-rose-600",
+                                  log.status === 'pending' && "bg-slate-100 text-slate-500 animate-pulse"
+                                )}>
+                                  {log.status === 'sent' ? 'Enviado' : log.status === 'failed' ? 'Falhou' : 'Pendente'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-3.5 text-slate-400 text-[10px] font-normal italic">
+                                {log.error_message || '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {totalLogsPages > 1 && (
+                      <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-4 rounded-2xl">
+                        <button
+                          type="button"
+                          onClick={() => setLogsPage(p => Math.max(p - 1, 1))}
+                          disabled={logsPage === 1}
+                          className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none transition-all cursor-pointer"
+                        >
+                          Anterior
+                        </button>
+                        <span className="text-xs font-bold text-slate-400">Pág. {logsPage} / {totalLogsPages}</span>
+                        <button
+                          type="button"
+                          onClick={() => setLogsPage(p => Math.min(p + 1, totalLogsPages))}
+                          disabled={logsPage === totalLogsPages}
+                          className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none transition-all cursor-pointer"
+                        >
+                          Próxima
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

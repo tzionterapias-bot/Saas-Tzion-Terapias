@@ -6,6 +6,7 @@ import {
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
+import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 
 interface PatientProfileModalProps {
   patient: any;
@@ -85,13 +86,14 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
       });
 
       // 4. Contracts
+      const baseUrlForContracts = await getSystemBaseUrl();
       contracts.forEach(contract => {
           events.push({
               id: `contract-${contract.id}`,
               type: 'contract',
               date: new Date(contract.created_at),
               title: `Contrato de Serviço ${contract.status === 'signed' ? '(Assinado)' : '(Pendente)'}`,
-              description: `Acesse o termo no link: ${window.location.origin}/contrato/${contract.id}`,
+              description: `Acesse o termo no link: ${baseUrlForContracts}/contrato/${contract.id}`,
               status: contract.status
           });
       });
@@ -149,7 +151,8 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
 
       if (error) throw error;
 
-      const link = `${window.location.origin}/contrato/${contract.id}`;
+      const baseUrl = await getSystemBaseUrl();
+      const link = `${baseUrl}/contrato/${contract.id}`;
       const firstName = patient.name?.split(' ')[0] || 'Paciente';
       let msg = `[Contrato - Tzion Terapias]\n\n`;
       msg += `Olá, *${firstName}*! ✨\n\n`;
