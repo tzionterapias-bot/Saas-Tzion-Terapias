@@ -794,193 +794,229 @@ async function startCampaignWorker() {
 
   setInterval(async () => {
     try {
-      // 1. Fetch campaigns that are in 'running' status
-      const { data: runningCampaigns, error: campaignsErr } = await supabase
+      // 1. Fetch campaigns that are in 'running' or 'scheduled' status
+      const { data: activeCampaigns, error: campaignsErr } = await supabase
         .from('campaigns')
         .select('*')
-        .eq('status', 'running');
+        .in('status', ['running', 'scheduled']);
 
       if (campaignsErr) {
-        console.error("[WORKER] Error fetching running campaigns:", campaignsErr);
+        console.error("[WORKER] Error fetching active campaigns:", campaignsErr);
         return;
       }
 
-      if (!runningCampaigns || runningCampaigns.length === 0) {
+      if (!activeCampaigns || activeCampaigns.length === 0) {
         return;
       }
 
-      for (const campaign of runningCampaigns) {
-        // 2. Check delay constraints by querying the last sent campaign log
-        const { data: lastLog, error: lastLogErr } = await supabase
-          .from('campaign_logs')
-          .select('sent_at')
-          .eq('campaign_id', campaign.id)
-          .neq('status', 'pending')
-          .order('sent_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (lastLogErr) {
-          console.error(`[WORKER] Error querying last log for campaign ${campaign.id}:`, lastLogErr);
-          continue;
-        }
-
-        if (lastLog && lastLog.sent_at) {
-          const lastSentTime = new Date(lastLog.sent_at).getTime();
-          const nextAllowedTime = lastSentTime + (campaign.delay_seconds * 1000);
-          if (Date.now() < nextAllowedTime) {
-            continue; // Not enough time has passed yet
+      for (const campaign of activeCampaigns) {
+        // If scheduled, check if it's time to run
+        if (campaign.status === 'scheduled') {
+          if (!campaign.scheduled_at) continue;
+          const scheduledTime = new Date(campaign.scheduled_at).getTime();
+          if (Date.now() < scheduledTime) {
+            continue; // Not time yet
           }
-        }
-
-        // 3. Fetch the next pending contact log
-        const { data: nextLog, error: nextLogErr } = await supabase
-          .from('campaign_logs')
-          .select('id, patient_id, patient_phone')
-          .eq('campaign_id', campaign.id)
-          .eq('status', 'pending')
-          .order('created_at', { ascending: true }) // First-In-First-Out
-          .limit(1)
-          .maybeSingle();
-
-        if (nextLogErr) {
-          console.error(`[WORKER] Error querying next log for campaign ${campaign.id}:`, nextLogErr);
-          continue;
-        }
-
-        if (!nextLog) {
-          // All contacts sent! Mark campaign as completed.
-          console.log(`[WORKER] Campaign "${campaign.name}" has completed sending to all contacts.`);
+          // Promote scheduled to running
           await supabase
             .from('campaigns')
-            .update({ status: 'completed' })
+            .update({ status: 'running', scheduled_at: null })
             .eq('id', campaign.id);
+          campaign.status = 'running';
+        }
+
+        // Acquire lock to prevent double dispatch / concurrency race condition
+        const { data: lockedCampaigns } = await supabase
+          .from('campaigns')
+          .update({ is_locked: true })
+          .eq('id', campaign.id)
+          .eq('is_locked', false)
+          .select();
+
+        if (!lockedCampaigns || lockedCampaigns.length === 0) {
+          // Already locked by another worker instance or processing cycle
           continue;
         }
 
-        console.log(`[WORKER] Preparing to send message to ${nextLog.patient_phone} for campaign "${campaign.name}"`);
+        try {
+          // 2. Check delay constraints by querying the last sent campaign log
+          const { data: lastLog, error: lastLogErr } = await supabase
+            .from('campaign_logs')
+            .select('sent_at')
+            .eq('campaign_id', campaign.id)
+            .neq('status', 'pending')
+            .order('sent_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        // 4. Download attachment media if available
-        let mediaAttachment: { base64: string; mimeType: string; fileName: string } | null = null;
-        if (campaign.attachment_url) {
-          try {
-            console.log(`[WORKER] Downloading attachment from URL: ${campaign.attachment_url}`);
-            const fileRes = await fetch(campaign.attachment_url);
-            if (fileRes.ok) {
-              const contentType = fileRes.headers.get('content-type') || 'application/octet-stream';
-              const fileBuffer = await fileRes.arrayBuffer();
-              const base64Data = Buffer.from(fileBuffer).toString('base64');
-              const fileName = campaign.attachment_url.split('/').pop() || 'anexo';
-              
-              mediaAttachment = {
-                base64: base64Data,
-                mimeType: contentType,
-                fileName: fileName
-              };
-              console.log(`[WORKER] Downloaded attachment successfully. Size: ${fileBuffer.byteLength} bytes.`);
-            } else {
-              console.error(`[WORKER] Failed to download attachment: status ${fileRes.status}`);
-            }
-          } catch (fileErr) {
-            console.error("[WORKER] Error downloading/converting attachment:", fileErr);
+          if (lastLogErr) {
+            console.error(`[WORKER] Error querying last log for campaign ${campaign.id}:`, lastLogErr);
+            continue;
           }
-        }
 
-        // 5. Send message using the Evolution API (similar to src/lib/whatsapp.ts)
-        let success = false;
-        let finalStatus = 'failed';
-        let errorMessage: string | null = null;
+          if (lastLog && lastLog.sent_at) {
+            const lastSentTime = new Date(lastLog.sent_at).getTime();
+            const nextAllowedTime = lastSentTime + (campaign.delay_seconds * 1000);
+            if (Date.now() < nextAllowedTime) {
+              continue; // Not enough time has passed yet
+            }
+          }
 
-        if (isProduction && nextLog.patient_phone) {
-          const cleanPhone = String(nextLog.patient_phone).replace(/\D/g, '');
-          const waNumber = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+          // 3. Fetch the next pending contact log
+          const { data: nextLog, error: nextLogErr } = await supabase
+            .from('campaign_logs')
+            .select('id, patient_id, patient_phone')
+            .eq('campaign_id', campaign.id)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: true }) // First-In-First-Out
+            .limit(1)
+            .maybeSingle();
 
-          try {
-            let endpoint = `${apiUrl}/message/sendText/${instance}`;
-            let body: any = {
-              number: waNumber,
-              text: campaign.message,
-              options: { delay: 1200, presence: 'composing' }
-            };
+          if (nextLogErr) {
+            console.error(`[WORKER] Error querying next log for campaign ${campaign.id}:`, nextLogErr);
+            continue;
+          }
 
-            if (mediaAttachment) {
-              endpoint = `${apiUrl}/message/sendMedia/${instance}`;
-              let mediaType = 'document';
-              if (mediaAttachment.mimeType.startsWith('image/')) mediaType = 'image';
-              else if (mediaAttachment.mimeType.startsWith('video/')) mediaType = 'video';
-              else if (mediaAttachment.mimeType.startsWith('audio/')) mediaType = 'audio';
+          if (!nextLog) {
+            // All contacts sent! Mark campaign as completed.
+            console.log(`[WORKER] Campaign "${campaign.name}" has completed sending to all contacts.`);
+            await supabase
+              .from('campaigns')
+              .update({ status: 'completed' })
+              .eq('id', campaign.id);
+            continue;
+          }
 
-              body = {
+          console.log(`[WORKER] Preparing to send message to ${nextLog.patient_phone} for campaign "${campaign.name}"`);
+
+          // 4. Download attachment media if available
+          let mediaAttachment: { base64: string; mimeType: string; fileName: string } | null = null;
+          if (campaign.attachment_url) {
+            try {
+              console.log(`[WORKER] Downloading attachment from URL: ${campaign.attachment_url}`);
+              const fileRes = await fetch(campaign.attachment_url);
+              if (fileRes.ok) {
+                const contentType = fileRes.headers.get('content-type') || 'application/octet-stream';
+                const fileBuffer = await fileRes.arrayBuffer();
+                const base64Data = Buffer.from(fileBuffer).toString('base64');
+                const fileName = campaign.attachment_url.split('/').pop() || 'anexo';
+                
+                mediaAttachment = {
+                  base64: base64Data,
+                  mimeType: contentType,
+                  fileName: fileName
+                };
+                console.log(`[WORKER] Downloaded attachment successfully. Size: ${fileBuffer.byteLength} bytes.`);
+              } else {
+                console.error(`[WORKER] Failed to download attachment: status ${fileRes.status}`);
+              }
+            } catch (fileErr) {
+              console.error("[WORKER] Error downloading/converting attachment:", fileErr);
+            }
+          }
+
+          // 5. Send message using the Evolution API (similar to src/lib/whatsapp.ts)
+          let success = false;
+          let finalStatus = 'failed';
+          let errorMessage: string | null = null;
+
+          if (isProduction && nextLog.patient_phone) {
+            const cleanPhone = String(nextLog.patient_phone).replace(/\D/g, '');
+            const waNumber = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
+
+            try {
+              let endpoint = `${apiUrl}/message/sendText/${instance}`;
+              let body: any = {
                 number: waNumber,
-                options: { delay: 1200, presence: 'composing' },
-                mediatype: mediaType,
-                mimetype: mediaAttachment.mimeType,
-                caption: campaign.message,
-                media: mediaAttachment.base64,
-                fileName: mediaAttachment.fileName
+                text: campaign.message,
+                options: { delay: 1200, presence: 'composing' }
               };
-            }
 
-            const response = await fetch(endpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'apikey': apiKey
-              },
-              body: JSON.stringify(body)
-            });
+              if (mediaAttachment) {
+                endpoint = `${apiUrl}/message/sendMedia/${instance}`;
+                let mediaType = 'document';
+                if (mediaAttachment.mimeType.startsWith('image/')) mediaType = 'image';
+                else if (mediaAttachment.mimeType.startsWith('video/')) mediaType = 'video';
+                else if (mediaAttachment.mimeType.startsWith('audio/')) mediaType = 'audio';
 
-            if (response.ok) {
-              success = true;
-              finalStatus = 'sent';
-              console.log(`[WORKER] Successfully sent to ${waNumber}.`);
-            } else {
-              const errBody = await response.text();
-              console.error(`[WORKER] Failed to send message to ${waNumber}. Status: ${response.status}. Error:`, errBody);
-              errorMessage = `Status ${response.status}: ${errBody.substring(0, 150)}`;
+                body = {
+                  number: waNumber,
+                  options: { delay: 1200, presence: 'composing' },
+                  mediatype: mediaType,
+                  mimetype: mediaAttachment.mimeType,
+                  caption: campaign.message,
+                  media: mediaAttachment.base64,
+                  fileName: mediaAttachment.fileName
+                };
+              }
+
+              const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': apiKey
+                },
+                body: JSON.stringify(body)
+              });
+
+              if (response.ok) {
+                success = true;
+                finalStatus = 'sent';
+                console.log(`[WORKER] Successfully sent to ${waNumber}.`);
+              } else {
+                const errBody = await response.text();
+                console.error(`[WORKER] Failed to send message to ${waNumber}. Status: ${response.status}. Error:`, errBody);
+                errorMessage = `Status ${response.status}: ${errBody.substring(0, 150)}`;
+              }
+            } catch (err: any) {
+              console.error(`[WORKER] Network error sending message to ${waNumber}:`, err);
+              errorMessage = err.message || 'Network connection error';
             }
-          } catch (err: any) {
-            console.error(`[WORKER] Network error sending message to ${waNumber}:`, err);
-            errorMessage = err.message || 'Network connection error';
+          } else {
+            // Dev mock environment
+            console.log(`[WORKER][MOCK] Sent message to ${nextLog.patient_phone}. Msg: "${campaign.message}"`);
+            success = true;
+            finalStatus = 'test_sent';
           }
-        } else {
-          // Dev mock environment
-          console.log(`[WORKER][MOCK] Sent message to ${nextLog.patient_phone}. Msg: "${campaign.message}"`);
-          success = true;
-          finalStatus = 'test_sent';
+
+          // 6. Update campaign log status
+          await supabase
+            .from('campaign_logs')
+            .update({
+              status: success ? 'sent' : 'failed',
+              error_message: errorMessage,
+              sent_at: new Date().toISOString()
+            })
+            .eq('id', nextLog.id);
+
+          // 7. Insert entry into communications_log
+          await supabase.from('communications_log').insert([{
+            patient_id: nextLog.patient_id,
+            type: 'whatsapp',
+            trigger_event: 'marketing_campaign',
+            status: finalStatus,
+            content: campaign.attachment_url ? `[Anexo Enviado] ${campaign.message}` : campaign.message
+          }]);
+
+          // 8. Recalculate campaign sent_contacts count
+          const { data: sentCountRes } = await supabase
+            .from('campaign_logs')
+            .select('id')
+            .eq('campaign_id', campaign.id)
+            .eq('status', 'sent');
+
+          const totalSent = sentCountRes?.length || 0;
+          await supabase
+            .from('campaigns')
+            .update({ sent_contacts: totalSent })
+            .eq('id', campaign.id);
+        } finally {
+          // Always release lock when this campaign iteration finishes
+          await supabase
+            .from('campaigns')
+            .update({ is_locked: false })
+            .eq('id', campaign.id);
         }
-
-        // 6. Update campaign log status
-        await supabase
-          .from('campaign_logs')
-          .update({
-            status: success ? 'sent' : 'failed',
-            error_message: errorMessage,
-            sent_at: new Date().toISOString()
-          })
-          .eq('id', nextLog.id);
-
-        // 7. Insert entry into communications_log
-        await supabase.from('communications_log').insert([{
-          patient_id: nextLog.patient_id,
-          type: 'whatsapp',
-          trigger_event: 'marketing_campaign',
-          status: finalStatus,
-          content: campaign.attachment_url ? `[Anexo Enviado] ${campaign.message}` : campaign.message
-        }]);
-
-        // 8. Recalculate campaign sent_contacts count
-        const { data: sentCountRes } = await supabase
-          .from('campaign_logs')
-          .select('id')
-          .eq('campaign_id', campaign.id)
-          .eq('status', 'sent');
-
-        const totalSent = sentCountRes?.length || 0;
-        await supabase
-          .from('campaigns')
-          .update({ sent_contacts: totalSent })
-          .eq('id', campaign.id);
       }
     } catch (err) {
       console.error("[WORKER] Fatal error in campaign worker processing iteration:", err);
