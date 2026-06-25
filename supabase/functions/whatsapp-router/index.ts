@@ -143,6 +143,91 @@ serve(async (req) => {
       .limit(1)
       .maybeSingle();
 
+    // --- INTERCEPTAÇÃO DE RESPOSTA NPS ---
+    if (ticket && ticket.status === 'awaiting_nps') {
+      const trimmedText = text.trim();
+      const isNumber = /^\d+$/.test(trimmedText);
+      const score = isNumber ? parseInt(trimmedText, 10) : null;
+      const isValidScore = score !== null && score >= 0 && score <= 10;
+
+      if (isValidScore) {
+        // Localiza o paciente associado
+        const cleanIncoming = customerPhone.replace(/\D/g, '');
+        const searchPhone = cleanIncoming.startsWith('55') && (cleanIncoming.length === 12 || cleanIncoming.length === 13)
+          ? cleanIncoming.substring(2)
+          : cleanIncoming;
+
+        const { data: matchingPatients } = await supabase
+          .from('patients')
+          .select('id, name, phone')
+          .eq('status', 'Ativo');
+
+        const patient = matchingPatients?.find((p: any) => {
+          const cleanDb = (p.phone || '').replace(/\D/g, '');
+          const dbPhoneNoCountry = cleanDb.startsWith('55') ? cleanDb.substring(2) : cleanDb;
+          return dbPhoneNoCountry === searchPhone;
+        });
+
+        let latestAppId = null;
+        if (patient) {
+          const { data: latestApp } = await supabase
+            .from('appointments')
+            .select('id')
+            .eq('patient_id', patient.id)
+            .order('start_time', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (latestApp) {
+            latestAppId = latestApp.id;
+          }
+        }
+
+        // Insere o NPS na tabela de feedbacks
+        await supabase.from('nps_feedbacks').insert({
+          patient_id: patient?.id || null,
+          appointment_id: latestAppId,
+          score: score
+        });
+
+        // Garante que o ticket seja fechado
+        await supabase
+          .from("service_tickets")
+          .update({ status: "closed", last_message: text })
+          .eq("id", ticket.id);
+
+        // Salva a resposta no histórico de chat
+        await supabase.from("chat_messages").insert({
+          customer_phone: customerPhone,
+          message_body: text,
+          sender_type: "customer",
+          message_type: "text",
+          instance_id: body.instanceId || body.data?.instanceId || Deno.env.get("EVOLUTION_INSTANCE_NAME") || "tzion"
+        });
+
+        // Envia mensagem de agradecimento
+        await sendMessage(remoteJid, "Muito obrigado pela sua avaliação! Sua opinião é muito importante para nós. 💚");
+
+        return new Response(JSON.stringify({ status: "nps_recorded" }), { headers: corsHeaders });
+      } else {
+        // Se não for uma nota de 0 a 10, reabre o ticket no status 'open' para o atendimento responder
+        await supabase
+          .from("service_tickets")
+          .update({ status: "open", last_message: text })
+          .eq("id", ticket.id);
+
+        // Salvar a mensagem no histórico
+        await supabase.from("chat_messages").insert({
+          customer_phone: customerPhone,
+          message_body: text,
+          sender_type: "customer",
+          message_type: "text",
+          instance_id: body.instanceId || body.data?.instanceId || Deno.env.get("EVOLUTION_INSTANCE_NAME") || "tzion"
+        });
+
+        return new Response(JSON.stringify({ status: "ticket_reopened" }), { headers: corsHeaders });
+      }
+    }
+
     // 2. Se não houver ticket, iniciar triagem
     if (!ticket) {
       const { data: newTicket } = await supabase
@@ -205,11 +290,11 @@ serve(async (req) => {
 
     // 4. Se já tiver departamento atribuído, salvar a mensagem no histórico
     await supabase.from("chat_messages").insert({
-      ticket_id: ticket.id,
+      customer_phone: customerPhone,
+      message_body: text,
       sender_type: "customer",
-      sender_id: customerPhone,
-      content: text,
-      evolution_msg_id: data.key.id
+      message_type: "text",
+      instance_id: body.instanceId || body.data?.instanceId || Deno.env.get("EVOLUTION_INSTANCE_NAME") || "tzion"
     });
 
     return new Response(JSON.stringify({ status: "message_saved" }), {
