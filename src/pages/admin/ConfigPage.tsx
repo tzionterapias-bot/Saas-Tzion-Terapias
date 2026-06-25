@@ -5,28 +5,28 @@ import { supabase } from '@/src/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 
 // ============================================================
-// MODELO PADRÃƒO DE ANAMNESE â€” inserido automaticamente no primeiro uso
+// MODELO PADRãO DE ANAMNESE — inserido automaticamente no primeiro uso
 // ============================================================
 const DEFAULT_ANAMNESIS_FIELDS = [
   { id: 'f1',  label: 'Nome Completo',                       type: 'text',     required: true  },
   { id: 'f2',  label: 'Data de Nascimento',                  type: 'date',     required: true  },
-  { id: 'f3',  label: 'Estado Civil',                        type: 'select',   required: false, options: ['Solteiro(a)', 'Casado(a)', 'DiÃ³rcio/SeparaÃ§Ã£o', 'ViÃºvo(a)', 'UniÃ£o EstÃ¡vel'] },
-  { id: 'f4',  label: 'ProfissÃ£o / OcupaÃ§Ã£o',               type: 'text',     required: false },
+  { id: 'f3',  label: 'Estado Civil',                        type: 'select',   required: false, options: ['Solteiro(a)', 'Casado(a)', 'Divórcio/Separação', 'Viúvo(a)', 'União Estável'] },
+  { id: 'f4',  label: 'Profissão / Ocupação',               type: 'text',     required: false },
   { id: 'f5',  label: 'Queixa Principal (Motivo da Consulta)', type: 'textarea', required: true  },
-  { id: 'f6',  label: 'HÃ¡ quanto tempo apresenta este sintoma?', type: 'text',   required: false },
-  { id: 'f7',  label: 'JÃ¡ fez acompanhamento psicoterÃ¡pico antes?', type: 'yesno', required: true },
+  { id: 'f6',  label: 'Há quanto tempo apresenta este sintoma?', type: 'text',   required: false },
+  { id: 'f7',  label: 'Já fez acompanhamento psicoterápico antes?', type: 'yesno', required: true },
   { id: 'f8',  label: 'Faz uso de algum medicamento atualmente?',   type: 'yesno', required: true },
   { id: 'f9',  label: 'Se sim, qual medicamento e dosagem?',   type: 'textarea', required: false },
-  { id: 'f10', label: 'HistÃ³rico de doenÃ§as mentais na famÃ­lia', type: 'yesno',   required: false },
-  { id: 'f11', label: 'Como vocÃª classifica sua qualidade de sono?', type: 'scale', required: false },
-  { id: 'f12', label: 'NÃ­vel de estresse atual (0 = baixo, 10 = muito alto)', type: 'scale', required: false },
-  { id: 'f13', label: 'O que espera alcanÃ§ar com a terapia?',    type: 'textarea', required: true  },
+  { id: 'f10', label: 'Histórico de doenças mentais na família', type: 'yesno',   required: false },
+  { id: 'f11', label: 'Como você classifica sua qualidade de sono?', type: 'scale', required: false },
+  { id: 'f12', label: 'Nível de estresse atual (0 = baixo, 10 = muito alto)', type: 'scale', required: false },
+  { id: 'f13', label: 'O que espera alcançar com a terapia?',    type: 'textarea', required: true  },
 ];
 
 const ROOM_COLORS = [
-  { label: 'Ãndigo', value: '#6366f1' },
+  { label: 'Índigo', value: '#6366f1' },
   { label: 'Esmeralda', value: '#10b981' },
-  { label: 'Ã‚mbar', value: '#f59e0b' },
+  { label: 'Âmbar', value: '#f59e0b' },
   { label: 'Rosa', value: '#f43f5e' },
   { label: 'Ciano', value: '#06b6d4' },
   { label: 'Violeta', value: '#8b5cf6' },
@@ -34,14 +34,14 @@ const ROOM_COLORS = [
 
 const configSections = [
   { id: 'perfil', title: 'Perfil da Clínica', desc: 'Dados básicos, logo e informações de contato.', icon: User, items: ['Nome Fantasia', 'CNPJ / CPF', 'Endereço', 'URL do Sistema', 'Escala de Horários'] },
-  { id: 'seguranca', title: 'SeguranÃ§a & Acesso', desc: 'Controle de senhas, autenticaÃ§Ã£o e permissÃµes.', icon: Shield, items: ['Alterar Senha', 'AutenticaÃ§Ã£o 2FA'] },
-  { id: 'usuarios', title: 'GestÃ£o de Equipe', desc: 'Cadastre funcionÃ¡rios e gerencie permissÃµes do sistema.', icon: User, items: ['Equipe Administrativa'] },
+  { id: 'seguranca', title: 'Segurança & Acesso', desc: 'Controle de senhas, autenticação e permissões.', icon: Shield, items: ['Alterar Senha', 'Autenticação 2FA'] },
+  { id: 'usuarios', title: 'Gestão de Equipe', desc: 'Cadastre funcionários e gerencie permissões do sistema.', icon: User, items: ['Equipe Administrativa'] },
   { id: 'equipe', title: 'Equipe & Terapeutas', desc: 'Gerencie os profissionais e suas especialidades.', icon: Users, items: ['→ Ir para Gestão de Terapeutas'] },
-  { id: 'salas', title: 'Salas de Atendimento', desc: 'Cadastre e gerencie as salas disponÃ­veis na clÃ­nica.', icon: DoorOpen, items: ['Gerenciar Salas'] },
-  { id: 'servicos', title: 'ServiÃ§os & PreÃ§os', desc: 'Defina as terapias oferecidas e valores das sessÃµes.', icon: CreditCard, items: ['CatÃ¡logo de ServiÃ§os'] },
-  { id: 'clinico', title: 'ClÃ­nico & Anamnese', desc: 'Configure os modelos de perguntas e campos do prontuÃ¡rio.', icon: FileText, items: ['Modelos de Anamnese', 'Tipos de EvoluÃ§Ã£o', 'Termos de Consentimento'] },
-  { id: 'notificacoes', title: 'NotificaÃ§Ãµes & Alertas', desc: 'Configure o envio de lembretes via WhatsApp/E-mail.', icon: Bell, items: ['Lembretes de SessÃ£o', 'Pesquisa NPS (SatisfaÃ§Ã£o)', 'AutomaÃ§Ã£o de Tickets'] },
-  { id: 'integracoes', title: 'API & IntegraÃ§Ãµes', desc: 'Configure chaves e webhooks de automaÃ§Ã£o.', icon: Database, items: ['API Asaas', 'AutomaÃ§Ã£o (n8n / Make)'] },
+  { id: 'salas', title: 'Salas de Atendimento', desc: 'Cadastre e gerencie as salas disponíveis na clínica.', icon: DoorOpen, items: ['Gerenciar Salas'] },
+  { id: 'servicos', title: 'Serviços & Preços', desc: 'Defina as terapias oferecidas e valores das sessões.', icon: CreditCard, items: ['Catálogo de Serviços'] },
+  { id: 'clinico', title: 'Clínico & Anamnese', desc: 'Configure os modelos de perguntas e campos do prontuário.', icon: FileText, items: ['Modelos de Anamnese', 'Tipos de Evolução', 'Termos de Consentimento'] },
+  { id: 'notificacoes', title: 'Notificações & Alertas', desc: 'Configure o envio de lembretes via WhatsApp/E-mail.', icon: Bell, items: ['Lembretes de Sessão', 'Pesquisa NPS (Satisfação)', 'Automação de Tickets'] },
+  { id: 'integracoes', title: 'API & Integrações', desc: 'Configure chaves e webhooks de automação.', icon: Database, items: ['API Asaas', 'Automação (n8n / Make)'] },
 ];
 
 export default function ConfigPage() {
@@ -57,7 +57,7 @@ export default function ConfigPage() {
   const [addingService, setAddingService] = useState(false);
   const [newServiceName, setNewServiceName] = useState('');
   const [newServicePrice, setNewServicePrice] = useState('');
-  const [newServiceType, setNewServiceType] = useState('sessÃ£o avulsa');
+  const [newServiceType, setNewServiceType] = useState('sessão avulsa');
   const [newServiceDesc, setNewServiceDesc] = useState('');
   const [newServiceDuration, setNewServiceDuration] = useState('60');
   const [newServiceSessions, setNewServiceSessions] = useState('1');
@@ -92,12 +92,12 @@ export default function ConfigPage() {
     sessionReminders: true, 
     paymentConfirm: true, 
     birthdayReminder: true, 
-    birthdayMessage: 'OlÃ¡, {{nome}}! ðŸŽ‚âœ¨\nA equipe da Tzion Terapias deseja um feliz aniversÃ¡rio! Que este novo ano seja repleto de evoluÃ§Ã£o, paz e conquistas. ParabÃ©ns!' 
+    birthdayMessage: 'Olá, {{nome}}! 🎂✨\nA equipe da Tzion Terapias deseja um feliz aniversário! Que este novo ano seja repleto de evolução, paz e conquistas. Parabéns!' 
   });
-  const [npsSettings, setNpsSettings] = useState({ delay_minutes: 30, message: 'OlÃ¡! GostarÃ­amos de saber como foi sua sessÃ£o de hoje na ClÃ­nica Tzion Terapias. De 0 a 10, o quanto vocÃª recomendaria nossos serviÃ§os?' });
-  const [contractTemplate, setContractTemplate] = useState('Este Ã© o contrato padrÃ£o. Paciente: {{nome_paciente}}, CPF: {{cpf_paciente}}, Data: {{data_atual}}.');
+  const [npsSettings, setNpsSettings] = useState({ delay_minutes: 30, message: 'Olá! Gostaríamos de saber como foi sua sessão de hoje na Clínica Tzion Terapias. De 0 a 10, o quanto você recomendaria nossos serviços?' });
+  const [contractTemplate, setContractTemplate] = useState('Este é o contrato padrão. Paciente: {{nome_paciente}}, CPF: {{cpf_paciente}}, Data: {{data_atual}}.');
   const [contractPreview, setContractPreview] = useState(false);
-  const [ticketSettings, setTicketSettings] = useState({ autoCloseHours: 24, closeMessage: 'Seu atendimento foi encerrado devido Ã  falta de interaÃ§Ã£o nas Ãºltimas 24 horas. Caso precise de ajuda, envie uma nova mensagem!' });
+  const [ticketSettings, setTicketSettings] = useState({ autoCloseHours: 24, closeMessage: 'Seu atendimento foi encerrado devido à falta de interação nas últimas 24 horas. Caso precise de ajuda, envie uma nova mensagem!' });
 
   const [whiteLabel, setWhiteLabel] = useState({ primaryColor: '#4f46e5', secondaryColor: '#e0e7ff', logoUrl: '', portalName: 'Tzion Terapias' });
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -108,7 +108,7 @@ export default function ConfigPage() {
     if (!file) return;
 
     if (file.size > 2 * 1024 * 1024) {
-      alert('A imagem deve ter no mÃ¡ximo 2MB.');
+      alert('A imagem deve ter no máximo 2MB.');
       return;
     }
 
@@ -136,13 +136,13 @@ export default function ConfigPage() {
   ];
 
   const FIELD_TYPES = [
-    { value: 'text',     label: 'Texto Curto',   icon: 'ðŸ·' },
-    { value: 'textarea', label: 'Texto Longo',   icon: 'ðŸ“' },
-    { value: 'select',   label: 'MÃºltipla Escolha', icon: 'âœ…' },
-    { value: 'checkbox', label: 'Caixas de SeleÃ§Ã£o', icon: 'â˜‘ï¸' },
-    { value: 'date',     label: 'Data',          icon: 'ðŸ“…' },
-    { value: 'scale',    label: 'Escala (1-10)', icon: 'ðŸ“Š' },
-    { value: 'yesno',    label: 'Sim / NÃ£o',     icon: 'ðŸ”„' },
+    { value: 'text',     label: 'Texto Curto',   icon: '📝' },
+    { value: 'textarea', label: 'Texto Longo',   icon: '📄' },
+    { value: 'select',   label: 'Múltipla Escolha', icon: '✅' },
+    { value: 'checkbox', label: 'Caixas de Seleção', icon: '☑️' },
+    { value: 'date',     label: 'Data',          icon: '📅' },
+    { value: 'scale',    label: 'Escala (1-10)', icon: '📊' },
+    { value: 'yesno',    label: 'Sim / Não',     icon: '🔄' },
   ];
 
   const fetchData = async () => {
@@ -151,11 +151,11 @@ export default function ConfigPage() {
     setServices(s || []);
     const { data: ct } = await supabase.from('clinical_templates').select('*').order('created_at');
     setClinicalTemplates(ct || []);
-    // Auto-seed: se nÃ£o hÃ¡ nenhum modelo de anamnese, insere o padrÃ£o do sistema
+    // Auto-seed: se não há nenhum modelo de anamnese, insere o padrão do sistema
     const hasAnamnesis = (ct || []).some((t: any) => t.category === 'anamnesis');
     if (!hasAnamnesis) {
       await supabase.from('clinical_templates').insert({
-        title: 'Anamnese Inicial PadrÃ£o',
+        title: 'Anamnese Inicial Padrão',
         category: 'anamnesis',
         fields: DEFAULT_ANAMNESIS_FIELDS,
       });
@@ -182,7 +182,7 @@ export default function ConfigPage() {
         if (ints && ints.value) setIntegrations(ints.value);
         try {
            const { data: hasAsaas } = await supabase.rpc('has_asaas_key');
-           if (hasAsaas) setIntegrations(prev => ({ ...prev, asaas_token: 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢' }));
+           if (hasAsaas) setIntegrations(prev => ({ ...prev, asaas_token: '••••••••••••••••' }));
         } catch(e) {}
         const sec = setts.find(s => s.key === 'security');
         if (sec && sec.value) setSecuritySettings(sec.value);
@@ -195,7 +195,7 @@ export default function ConfigPage() {
           sessionReminders: true,
           paymentConfirm: true,
           birthdayReminder: true,
-          birthdayMessage: 'OlÃ¡, {{nome}}! ðŸŽ‚âœ¨\nA equipe da Tzion Terapias deseja um feliz aniversÃ¡rio! Que este novo ano seja repleto de evoluÃ§Ã£o, paz e conquistas. ParabÃ©ns!',
+          birthdayMessage: 'Olá, {{nome}}! 🎂✨\nA equipe da Tzion Terapias deseja um feliz aniversário! Que este novo ano seja repleto de evolução, paz e conquistas. Parabéns!',
           ...notifs.value
         });
         const nps = setts.find(s => s.key === 'nps_settings');
@@ -209,13 +209,13 @@ export default function ConfigPage() {
         const evolTypes = setts.find(s => s.key === 'evolution_types');
         if (evolTypes && evolTypes.value) setEvolutionTypes(evolTypes.value);
         else setEvolutionTypes([
-          { id: 'prog', name: 'Progresso', color: '#10b981', description: 'Registro de avanÃ§os terapÃªuticos' },
-          { id: 'sess', name: 'SessÃ£o Regular', color: '#6366f1', description: 'Nota de sessÃ£o padrÃ£o' },
-          { id: 'crise', name: 'Crise / IntercorrÃªncia', color: '#f43f5e', description: 'Registro de situaÃ§Ãµes urgentes' },
-          { id: 'alta', name: 'Alta TerapÃªutica', color: '#f59e0b', description: 'Encerramento do processo' },
+          { id: 'prog', name: 'Progresso', color: '#10b981', description: 'Registro de avanços terapêuticos' },
+          { id: 'sess', name: 'Sessão Regular', color: '#6366f1', description: 'Nota de sessão padrão' },
+          { id: 'crise', name: 'Crise / Intercorrência', color: '#f43f5e', description: 'Registro de situações urgentes' },
+          { id: 'alta', name: 'Alta Terapêutica', color: '#f59e0b', description: 'Encerramento do processo' },
         ]);
       }
-    } catch(e) { console.log('Tabela settings pode nÃ£o existir ainda'); }
+    } catch(e) { console.log('Tabela settings pode não existir ainda'); }
     
     setLoading(false);
   };
@@ -229,13 +229,13 @@ export default function ConfigPage() {
       });
       const data = await response.json();
       if (data.success) {
-        alert('SincronizaÃ§Ã£o concluÃ­da com sucesso!\n\n' + data.log.join('\n'));
+        alert('Sincronização concluída com sucesso!\n\n' + data.log.join('\n'));
       } else {
         alert('Erro ao sincronizar: ' + (data.error || 'Erro desconhecido'));
       }
     } catch (err) {
       console.error(err);
-      alert('Erro ao executar sincronizaÃ§Ã£o.');
+      alert('Erro ao executar sincronização.');
     }
     await fetchData();
   };
@@ -281,7 +281,7 @@ export default function ConfigPage() {
     });
     setNewServiceName('');
     setNewServicePrice('');
-    setNewServiceType('sessÃ£o avulsa');
+    setNewServiceType('sessão avulsa');
     setNewServiceDesc('');
     setNewServiceDuration('60');
     setNewServiceSessions('1');
@@ -302,7 +302,7 @@ export default function ConfigPage() {
   const insertDefaultTemplate = async () => {
     setLoading(true);
     await supabase.from('clinical_templates').insert({
-      title: 'Anamnese Inicial PadrÃ£o',
+      title: 'Anamnese Inicial Padrão',
       category: 'anamnesis',
       fields: DEFAULT_ANAMNESIS_FIELDS,
     });
@@ -410,14 +410,14 @@ export default function ConfigPage() {
     setLoading(true);
     try {
       let safeIntegrations = { ...integrations };
-      if (integrations.asaas_token && integrations.asaas_token !== 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢') {
+      if (integrations.asaas_token && integrations.asaas_token !== '••••••••••••••••') {
         const { error } = await supabase.rpc('set_asaas_key', { secret_key: integrations.asaas_token });
         if (!error) {
           const { asaas_token, ...rest } = safeIntegrations as any;
           safeIntegrations = rest as any;
-          setIntegrations(prev => ({...prev, asaas_token: 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢'}));
+          setIntegrations(prev => ({...prev, asaas_token: '••••••••••••••••'}));
         }
-      } else if (integrations.asaas_token === 'â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢') {
+      } else if (integrations.asaas_token === '••••••••••••••••') {
          const { asaas_token, ...rest } = safeIntegrations as any;
          safeIntegrations = rest as any;
       }
@@ -443,7 +443,7 @@ export default function ConfigPage() {
     <div className="space-y-10 animate-in fade-in duration-500 pb-20">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">ConfiguraÃ§Ãµes</h2>
+          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Configurações</h2>
           <p className="text-slate-500 font-medium">Controle total do ecossistema Tzion Terapias.</p>
         </div>
         <button onClick={handleSyncAll} className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2">
@@ -498,7 +498,7 @@ export default function ConfigPage() {
               </div>
 
               <div className="p-8 overflow-y-auto space-y-8">
-                {editingItem.section === 'Perfil da ClÃ­nica' && (
+                {editingItem.section === 'Perfil da Clínica' && (
                   <div className="space-y-4">
                     <label className="text-xs font-bold text-slate-500 uppercase">{editingItem.item}</label>
                     {editingItem.item === 'Nome Fantasia' && (
@@ -507,34 +507,34 @@ export default function ConfigPage() {
                     {editingItem.item === 'CNPJ / CPF' && (
                       <input value={clinicProfile.cnpj} onChange={e => setClinicProfile({...clinicProfile, cnpj: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="CNPJ / CPF" />
                     )}
-                    {editingItem.item === 'EndereÃ§o' && (
-                      <input value={clinicProfile.address} onChange={e => setClinicProfile({...clinicProfile, address: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="EndereÃ§o Completo" />
+                    {editingItem.item === 'Endereço' && (
+                      <input value={clinicProfile.address} onChange={e => setClinicProfile({...clinicProfile, address: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="Endereço Completo" />
                     )}
                     {editingItem.item === 'URL do Sistema' && (
                       <div className="space-y-2">
                         <input value={clinicProfile.system_url || ''} onChange={e => setClinicProfile({...clinicProfile, system_url: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" placeholder="https://app.tzionterapias.com.br" />
-                        <p className="text-xs text-slate-400 font-medium">Digite a URL base de produÃ§Ã£o do sistema. Ela serÃ¡ utilizada como domÃ­nio de origem para os links enviados de forma automatizada por WhatsApp (anamnese, contratos, NPS, etc.).</p>
+                        <p className="text-xs text-slate-400 font-medium">Digite a URL base de produção do sistema. Ela será utilizada como domínio de origem para os links enviados de forma automatizada por WhatsApp (anamnese, contratos, NPS, etc.).</p>
                       </div>
                     )}
                   </div>
                 )}
 
-                {editingItem.section === 'SeguranÃ§a & Acesso' && (
+                {editingItem.section === 'Segurança & Acesso' && (
                   <div className="space-y-6">
                     {editingItem.item === 'Alterar Senha' && (
                       <div className="space-y-4">
                         <div className="p-4 bg-indigo-50 text-indigo-700 rounded-2xl text-sm font-medium border border-indigo-100 flex items-start gap-3">
                            <Shield className="w-5 h-5 mt-0.5 shrink-0" />
-                           <p>Para sua seguranÃ§a, enviaremos um link de redefiniÃ§Ã£o para o e-mail cadastrado na conta administradora.</p>
+                           <p>Para sua segurança, enviaremos um link de redefinição para o e-mail cadastrado na conta administradora.</p>
                         </div>
-                        <button className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-bold shadow-xl shadow-slate-200 transition-colors">Enviar E-mail de RedefiniÃ§Ã£o</button>
+                        <button className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-bold shadow-xl shadow-slate-200 transition-colors">Enviar E-mail de Redefinição</button>
                       </div>
                     )}
-                    {editingItem.item === 'AutenticaÃ§Ã£o 2FA' && (
+                    {editingItem.item === 'Autenticação 2FA' && (
                       <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-200">
                         <div>
-                          <p className="font-bold text-slate-900">ProteÃ§Ã£o 2FA</p>
-                          <p className="text-xs text-slate-500 mt-1">Exigir cÃ³digo via SMS/E-mail no login</p>
+                          <p className="font-bold text-slate-900">Proteção 2FA</p>
+                          <p className="text-xs text-slate-500 mt-1">Exigir código via SMS/E-mail no login</p>
                         </div>
                         <button onClick={() => setSecuritySettings({twoFactor: !securitySettings.twoFactor})} className={cn("relative inline-flex h-7 w-12 items-center rounded-full transition-colors", securitySettings.twoFactor ? "bg-indigo-600" : "bg-slate-300")}>
                           <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white transition-transform", securitySettings.twoFactor ? "translate-x-6" : "translate-x-1")} />
@@ -544,20 +544,20 @@ export default function ConfigPage() {
                   </div>
                 )}
 
-                {editingItem.section === 'API & IntegraÃ§Ãµes' && (
+                {editingItem.section === 'API & Integrações' && (
                   <div className="space-y-4">
                     {editingItem.item === 'API Asaas' && (
                       <div className="space-y-6">
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Token Asaas (Chave de API)</label>
-                          <input value={integrations.asaas_token} onChange={e => setIntegrations({...integrations, asaas_token: e.target.value})} type="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                          <input value={integrations.asaas_token} onChange={e => setIntegrations({...integrations, asaas_token: e.target.value})} type="password" placeholder="••••••••••••••••" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
                         </div>
                         
                         <div className="pt-4 border-t border-slate-100">
-                          <h4 className="text-sm font-bold text-slate-900 mb-2">ConfiguraÃ§Ã£o do Webhook</h4>
+                          <h4 className="text-sm font-bold text-slate-900 mb-2">Configuração do Webhook</h4>
                           <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                            Para que o sistema receba as confirmaÃ§Ãµes de pagamento automaticamente, vÃ¡ no seu painel do Asaas em 
-                            <strong className="text-slate-700"> Minha Conta &gt; IntegraÃ§Ãµes &gt; Webhooks</strong> e cole a URL abaixo. Ative os eventos de <strong>"CobranÃ§a Criada"</strong> e <strong>"CobranÃ§a Paga"</strong>.
+                            Para que o sistema receba as confirmações de pagamento automaticamente, vá no seu painel do Asaas em 
+                            <strong className="text-slate-700"> Minha Conta &gt; Integrações &gt; Webhooks</strong> e cole a URL abaixo. Ative os eventos de <strong>"Cobrança Criada"</strong> e <strong>"Cobrança Paga"</strong>.
                           </p>
                           
                           <div className="p-4 bg-slate-900 rounded-2xl flex items-center justify-between gap-4 mb-4 shadow-inner">
@@ -589,10 +589,10 @@ export default function ConfigPage() {
                         </div>
                       </div>
                     )}
-                    {editingItem.item === 'AutomaÃ§Ã£o (n8n / Make)' && (
+                    {editingItem.item === 'Automação (n8n / Make)' && (
                       <div className="space-y-4">
                         <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-2xl text-sm font-medium text-indigo-800 leading-relaxed mb-4">
-                          O sistema irÃ¡ atirar um POST (Webhook) com os dados (nome, telefone, data, hora, tipo da sessÃ£o) para essa URL sempre que um <strong>novo agendamento</strong> for salvo. Use o nÃ³ Webhook do n8n para capturar esses dados, criar no Calendar/Meet e enviar a mensagem no WhatsApp.
+                          O sistema irá atirar um POST (Webhook) com os dados (nome, telefone, data, hora, tipo da sessão) para essa URL sempre que um <strong>novo agendamento</strong> for salvo. Use o nó Webhook do n8n para capturar esses dados, criar no Calendar/Meet e enviar a mensagem no WhatsApp.
                         </div>
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">URL do Webhook (Agendamentos)</label>
@@ -603,7 +603,7 @@ export default function ConfigPage() {
                   </div>
                 )}
 
-                {editingItem.section === 'GestÃ£o de Equipe' && (
+                {editingItem.section === 'Gestão de Equipe' && (
                   <div className="space-y-3">
                     {teamRoles.map(role => (
                       <div key={role} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
@@ -699,7 +699,7 @@ export default function ConfigPage() {
                         <input
                           value={newRoomDesc}
                           onChange={e => setNewRoomDesc(e.target.value)}
-                          placeholder="DescriÃ§Ã£o ou equipamentos (opcional)"
+                          placeholder="Descrição ou equipamentos (opcional)"
                           className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-indigo-900 placeholder:text-indigo-300"
                         />
                         <div className="grid grid-cols-2 gap-3">
@@ -742,7 +742,7 @@ export default function ConfigPage() {
                   </div>
                 )}
 
-                {editingItem.section === 'ServiÃ§os & PreÃ§os' && (
+                {editingItem.section === 'Serviços & Preços' && (
                   <div className="space-y-3">
                     {services.map(s => (
                       <div key={s.id} className="flex items-start justify-between p-5 bg-slate-50 rounded-2xl border border-slate-100">
@@ -750,7 +750,7 @@ export default function ConfigPage() {
                            <div className="flex items-center gap-2 mb-1">
                              <p className="font-bold text-slate-900">{s.name}</p>
                              <span className={cn("px-2 py-0.5 rounded-md text-[9px] font-bold uppercase", s.type === 'pacote' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700')}>
-                               {s.type === 'pacote' ? `Pacote (${s.sessions_count || 1}x)` : 'SessÃ£o'}
+                               {s.type === 'pacote' ? `Pacote (${s.sessions_count || 1}x)` : 'Sessão'}
                              </span>
                            </div>
                            {s.description && <p className="text-xs text-slate-500 font-medium mb-2">{s.description}</p>}
@@ -773,20 +773,20 @@ export default function ConfigPage() {
                     {addingService ? (
                       <div className="p-5 bg-indigo-50 border border-indigo-100 rounded-2xl flex flex-col gap-4">
                         <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Nome do ServiÃ§o / Pacote</label>
-                          <input autoFocus value={newServiceName} onChange={e => setNewServiceName(e.target.value)} placeholder="Ex: SessÃ£o de Psicologia, Pacote EstÃ©tica..." className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 shadow-sm" />
+                          <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Nome do Serviço / Pacote</label>
+                          <input autoFocus value={newServiceName} onChange={e => setNewServiceName(e.target.value)} placeholder="Ex: Sessão de Psicologia, Pacote Estética..." className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 shadow-sm" />
                         </div>
                         
                         <div className={cn("grid gap-3", newServiceType === 'pacote' ? "grid-cols-2 md:grid-cols-4" : "grid-cols-1 md:grid-cols-3")}>
                           <div className="space-y-1.5">
                              <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Tipo</label>
                              <select value={newServiceType} onChange={e => setNewServiceType(e.target.value)} className="w-full bg-white pl-3 pr-8 py-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 text-sm cursor-pointer shadow-sm">
-                                <option value="sessÃ£o avulsa">SessÃ£o Avulsa</option>
+                                <option value="sessão avulsa">Sessão Avulsa</option>
                                 <option value="pacote">Pacote</option>
                              </select>
                           </div>
                           <div className="space-y-1.5">
-                             <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">PreÃ§o (R$)</label>
+                             <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Preço (R$)</label>
                              <input value={newServicePrice} onChange={e => setNewServicePrice(e.target.value)} placeholder="0.00" type="number" className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 shadow-sm" />
                           </div>
                           <div className="space-y-1.5">
@@ -795,7 +795,7 @@ export default function ConfigPage() {
                           </div>
                           {newServiceType === 'pacote' && (
                             <div className="space-y-1.5">
-                               <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest ml-1">Qtd. SessÃµes</label>
+                               <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest ml-1">Qtd. Sessões</label>
                                <input value={newServiceSessions} onChange={e => setNewServiceSessions(e.target.value)} placeholder="1" type="number" className="w-full bg-white p-4 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 font-black text-amber-900 placeholder:text-amber-300 text-center border-2 border-amber-300 shadow-sm" />
                             </div>
                           )}
@@ -803,21 +803,21 @@ export default function ConfigPage() {
                         
                         <div className="space-y-1.5">
                           <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Descritivo (Opcional)</label>
-                          <textarea value={newServiceDesc} onChange={e => setNewServiceDesc(e.target.value)} placeholder="O que estÃ¡ incluso neste serviÃ§o ou pacote?" rows={2} className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 resize-none shadow-sm" />
+                          <textarea value={newServiceDesc} onChange={e => setNewServiceDesc(e.target.value)} placeholder="O que está incluso neste serviço ou pacote?" rows={2} className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 resize-none shadow-sm" />
                         </div>
                         
                         <div className="flex gap-2 mt-2">
                            <button onClick={() => setAddingService(false)} className="flex-1 py-4 bg-white hover:bg-slate-50 text-indigo-400 font-bold rounded-xl transition-colors shadow-sm">Cancelar</button>
-                           <button onClick={handleAddService} className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-colors">Cadastrar ServiÃ§o</button>
+                           <button onClick={handleAddService} className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-colors">Cadastrar Serviço</button>
                         </div>
                       </div>
                     ) : (
-                      <button onClick={() => setAddingService(true)} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-600 transition-all">+ Novo ServiÃ§o/Pacote</button>
+                      <button onClick={() => setAddingService(true)} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-600 transition-all">+ Novo Serviço/Pacote</button>
                     )}
                   </div>
                 )}
 
-                {editingItem.section === 'ClÃ­nico & Anamnese' && (
+                {editingItem.section === 'Clínico & Anamnese' && (
                   <div className="space-y-4">
 
                     {/* =============== MODELOS DE ANAMNESE =============== */}
@@ -829,7 +829,7 @@ export default function ConfigPage() {
                             {/* Header do Builder */}
                             <div className="flex items-center justify-between p-5 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl text-white">
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center font-black text-xl">ðŸ“‹</div>
+                                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center font-black text-xl">📋</div>
                                 <div>
                                   <h4 className="font-black text-lg leading-tight">{editingTemplate.title}</h4>
                                   <p className="text-indigo-200 text-xs">{templateFields.length} campo(s) configurado(s)</p>
@@ -844,9 +844,9 @@ export default function ConfigPage() {
                             <div className="space-y-2">
                               {templateFields.length === 0 && (
                                 <div className="py-10 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                                  <p className="text-4xl mb-2">ðŸ“­</p>
+                                  <p className="text-4xl mb-2">📥</p>
                                   <p className="font-bold text-slate-500">Nenhum campo ainda.</p>
-                                  <p className="text-xs text-slate-400">Adicione campos abaixo para construir o formulÃ¡rio.</p>
+                                  <p className="text-xs text-slate-400">Adicione campos abaixo para construir o formulário.</p>
                                 </div>
                               )}
                               {templateFields.map((field, idx) => (
@@ -860,7 +860,7 @@ export default function ConfigPage() {
                                     </button>
                                   </div>
                                   <div className="w-8 h-8 bg-indigo-50 rounded-xl flex items-center justify-center text-base shrink-0">
-                                    {FIELD_TYPES.find(f => f.value === field.type)?.icon || 'ðŸ“'}
+                                    {FIELD_TYPES.find(f => f.value === field.type)?.icon || '📄'}
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <p className="font-bold text-slate-900 text-sm truncate">{field.label}</p>
@@ -869,10 +869,10 @@ export default function ConfigPage() {
                                         {FIELD_TYPES.find(f => f.value === field.type)?.label}
                                       </span>
                                       {field.required && (
-                                        <span className="text-[9px] font-black text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded-full uppercase tracking-wider">ObrigatÃ³rio</span>
+                                        <span className="text-[9px] font-black text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Obrigatório</span>
                                       )}
                                       {field.options?.length > 0 && (
-                                        <span className="text-[9px] font-bold text-indigo-500">{field.options.length} opÃ§Ãµes</span>
+                                        <span className="text-[9px] font-bold text-indigo-500">{field.options.length} opções</span>
                                       )}
                                     </div>
                                   </div>
@@ -894,7 +894,7 @@ export default function ConfigPage() {
                                   autoFocus
                                   value={newField.label}
                                   onChange={e => setNewField({...newField, label: e.target.value})}
-                                  placeholder="Pergunta ou rÃ³tulo do campo..."
+                                  placeholder="Pergunta ou rótulo do campo..."
                                   className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 shadow-sm"
                                 />
                                 <div className="grid grid-cols-2 gap-3">
@@ -920,7 +920,7 @@ export default function ConfigPage() {
                                   </div>
                                   <div className="space-y-3">
                                     <div className="flex items-center justify-between p-4 bg-white rounded-xl border border-indigo-100">
-                                      <span className="text-sm font-bold text-slate-700">ObrigatÃ³rio</span>
+                                      <span className="text-sm font-bold text-slate-700">Obrigatório</span>
                                       <button
                                         onClick={() => setNewField({...newField, required: !newField.required})}
                                         className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors', newField.required ? 'bg-indigo-600' : 'bg-slate-300')}
@@ -930,11 +930,11 @@ export default function ConfigPage() {
                                     </div>
                                     {(newField.type === 'select' || newField.type === 'checkbox') && (
                                       <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">OpÃ§Ãµes (separadas por vÃ­rgula)</label>
+                                        <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Opções (separadas por vírgula)</label>
                                         <input
                                           value={newField.options}
                                           onChange={e => setNewField({...newField, options: e.target.value})}
-                                          placeholder="OpÃ§Ã£o 1, OpÃ§Ã£o 2, OpÃ§Ã£o 3"
+                                          placeholder="Opção 1, Opção 2, Opção 3"
                                           className="w-full bg-white p-3 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-medium text-indigo-900 placeholder:text-indigo-300 shadow-sm"
                                         />
                                       </div>
@@ -951,7 +951,7 @@ export default function ConfigPage() {
                                 onClick={() => setAddingField(true)}
                                 className="w-full py-4 border-2 border-dashed border-indigo-200 rounded-2xl text-indigo-400 font-bold hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50 transition-all flex items-center justify-center gap-2"
                               >
-                                <Plus className="w-4 h-4" /> Adicionar Campo ao FormulÃ¡rio
+                                <Plus className="w-4 h-4" /> Adicionar Campo ao Formulário
                               </button>
                             )}
 
@@ -969,33 +969,33 @@ export default function ConfigPage() {
                           /* Lista de templates */
                           <div className="space-y-3">
 
-                            {/* Banner do modelo padrÃ£o quando nÃ£o hÃ¡ nenhum */}
+                            {/* Banner do modelo padrão quando não há nenhum */}
                             {clinicalTemplates.filter(t => t.category === 'anamnesis').length === 0 && (
                               <div className="p-6 bg-gradient-to-br from-indigo-50 to-violet-50 border-2 border-indigo-200 border-dashed rounded-2xl flex flex-col items-center gap-3 text-center">
-                                <div className="text-4xl">ðŸ“‹</div>
+                                <div className="text-4xl">📋</div>
                                 <div>
                                   <p className="font-black text-indigo-900">Nenhum modelo cadastrado</p>
-                                  <p className="text-xs text-indigo-600 mt-1">Use o modelo padrÃ£o da clÃ­nica ou crie um do zero.</p>
+                                  <p className="text-xs text-indigo-600 mt-1">Use o modelo padrão da clínica ou crie um do zero.</p>
                                 </div>
                                 <button
                                   onClick={insertDefaultTemplate}
                                   className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-all flex items-center gap-2"
                                 >
-                                  <span>âœ¨</span> Inserir Modelo PadrÃ£o do Sistema (13 campos)
+                                  <span>✨</span> Inserir Modelo Padrão do Sistema (13 campos)
                                 </button>
                               </div>
                             )}
 
-                            {/* BotÃ£o de inserir modelo padrÃ£o quando jÃ¡ hÃ¡ outros */}
+                            {/* Botão de inserir modelo padrão quando já há outros */}
                             {clinicalTemplates.filter(t => t.category === 'anamnesis').length > 0 && (
                               <div className="flex items-center gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-2xl">
-                                <span className="text-lg">âœ¨</span>
+                                <span className="text-lg">✨</span>
                                 <p className="text-xs text-indigo-700 font-medium flex-1">Quer um modelo completo pronto para usar?</p>
                                 <button
                                   onClick={insertDefaultTemplate}
                                   className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors whitespace-nowrap"
                                 >
-                                  + Inserir Modelo PadrÃ£o
+                                  + Inserir Modelo Padrão
                                 </button>
                               </div>
                             )}
@@ -1003,7 +1003,7 @@ export default function ConfigPage() {
                               <div key={t.id} className="p-5 bg-white border border-slate-200 rounded-2xl group hover:border-indigo-200 hover:shadow-sm transition-all">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-gradient-to-br from-indigo-100 to-violet-100 rounded-xl flex items-center justify-center text-xl shadow-sm">ðŸ“‹</div>
+                                    <div className="w-12 h-12 bg-gradient-to-br from-indigo-100 to-violet-100 rounded-xl flex items-center justify-center text-xl shadow-sm">📋</div>
                                     <div>
                                       <p className="font-bold text-slate-900">{t.title}</p>
                                       <p className="text-xs text-slate-400 font-medium mt-0.5">{(t.fields || []).length} campos configurados</p>
@@ -1062,14 +1062,14 @@ export default function ConfigPage() {
                       </div>
                     )}
 
-                    {/* =============== TIPOS DE EVOLUÃ‡ÃƒO =============== */}
-                    {editingItem.item === 'Tipos de EvoluÃ§Ã£o' && (
+                    {/* =============== TIPOS DE EVOLUÇãO =============== */}
+                    {editingItem.item === 'Tipos de Evolução' && (
                       <div className="space-y-3">
                         <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl flex items-start gap-3">
-                          <span className="text-2xl shrink-0">ðŸ’¡</span>
+                          <span className="text-2xl shrink-0">💡</span>
                           <div>
-                            <p className="font-bold text-amber-900 text-sm">O que sÃ£o Tipos de EvoluÃ§Ã£o?</p>
-                            <p className="text-xs text-amber-700 mt-1">SÃ£o categorias para classificar cada nota de prontuÃ¡rio. Ao registrar uma evoluÃ§Ã£o no painel do terapeuta, ele escolhe o tipo que melhor descreve aquela sessÃ£o.</p>
+                            <p className="font-bold text-amber-900 text-sm">O que são Tipos de Evolução?</p>
+                            <p className="text-xs text-amber-700 mt-1">São categorias para classificar cada nota de prontuário. Ao registrar uma evolução no painel do terapeuta, ele escolhe o tipo que melhor descreve aquela sessão.</p>
                           </div>
                         </div>
 
@@ -1103,13 +1103,13 @@ export default function ConfigPage() {
                               autoFocus
                               value={newEvolType.name}
                               onChange={e => setNewEvolType({...newEvolType, name: e.target.value})}
-                              placeholder="Nome do tipo (Ex: SessÃ£o Regular, Alta, Crise...)" 
+                              placeholder="Nome do tipo (Ex: Sessão Regular, Alta, Crise...)" 
                               className="w-full bg-white p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-900"
                             />
                             <input
                               value={newEvolType.description}
                               onChange={e => setNewEvolType({...newEvolType, description: e.target.value})}
-                              placeholder="DescriÃ§Ã£o breve (opcional)"
+                              placeholder="Descrição breve (opcional)"
                               className="w-full bg-white p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700"
                             />
                             <div className="space-y-2">
@@ -1126,7 +1126,7 @@ export default function ConfigPage() {
                               </div>
                               {newEvolType.name && (
                                 <div className="flex items-center gap-2 p-3 bg-white rounded-xl border border-slate-100">
-                                  <span className="text-xs text-slate-500">PrÃ©-visualizaÃ§Ã£o:</span>
+                                  <span className="text-xs text-slate-500">Pré-visualização:</span>
                                   <span className="px-3 py-1 rounded-full text-xs font-black" style={{ backgroundColor: newEvolType.color + '22', color: newEvolType.color, border: `1.5px solid ${newEvolType.color}` }}>
                                     {newEvolType.name}
                                   </span>
@@ -1139,7 +1139,7 @@ export default function ConfigPage() {
                             </div>
                           </div>
                         ) : (
-                          <button onClick={() => setAddingEvolType(true)} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-slate-400 hover:text-slate-600 transition-all">+ Novo Tipo de EvoluÃ§Ã£o</button>
+                          <button onClick={() => setAddingEvolType(true)} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-slate-400 hover:text-slate-600 transition-all">+ Novo Tipo de Evolução</button>
                         )}
                       </div>
                     )}
@@ -1149,7 +1149,7 @@ export default function ConfigPage() {
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
                           <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-800 font-medium flex-1 mr-4">
-                            <strong>Tags dinÃ¢micas disponÃ­veis:</strong>{' '}
+                            <strong>Tags dinâmicas disponíveis:</strong>{' '}
                             <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px] mr-1">{`{{nome_paciente}}`}</code>
                             <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px] mr-1">{`{{cpf_paciente}}`}</code>
                             <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{data_atual}}`}</code>
@@ -1158,7 +1158,7 @@ export default function ConfigPage() {
                             onClick={() => setContractPreview(!contractPreview)}
                             className={cn('px-4 py-2.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 whitespace-nowrap', contractPreview ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300')}
                           >
-                            {contractPreview ? 'âœï¸ Editar' : 'ðŸ‘ï¸ PrÃ©-visualizar'}
+                            {contractPreview ? '✍️ Editar' : '👁️ Pré-visualizar'}
                           </button>
                         </div>
 
@@ -1166,8 +1166,8 @@ export default function ConfigPage() {
                           <div className="bg-white border border-slate-200 rounded-2xl p-8 space-y-4 shadow-sm">
                             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
                               <div>
-                                <p className="font-black text-slate-900 text-lg">Termo de PrestaÃ§Ã£o de ServiÃ§os TerapÃªuticos</p>
-                                <p className="text-xs text-slate-400 font-medium mt-1">PrÃ©-visualizaÃ§Ã£o com dados de exemplo</p>
+                                <p className="font-black text-slate-900 text-lg">Termo de Prestação de Serviços Terapêuticos</p>
+                                <p className="text-xs text-slate-400 font-medium mt-1">Pré-visualização com dados de exemplo</p>
                               </div>
                               <div className="px-3 py-1.5 bg-amber-50 text-amber-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-amber-100">Aguardando Assinatura</div>
                             </div>
@@ -1179,7 +1179,7 @@ export default function ConfigPage() {
                             </div>
                             <div className="pt-6 border-t border-slate-100">
                               <div className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm cursor-not-allowed opacity-60">
-                                âœï¸ Assinar Digitalmente (SimulaÃ§Ã£o)
+                                ✍️ Assinar Digitalmente (Simulação)
                               </div>
                             </div>
                           </div>
@@ -1189,25 +1189,25 @@ export default function ConfigPage() {
                             onChange={e => setContractTemplate(e.target.value)}
                             rows={14}
                             className="w-full p-5 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 font-mono text-slate-700 text-sm resize-y leading-relaxed transition-all"
-                            placeholder="Escreva as clÃ¡usulas do contrato aqui...&#10;&#10;Use as tags dinÃ¢micas para personalizar automaticamente."
+                            placeholder="Escreva as cláusulas do contrato aqui...&#10;&#10;Use as tags dinâmicas para personalizar automaticamente."
                           />
                         )}
 
                         <div className="flex items-center gap-3 p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs text-slate-500">
-                          <span className="text-xl">ðŸ”</span>
-                          <p>O contrato serÃ¡ enviado via WhatsApp ao paciente quando ele iniciar um novo pacote terapÃªutico. O link de assinatura digital Ã© gerado automaticamente pelo sistema.</p>
+                          <span className="text-xl">🔍</span>
+                          <p>O contrato será enviado via WhatsApp ao paciente quando ele iniciar um novo pacote terapêutico. O link de assinatura digital é gerado automaticamente pelo sistema.</p>
                         </div>
                       </div>
                     )}
                   </div>
                 )}
 
-                {editingItem.section === 'NotificaÃ§Ãµes & Alertas' && (
+                {editingItem.section === 'Notificações & Alertas' && (
                   <div className="space-y-6">
                     <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-200">
                       <div>
-                        <p className="font-bold text-slate-900">Lembretes de SessÃ£o</p>
-                        <p className="text-xs text-slate-500 mt-1">Enviar WhatsApp automÃ¡tico 24h antes da sessÃ£o</p>
+                        <p className="font-bold text-slate-900">Lembretes de Sessão</p>
+                        <p className="text-xs text-slate-500 mt-1">Enviar WhatsApp automático 24h antes da sessão</p>
                       </div>
                       <button onClick={() => setNotifications({...notifications, sessionReminders: !notifications.sessionReminders})} className={cn("relative inline-flex h-7 w-12 items-center rounded-full transition-colors", notifications.sessionReminders ? "bg-indigo-600" : "bg-slate-300")}>
                         <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white transition-transform", notifications.sessionReminders ? "translate-x-6" : "translate-x-1")} />
@@ -1216,8 +1216,8 @@ export default function ConfigPage() {
                     
                     <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-200">
                       <div>
-                        <p className="font-bold text-slate-900">ConfirmaÃ§Ã£o de Pagamento</p>
-                        <p className="text-xs text-slate-500 mt-1">Recibo via WhatsApp apÃ³s pagamento do Pix/CartÃ£o</p>
+                        <p className="font-bold text-slate-900">Confirmação de Pagamento</p>
+                        <p className="text-xs text-slate-500 mt-1">Recibo via WhatsApp após pagamento do Pix/Cartão</p>
                       </div>
                       <button onClick={() => setNotifications({...notifications, paymentConfirm: !notifications.paymentConfirm})} className={cn("relative inline-flex h-7 w-12 items-center rounded-full transition-colors", notifications.paymentConfirm ? "bg-indigo-600" : "bg-slate-300")}>
                         <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white transition-transform", notifications.paymentConfirm ? "translate-x-6" : "translate-x-1")} />
@@ -1227,8 +1227,8 @@ export default function ConfigPage() {
                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-bold text-slate-900">Mensagem de AniversÃ¡rio (WhatsApp)</p>
-                          <p className="text-xs text-slate-500 mt-1">Enviar mensagem automatizada no dia do aniversÃ¡rio do paciente</p>
+                          <p className="font-bold text-slate-900">Mensagem de Aniversário (WhatsApp)</p>
+                          <p className="text-xs text-slate-500 mt-1">Enviar mensagem automatizada no dia do aniversário do paciente</p>
                         </div>
                         <button onClick={() => setNotifications({...notifications, birthdayReminder: !notifications.birthdayReminder})} className={cn("relative inline-flex h-7 w-12 items-center rounded-full transition-colors", notifications.birthdayReminder ? "bg-indigo-600" : "bg-slate-300")}>
                           <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white transition-transform", notifications.birthdayReminder ? "translate-x-6" : "translate-x-1")} />
@@ -1236,7 +1236,7 @@ export default function ConfigPage() {
                       </div>
                       {notifications.birthdayReminder && (
                         <div className="space-y-1.5 pt-2">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Mensagem de AniversÃ¡rio (Use {"{{nome}}"} para o nome do paciente)</label>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Mensagem de Aniversário (Use {"{{nome}}"} para o nome do paciente)</label>
                           <textarea rows={3} value={notifications.birthdayMessage} onChange={e => setNotifications({...notifications, birthdayMessage: e.target.value})} className="w-full bg-white p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700 text-sm" />
                         </div>
                       )}
@@ -1245,8 +1245,8 @@ export default function ConfigPage() {
                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="font-bold text-slate-900">Pesquisa NPS (SatisfaÃ§Ã£o)</p>
-                          <p className="text-xs text-slate-500 mt-1">Disparo automÃ¡tico apÃ³s finalizar a sessÃ£o pelo painel.</p>
+                          <p className="font-bold text-slate-900">Pesquisa NPS (Satisfação)</p>
+                          <p className="text-xs text-slate-500 mt-1">Disparo automático após finalizar a sessão pelo painel.</p>
                         </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -1261,11 +1261,11 @@ export default function ConfigPage() {
                       </div>
                     </div>
 
-                    {editingItem.item === 'AutomaÃ§Ã£o de Tickets' && (
+                    {editingItem.item === 'Automação de Tickets' && (
                       <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="font-bold text-slate-900">Encerramento AutomÃ¡tico</p>
+                            <p className="font-bold text-slate-900">Encerramento Automático</p>
                             <p className="text-xs text-slate-500 mt-1">Fechamento de conversas inativas para manter a caixa de entrada limpa.</p>
                           </div>
                         </div>
@@ -1275,7 +1275,7 @@ export default function ConfigPage() {
                               <input value={ticketSettings.autoCloseHours} onChange={e => setTicketSettings({...ticketSettings, autoCloseHours: Number(e.target.value)})} type="number" min="1" className="w-full bg-white p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-900" />
                            </div>
                            <div className="space-y-1.5 md:col-span-3">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Mensagem de Encerramento (Deixe em branco para nÃ£o avisar)</label>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Mensagem de Encerramento (Deixe em branco para não avisar)</label>
                               <textarea rows={3} value={ticketSettings.closeMessage} onChange={e => setTicketSettings({...ticketSettings, closeMessage: e.target.value})} className="w-full bg-white p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700 text-sm" placeholder="O atendimento foi finalizado..." />
                            </div>
                         </div>
@@ -1288,7 +1288,7 @@ export default function ConfigPage() {
               <div className="p-8 border-t border-slate-100 bg-white flex gap-4">
                 <button onClick={() => { setEditingItem(null); setAddingService(false); setAddingTemplate(false); setDeletingId(null); setAddingRole(false); }} className="flex-1 py-4 bg-slate-50 hover:bg-slate-100 rounded-2xl font-bold text-slate-600 transition-colors">Cancelar</button>
                 <button onClick={saveSettings} className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 transition-all">
-                  {loading ? <Clock className="w-5 h-5 animate-spin" /> : 'Salvar AlteraÃ§Ãµes'}
+                  {loading ? <Clock className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
                 </button>
               </div>
            </div>
@@ -1304,7 +1304,7 @@ export default function ConfigPage() {
                   <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100"><Palette className="w-6 h-6" /></div>
                   <div>
                      <h3 className="text-2xl font-bold text-slate-900 tracking-tight">Editor de Marca</h3>
-                     <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">PersonalizaÃ§Ã£o White Label</p>
+                     <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Personalização White Label</p>
                   </div>
                 </div>
                 <button onClick={() => setIsEditorOpen(false)} className="p-2 hover:bg-white rounded-full transition-all text-slate-400 border border-transparent hover:border-slate-200"><X className="w-6 h-6" /></button>
@@ -1313,23 +1313,23 @@ export default function ConfigPage() {
               <div className="p-8 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-10">
                  <div className="space-y-6">
                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-500 uppercase">Nome da ClÃ­nica (Portal)</label>
+                       <label className="text-xs font-bold text-slate-500 uppercase">Nome da Clínica (Portal)</label>
                        <input 
                          value={whiteLabel.portalName} 
                          onChange={e => setWhiteLabel({...whiteLabel, portalName: e.target.value})} 
                          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold" 
-                         placeholder="Minha ClÃ­nica" 
+                         placeholder="Minha Clínica" 
                        />
                     </div>
                     
                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-500 uppercase">Logo da ClÃ­nica</label>
+                       <label className="text-xs font-bold text-slate-500 uppercase">Logo da Clínica</label>
                        <div className="flex items-center gap-3">
                          <input 
                            value={whiteLabel.logoUrl} 
                            onChange={e => setWhiteLabel({...whiteLabel, logoUrl: e.target.value})} 
                            className="flex-1 p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-sm truncate" 
-                           placeholder="Cole a URL ou faÃ§a upload" 
+                           placeholder="Cole a URL ou faça upload" 
                          />
                          <input 
                            type="file" 
@@ -1341,12 +1341,12 @@ export default function ConfigPage() {
                          <button 
                            onClick={() => fileInputRef.current?.click()}
                            className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl hover:bg-indigo-100 transition-colors shrink-0 shadow-sm border border-indigo-100 flex items-center justify-center"
-                           title="Fazer upload de imagem (MÃ¡x 2MB)"
+                           title="Fazer upload de imagem (Máx 2MB)"
                          >
                            <Upload className="w-5 h-5" />
                          </button>
                        </div>
-                       <p className="text-[10px] text-slate-400 font-medium">Recomendado: Fundo transparente (PNG), mÃ¡ximo 2MB. VocÃª pode colar uma URL pÃºblica ou fazer o upload do arquivo.</p>
+                       <p className="text-[10px] text-slate-400 font-medium">Recomendado: Fundo transparente (PNG), máximo 2MB. Você pode colar uma URL pública ou fazer o upload do arquivo.</p>
                     </div>
 
                     <div className="space-y-2">
@@ -1368,7 +1368,7 @@ export default function ConfigPage() {
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-xs font-bold text-slate-500 uppercase">Cor SecundÃ¡ria (Fundo/Destaques)</label>
+                       <label className="text-xs font-bold text-slate-500 uppercase">Cor Secundária (Fundo/Destaques)</label>
                        <div className="flex items-center gap-4">
                           <input 
                             type="color" 
@@ -1411,8 +1411,8 @@ export default function ConfigPage() {
                           <h4 className="font-bold text-slate-800">Meus Agendamentos</h4>
                           <div className="p-4 bg-white rounded-xl shadow-sm border border-slate-100 flex justify-between items-center">
                              <div>
-                                <p className="font-bold text-sm text-slate-800">SessÃ£o de Terapia</p>
-                                <p className="text-xs text-slate-500">AmanhÃ£, 14:00</p>
+                                <p className="font-bold text-sm text-slate-800">Sessão de Terapia</p>
+                                <p className="text-xs text-slate-500">Amanhã, 14:00</p>
                              </div>
                              <button className="px-4 py-2 rounded-lg text-xs font-bold text-white" style={{ backgroundColor: whiteLabel.primaryColor }}>
                                 Detalhes
@@ -1437,7 +1437,7 @@ export default function ConfigPage() {
         <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-10">
           <div className="space-y-4 max-w-xl text-center lg:text-left">
             <h3 className="text-3xl font-bold tracking-tight">Identidade Visual (White Label)</h3>
-            <p className="text-slate-400 text-lg">Personalize o Portal do Paciente com as cores e logo da sua clÃ­nica para uma experiÃªncia 100% proprietÃ¡ria.</p>
+            <p className="text-slate-400 text-lg">Personalize o Portal do Paciente com as cores e logo da sua clínica para uma experiência 100% proprietária.</p>
           </div>
           <button onClick={() => setIsEditorOpen(true)} className="px-10 py-5 bg-white text-slate-900 rounded-2xl font-bold hover:scale-105 transition-all flex items-center gap-3 shadow-2xl">
             <Palette className="w-6 h-6 text-indigo-600" /> Abrir Editor de Marca
