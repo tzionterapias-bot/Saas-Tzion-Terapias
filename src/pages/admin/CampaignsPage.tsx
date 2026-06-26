@@ -236,7 +236,7 @@ export default function CampaignsPage() {
     if (actionInProgressRef.current.has(campaignId)) return;
     actionInProgressRef.current.add(campaignId);
     try {
-      const { error } = await supabase.from('campaigns').update({ status: 'running', scheduled_at: null }).eq('id', campaignId);
+      const { error } = await supabase.from('campaigns').update({ status: 'running', scheduled_at: null, is_locked: false }).eq('id', campaignId);
       if (error) showToast('Erro ao iniciar disparo', 'error');
       else { showToast('Disparo iniciado — o servidor processa em segundo plano!'); fetchCampaigns(); }
     } finally {
@@ -245,7 +245,7 @@ export default function CampaignsPage() {
   };
 
   const handlePauseCampaign = async (campaignId: string) => {
-    const { error } = await supabase.from('campaigns').update({ status: 'paused' }).eq('id', campaignId);
+    const { error } = await supabase.from('campaigns').update({ status: 'paused', is_locked: false }).eq('id', campaignId);
     if (error) showToast('Erro ao pausar', 'error');
     else { showToast('Campanha pausada.'); fetchCampaigns(); }
   };

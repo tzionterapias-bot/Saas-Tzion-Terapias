@@ -732,6 +732,183 @@ async function startServer() {
     }
   });
 
+  // --- SECURE CRON ENDPOINTS FOR SERVERLESS DEPLOYMENTS ---
+  app.get("/api/cron/campaigns", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
+      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
+      
+      if (!cronKey || cronKey !== expectedKey) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      console.log("[CRON] Campaigns cycle triggered.");
+      const limitMs = Number(req.query.limit) || 8000;
+      const result = await runCampaignCycleSingle(limitMs);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[CRON] Error in campaigns route:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cron/reminders", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
+      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
+      
+      if (!cronKey || cronKey !== expectedKey) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      console.log("[CRON] Daily Reminders / Birthdays triggered.");
+      await runDailyRemindersBackend();
+      await runDailyBirthdaysBackend();
+      res.json({ success: true, message: "Reminders and Birthdays executed." });
+    } catch (err: any) {
+      console.error("[CRON] Error in reminders route:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cron/retention", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
+      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
+      
+      if (!cronKey || cronKey !== expectedKey) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      console.log("[CRON] Daily Retention check triggered.");
+      await runDailyRetentionBackend();
+      res.json({ success: true, message: "Retention check executed." });
+    } catch (err: any) {
+      console.error("[CRON] Error in retention route:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cron/nps", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
+      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
+      
+      if (!cronKey || cronKey !== expectedKey) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      console.log("[CRON] NPS surveys dispatch triggered.");
+      await runNpsSurveyBackend();
+      res.json({ success: true, message: "NPS surveys execution complete." });
+    } catch (err: any) {
+      console.error("[CRON] Error in NPS route:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cron/finance", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
+      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
+      
+      if (!cronKey || cronKey !== expectedKey) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      console.log("[CRON] Financial sync triggered.");
+      const result = await executeFinancialSync();
+      res.json({ success: true, result });
+    } catch (err: any) {
+      console.error("[CRON] Error in financial sync route:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cron/tickets", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
+      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
+      
+      if (!cronKey || cronKey !== expectedKey) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      console.log("[CRON] Ticket Cleanup triggered.");
+      await runTicketCleanupBackend();
+      res.json({ success: true, message: "Ticket cleanup executed." });
+    } catch (err: any) {
+      console.error("[CRON] Error in tickets cleanup route:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/cron/all", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
+      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
+      
+      if (!cronKey || cronKey !== expectedKey) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      console.log("[CRON] Running all workers in sequence...");
+      const campaignRes = await runCampaignCycleSingle(8000);
+      
+      await runNpsSurveyBackend();
+      await runTicketCleanupBackend();
+      const financeRes = await executeFinancialSync();
+
+      const now = new Date();
+      const currentHour = now.getHours();
+      let remindersRan = false;
+      let retentionRan = false;
+
+      if (currentHour >= 9 && currentHour < 10) {
+        const state = getReminderState();
+        const todayStr = now.toDateString();
+
+        if (state.last_reminder_run !== todayStr) {
+          await runDailyRemindersBackend();
+          state.last_reminder_run = todayStr;
+          remindersRan = true;
+        }
+        if (state.last_birthday_run !== todayStr) {
+          await runDailyBirthdaysBackend();
+          state.last_birthday_run = todayStr;
+          remindersRan = true;
+        }
+        if (state.last_retention_run !== todayStr) {
+          await runDailyRetentionBackend();
+          state.last_retention_run = todayStr;
+          retentionRan = true;
+        }
+        
+        if (remindersRan || retentionRan) {
+          saveReminderState(state);
+        }
+      }
+
+      res.json({
+        success: true,
+        campaigns: campaignRes,
+        finance: financeRes,
+        remindersExecuted: remindersRan,
+        retentionExecuted: retentionRan
+      });
+    } catch (err: any) {
+      console.error("[CRON] Error in cron all route:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // --- VITE MIDDLEWARE ---
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
@@ -784,47 +961,48 @@ async function startServer() {
   }
 }
 
-async function startCampaignWorker() {
+export async function runCampaignCycleSingle(limitMs: number = 8000) {
   const isProduction = !!process.env.VITE_EVOLUTION_API_URL;
   const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
   const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
   const instance = process.env.VITE_EVOLUTION_INSTANCE_NAME || "";
 
-  console.log("[WORKER] Campaign Worker initialized.");
+  const startTime = Date.now();
+  let processedCount = 0;
 
-  setInterval(async () => {
-    try {
-      // 1. Fetch campaigns that are in 'running' or 'scheduled' status
-      const { data: activeCampaigns, error: campaignsErr } = await supabase
-        .from('campaigns')
-        .select('*')
-        .in('status', ['running', 'scheduled']);
+  try {
+    // 1. Fetch campaigns that are in 'running' or 'scheduled' status
+    const { data: activeCampaigns, error: campaignsErr } = await supabase
+      .from('campaigns')
+      .select('*')
+      .in('status', ['running', 'scheduled']);
 
-      if (campaignsErr) {
-        console.error("[WORKER] Error fetching active campaigns:", campaignsErr);
-        return;
-      }
+    if (campaignsErr) {
+      console.error("[WORKER] Error fetching active campaigns:", campaignsErr);
+      return { success: false, error: campaignsErr.message, processed: 0 };
+    }
 
-      if (!activeCampaigns || activeCampaigns.length === 0) {
-        return;
-      }
+    if (!activeCampaigns || activeCampaigns.length === 0) {
+      return { success: true, processed: 0 };
+    }
 
-      for (const campaign of activeCampaigns) {
-        // If scheduled, check if it's time to run
-        if (campaign.status === 'scheduled') {
-          if (!campaign.scheduled_at) continue;
-          const scheduledTime = new Date(campaign.scheduled_at).getTime();
-          if (Date.now() < scheduledTime) {
-            continue; // Not time yet
-          }
-          // Promote scheduled to running
-          await supabase
-            .from('campaigns')
-            .update({ status: 'running', scheduled_at: null })
-            .eq('id', campaign.id);
-          campaign.status = 'running';
+    for (const campaign of activeCampaigns) {
+      // If scheduled, check if it's time to run
+      if (campaign.status === 'scheduled') {
+        if (!campaign.scheduled_at) continue;
+        const scheduledTime = new Date(campaign.scheduled_at).getTime();
+        if (Date.now() < scheduledTime) {
+          continue; // Not time yet
         }
+        // Promote scheduled to running
+        await supabase
+          .from('campaigns')
+          .update({ status: 'running', scheduled_at: null })
+          .eq('id', campaign.id);
+        campaign.status = 'running';
+      }
 
+      while (Date.now() - startTime < limitMs) {
         // Acquire lock to prevent double dispatch / concurrency race condition
         const { data: lockedCampaigns } = await supabase
           .from('campaigns')
@@ -835,8 +1013,10 @@ async function startCampaignWorker() {
 
         if (!lockedCampaigns || lockedCampaigns.length === 0) {
           // Already locked by another worker instance or processing cycle
-          continue;
+          break;
         }
+
+        let hasPendingContacts = true;
 
         try {
           // 2. Check delay constraints by querying the last sent campaign log
@@ -851,14 +1031,14 @@ async function startCampaignWorker() {
 
           if (lastLogErr) {
             console.error(`[WORKER] Error querying last log for campaign ${campaign.id}:`, lastLogErr);
-            continue;
+            break;
           }
 
           if (lastLog && lastLog.sent_at) {
             const lastSentTime = new Date(lastLog.sent_at).getTime();
             const nextAllowedTime = lastSentTime + (campaign.delay_seconds * 1000);
             if (Date.now() < nextAllowedTime) {
-              continue; // Not enough time has passed yet
+              break; // Not enough time has passed yet, stop processing this campaign for now
             }
           }
 
@@ -874,7 +1054,7 @@ async function startCampaignWorker() {
 
           if (nextLogErr) {
             console.error(`[WORKER] Error querying next log for campaign ${campaign.id}:`, nextLogErr);
-            continue;
+            break;
           }
 
           if (!nextLog) {
@@ -884,7 +1064,8 @@ async function startCampaignWorker() {
               .from('campaigns')
               .update({ status: 'completed' })
               .eq('id', campaign.id);
-            continue;
+            hasPendingContacts = false;
+            break;
           }
 
           console.log(`[WORKER] Preparing to send message to ${nextLog.patient_phone} for campaign "${campaign.name}"`);
@@ -1010,6 +1191,8 @@ async function startCampaignWorker() {
             .from('campaigns')
             .update({ sent_contacts: totalSent })
             .eq('id', campaign.id);
+
+          processedCount++;
         } finally {
           // Always release lock when this campaign iteration finishes
           await supabase
@@ -1017,9 +1200,32 @@ async function startCampaignWorker() {
             .update({ is_locked: false })
             .eq('id', campaign.id);
         }
+
+        if (hasPendingContacts) {
+          const elapsed = Date.now() - startTime;
+          const delayMs = campaign.delay_seconds * 1000;
+          if (elapsed + delayMs > limitMs) {
+            break; // Not enough time left in this run for the delay
+          }
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
       }
+    }
+    return { success: true, processed: processedCount };
+  } catch (err: any) {
+    console.error("[WORKER] Fatal error in campaign worker processing cycle:", err);
+    return { success: false, error: err.message, processed: processedCount };
+  }
+}
+
+async function startCampaignWorker() {
+  console.log("[WORKER] Campaign Worker initialized.");
+
+  setInterval(async () => {
+    try {
+      await runCampaignCycleSingle(4000);
     } catch (err) {
-      console.error("[WORKER] Fatal error in campaign worker processing iteration:", err);
+      console.error("[WORKER] Error in campaign worker interval:", err);
     }
   }, 5000);
 }

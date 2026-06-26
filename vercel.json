@@ -8,5 +8,15 @@
       "source": "/((?!api|assets|favicon.ico).*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/campaigns",
+      "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/all",
+      "schedule": "0 12 * * *"
+    }
   ]
 }
