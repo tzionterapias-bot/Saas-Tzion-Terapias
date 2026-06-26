@@ -270,8 +270,9 @@ export default function CampaignsPage() {
   const running = campaigns.filter(c => c.status === 'running').length;
   const scheduled = campaigns.filter(c => c.status === 'scheduled').length;
 
-  // Min datetime for scheduling (now + 1 min)
-  const minDateTime = new Date(Date.now() + 60000).toISOString().slice(0, 16);
+  // Min datetime for scheduling (now + 1 min) — uses local timezone so datetime-local input works correctly
+  const _minNow = new Date(Date.now() + 60000);
+  const minDateTime = new Date(_minNow.getTime() - _minNow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
