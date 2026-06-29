@@ -11,15 +11,25 @@ export async function processDailyReminders() {
   }
 
   try {
-    // Buscar agendamentos para o dia seguinte
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-    const startOfTomorrow = tomorrow.toISOString();
+    // Buscar agendamentos para o dia seguinte considerando o fuso horário de Brasília (America/Sao_Paulo)
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    // Obtém a data de amanhã em Brasília
+    const tomorrowDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const tomorrowStr = formatter.format(tomorrowDate);
 
-    const dayAfter = new Date(tomorrow);
-    dayAfter.setDate(dayAfter.getDate() + 1);
-    const startOfDayAfter = dayAfter.toISOString();
+    // Obtém o dia seguinte a amanhã em Brasília
+    const dayAfterDate = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+    const dayAfterStr = formatter.format(dayAfterDate);
+
+    // Meia-noite de amanhã e do dia seguinte em Brasília (UTC-3 -> 03:00 UTC)
+    const startOfTomorrow = `${tomorrowStr}T03:00:00.000Z`;
+    const startOfDayAfter = `${dayAfterStr}T03:00:00.000Z`;
 
     const { data: appointments, error } = await supabase
       .from('appointments')

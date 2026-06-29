@@ -23,6 +23,7 @@ export default function PatientList() {
   const [timelineEvents, setTimelineEvents] = useState<any[]>([]);
   const [patientPackages, setPatientPackages] = useState<any[]>([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
+  const [loadingTab, setLoadingTab] = useState<Record<string, boolean>>({});
 
   // New Data State
   const [newPatient, setNewPatient] = useState({ name: '', email: '', phone: '', cpf: '', cep: '', address: '', address_number: '', neighborhood: '', city: '', state: '', gender: '', birth_date: '' });
@@ -72,6 +73,12 @@ export default function PatientList() {
   }, []);
 
   useEffect(() => {
+    if (selectedPatient?.id) {
+      loadTabContent(activeTab, selectedPatient.id);
+    }
+  }, [activeTab, selectedPatient?.id]);
+
+  useEffect(() => {
     if (toastMessage) {
       const timer = setTimeout(() => setToastMessage(''), 3000);
       return () => clearTimeout(timer);
@@ -99,145 +106,167 @@ export default function PatientList() {
     }
   };
 
-  const fetchPatientDetails = async (patientId: string) => {
-    // Check therapist responsibility dynamically
-    let isResp = user?.role === 'admin' || user?.role === 'atendimento';
-    if (user?.role === 'terapeuta') {
-      let tId = therapistId;
-      if (!tId) {
-        const { data } = await supabase
-          .from('therapists')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        tId = data?.id || '';
-      }
-      if (tId) {
-        const { data: apptExists } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('patient_id', patientId)
-          .eq('therapist_id', tId)
-          .limit(1)
-          .maybeSingle();
-        if (apptExists) {
-          isResp = true;
+  const loadTabContent = async (tab: string, patientId: string) => {
+    if (loadingTab[tab]) return;
+
+    setLoadingTab(prev => ({ ...prev, [tab]: true }));
+    try {
+      if (tab === 'info') {
+        let isResp = user?.role === 'admin' || user?.role === 'atendimento';
+        if (user?.role === 'terapeuta') {
+          let tId = therapistId;
+          if (!tId) {
+            const { data } = await supabase
+              .from('therapists')
+              .select('id')
+              .eq('user_id', user.id)
+              .maybeSingle();
+            tId = data?.id || '';
+            if (tId) setTherapistId(tId);
+          }
+          if (tId) {
+            const { data: apptExists } = await supabase
+              .from('appointments')
+              .select('id')
+              .eq('patient_id', patientId)
+              .eq('therapist_id', tId)
+              .limit(1)
+              .maybeSingle();
+            if (apptExists) {
+              isResp = true;
+            }
+          }
         }
+        setIsResponsible(isResp);
+      } 
+      else if (tab === 'anamnesis') {
+        const { data: anaData } = await supabase.from('patient_anamnesis').select('*').eq('patient_id', patientId).maybeSingle();
+        if (anaData) {
+          setAnamnesis({ complaint: anaData.complaint || '', family_history: anaData.family_history || '', lifestyle: anaData.lifestyle || '' });
+          setEditResponses(anaData.responses || {});
+        } else {
+          setAnamnesis({ complaint: '', family_history: '', lifestyle: '' });
+          setEditResponses({});
+        }
+
+        let templateToLoad = null;
+        if (anaData?.template_id) {
+          const { data: tmpl } = await supabase.from('clinical_templates').select('*').eq('id', anaData.template_id).maybeSingle();
+          templateToLoad = tmpl;
+        } else {
+          const { data: activeTmpls } = await supabase
+            .from('clinical_templates')
+            .select('*')
+            .eq('category', 'anamnesis')
+            .eq('active', true)
+            .order('created_at', { ascending: false });
+          if (activeTmpls && activeTmpls.length > 0) {
+            templateToLoad = activeTmpls[0];
+          }
+        }
+        setActiveTemplate(templateToLoad);
+      } 
+      else if (tab === 'history') {
+        const [evoRes, prescRes] = await Promise.all([
+          supabase.from('patient_evolutions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+          supabase.from('therapeutic_prescriptions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false })
+        ]);
+        if (evoRes.data) setEvolutions(evoRes.data);
+        if (prescRes.data) setPrescriptions(prescRes.data);
+        else setPrescriptions([]);
+      } 
+      else if (tab === 'homecare') {
+        const { data: prescData } = await supabase
+          .from('therapeutic_prescriptions')
+          .select('*')
+          .eq('patient_id', patientId)
+          .order('created_at', { ascending: false });
+        if (prescData) setPrescriptions(prescData);
+        else setPrescriptions([]);
       }
-    }
-    setIsResponsible(isResp);
+      else if (tab === 'timeline') {
+        setLoadingTimeline(true);
+        const [appRes, payRes, packRes, conRes, indRes] = await Promise.all([
+          supabase.from('appointments').select('*, therapists(name)').eq('patient_id', patientId),
+          supabase.from('payments').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+          supabase.from('patient_packages').select('*, services(name, price, type)').eq('patient_id', patientId),
+          supabase.from('patient_contracts').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+          supabase.from('patient_indicators').select('*').eq('patient_id', patientId).order('created_at', { ascending: true })
+        ]);
+        
+        const appointments = appRes.data || [];
+        const payments = payRes.data || [];
+        const pkgs = packRes.data || [];
+        const contracts = conRes.data || [];
+        const indicatorsData = indRes.data || [];
+        
+        setPatientPackages(pkgs);
+        setPatientIndicators(indicatorsData);
 
-    // Fetch Anamnesis
-    const { data: anaData } = await supabase.from('patient_anamnesis').select('*').eq('patient_id', patientId).maybeSingle();
-    if (anaData) {
-      setAnamnesis({ complaint: anaData.complaint || '', family_history: anaData.family_history || '', lifestyle: anaData.lifestyle || '' });
-      setEditResponses(anaData.responses || {});
-    } else {
-      setAnamnesis({ complaint: '', family_history: '', lifestyle: '' });
-      setEditResponses({});
-    }
+        const { data: evoData } = await supabase.from('patient_evolutions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false });
+        if (evoData) setEvolutions(evoData);
 
-    // Load appropriate template
-    let templateToLoad = null;
-    if (anaData?.template_id) {
-      const { data: tmpl } = await supabase.from('clinical_templates').select('*').eq('id', anaData.template_id).maybeSingle();
-      templateToLoad = tmpl;
-    } else {
-      const { data: activeTmpls } = await supabase
-        .from('clinical_templates')
-        .select('*')
-        .eq('category', 'anamnesis')
-        .eq('active', true)
-        .order('created_at', { ascending: false });
-      if (activeTmpls && activeTmpls.length > 0) {
-        templateToLoad = activeTmpls[0];
-      }
-    }
-    setActiveTemplate(templateToLoad);
+        let events: any[] = [];
+        
+        appointments.forEach(app => {
+           events.push({
+               id: `app-${app.id}`,
+               type: 'appointment',
+               date: new Date(app.start_time),
+               title: `Sessão ${app.status === 'completed' ? 'Realizada' : 'Agendada'}`,
+               description: `Modalidade: ${app.type || 'Presencial'} | Terapeuta: ${app.therapists?.name || 'Não atribuído'}`,
+               status: app.status
+           });
+        });
 
-    // Fetch Evolutions
-    const { data: evoData } = await supabase.from('patient_evolutions').select('*').eq('patient_id', patientId).order('created_at', { ascending: false });
-    if (evoData) setEvolutions(evoData);
-
-    // Timeline Data
-    setLoadingTimeline(true);
-    const [appRes, payRes, packRes, conRes, indRes] = await Promise.all([
-      supabase.from('appointments').select('*, therapists(name)').eq('patient_id', patientId),
-      supabase.from('payments').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
-      supabase.from('patient_packages').select('*, services(name, price, type)').eq('patient_id', patientId),
-      supabase.from('patient_contracts').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
-      supabase.from('patient_indicators').select('*').eq('patient_id', patientId).order('created_at', { ascending: true })
-    ]);
-    
-    const appointments = appRes.data || [];
-    const payments = payRes.data || [];
-    const pkgs = packRes.data || [];
-    const contracts = conRes.data || [];
-    const indicatorsData = indRes.data || [];
-    
-    setPatientPackages(pkgs);
-    setPatientIndicators(indicatorsData);
-
-    // Fetch Prescriptions
-    const { data: prescData } = await supabase
-      .from('therapeutic_prescriptions')
-      .select('*')
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false });
-    if (prescData) setPrescriptions(prescData);
-    else setPrescriptions([]);
-
-    let events: any[] = [];
-    
-    appointments.forEach(app => {
-       events.push({
-           id: `app-${app.id}`,
-           type: 'appointment',
-           date: new Date(app.start_time),
-           title: `Sessão ${app.status === 'completed' ? 'Realizada' : 'Agendada'}`,
-           description: `Modalidade: ${app.type || 'Presencial'} | Terapeuta: ${app.therapists?.name || 'Não atribuído'}`,
-           status: app.status
-       });
-    });
-
-    if (evoData) {
-      evoData.forEach(rec => {
-          events.push({
-              id: `evo-${rec.id}`,
-              type: 'record',
-              date: new Date(rec.created_at),
-              title: 'Evolução Clínica',
-              description: rec.notes ? rec.notes.substring(0, 50) + '...' : '',
+        if (evoData) {
+          evoData.forEach(rec => {
+              events.push({
+                  id: `evo-${rec.id}`,
+                  type: 'record',
+                  date: new Date(rec.created_at),
+                  title: 'Evolução Clínica',
+                  description: rec.notes ? rec.notes.substring(0, 50) + '...' : '',
+              });
           });
-      });
+        }
+
+        payments.forEach(pay => {
+            events.push({
+                id: `pay-${pay.id}`,
+                type: 'finance',
+                date: new Date(pay.created_at),
+                title: `Pagamento: ${pay.payment_method?.toUpperCase() || 'PIX'}`,
+                description: `${pay.description} | R$ ${pay.amount.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
+                status: pay.status
+            });
+        });
+
+        const baseUrlForContracts = await getSystemBaseUrl();
+        contracts.forEach(contract => {
+            events.push({
+                id: `contract-${contract.id}`,
+                type: 'contract',
+                date: new Date(contract.created_at),
+                title: `Contrato de Serviço ${contract.status === 'signed' ? '(Assinado)' : '(Pendente)'}`,
+                description: `Acesse o termo no link: ${baseUrlForContracts}/contrato/${contract.id}`,
+                status: contract.status
+            });
+        });
+
+        events.sort((a, b) => b.date.getTime() - a.date.getTime());
+        setTimelineEvents(events);
+        setLoadingTimeline(false);
+      }
+    } catch (err) {
+      console.error(`Erro ao carregar dados da aba ${tab}:`, err);
+    } finally {
+      setLoadingTab(prev => ({ ...prev, [tab]: false }));
     }
+  };
 
-    payments.forEach(pay => {
-        events.push({
-            id: `pay-${pay.id}`,
-            type: 'finance',
-            date: new Date(pay.created_at),
-            title: `Pagamento: ${pay.payment_method?.toUpperCase() || 'PIX'}`,
-            description: `${pay.description} | R$ ${pay.amount.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
-            status: pay.status
-        });
-    });
-
-    const baseUrlForContracts = await getSystemBaseUrl();
-    contracts.forEach(contract => {
-        events.push({
-            id: `contract-${contract.id}`,
-            type: 'contract',
-            date: new Date(contract.created_at),
-            title: `Contrato de Serviço ${contract.status === 'signed' ? '(Assinado)' : '(Pendente)'}`,
-            description: `Acesse o termo no link: ${baseUrlForContracts}/contrato/${contract.id}`,
-            status: contract.status
-        });
-    });
-
-    events.sort((a, b) => b.date.getTime() - a.date.getTime());
-    setTimelineEvents(events);
-    setLoadingTimeline(false);
+  const fetchPatientDetails = async (patientId: string) => {
+    await loadTabContent(activeTab, patientId);
   };
 
   const handleSelectPatient = (patient: any) => {
@@ -767,7 +796,34 @@ export default function PatientList() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {loading ? (
-                    <tr><td colSpan={5} className="py-20 text-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-600 mx-auto" /></td></tr>
+                    Array.from({ length: 5 }).map((_, idx) => (
+                      <tr key={idx} className="animate-pulse">
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-slate-100" />
+                            <div className="space-y-2">
+                              <div className="h-4 bg-slate-100 rounded w-28" />
+                              <div className="h-3 bg-slate-50 rounded w-16" />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="space-y-2">
+                            <div className="h-3.5 bg-slate-50 rounded w-44" />
+                            <div className="h-3.5 bg-slate-50 rounded w-32" />
+                          </div>
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="h-4 bg-slate-50 rounded w-20" />
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="h-5 bg-slate-50 rounded-full w-14" />
+                        </td>
+                        <td className="px-8 py-5 text-right">
+                          <div className="h-8 bg-slate-50 rounded-lg w-8 ml-auto" />
+                        </td>
+                      </tr>
+                    ))
                   ) : paginatedPatients.map((patient) => (
                     <tr 
                       key={patient.id} 
@@ -1034,7 +1090,16 @@ export default function PatientList() {
                     </button>
                   </div>
 
-                  {user?.role === 'atendimento' ? (
+                  {loadingTab['anamnesis'] ? (
+                    <div className="space-y-8 animate-pulse">
+                      <div className="h-24 bg-slate-50 rounded-3xl border border-slate-100" />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="h-44 bg-slate-50 rounded-3xl" />
+                        <div className="h-44 bg-slate-50 rounded-3xl" />
+                      </div>
+                      <div className="h-12 bg-slate-100 rounded-2xl w-40 ml-auto" />
+                    </div>
+                  ) : user?.role === 'atendimento' ? (
                     // Hide clinical details for reception staff to maintain medical confidentiality
                     <div className="py-12 px-6 text-center bg-slate-50 rounded-3xl border border-slate-200/60 max-w-lg mx-auto">
                       <Shield className="w-10 h-10 text-indigo-500 mx-auto mb-4" />
@@ -1201,131 +1266,168 @@ export default function PatientList() {
 
               {activeTab === 'history' && (
                 <div className="space-y-8 animate-in fade-in duration-500">
-                  <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 space-y-4">
-                    <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest flex items-center gap-2">
-                      <Clock className="w-4 h-4" /> Registrar Nova Evolução (Prontuário)
-                    </h4>
-                    <textarea 
-                      value={newEvolution}
-                      onChange={(e) => setNewEvolution(e.target.value)}
-                      className="w-full p-6 bg-white border border-slate-200 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-indigo-500 min-h-[120px] font-medium" 
-                      placeholder="Descreva as percepções clínicas e o que ocorreu na sessão de hoje. Esta anotação será salva com data e hora."
-                    />
-
-                    {/* Indicadores Clínicos / Emocionais */}
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-6">
-                      <h5 className="font-bold text-slate-800 text-sm flex items-center gap-2">📊 Indicadores de Evolução Terapêutica</h5>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        {/* Anxiety */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs font-bold text-slate-600">
-                            <span>Ansiedade</span>
-                            <span className="text-indigo-600 font-extrabold">{indicators.anxiety} / 10</span>
+                  {loadingTab['history'] ? (
+                    <div className="space-y-8 animate-pulse">
+                      <div className="h-48 bg-slate-50 rounded-[2rem] border border-slate-100" />
+                      <div className="space-y-6">
+                        {Array.from({ length: 3 }).map((_, idx) => (
+                          <div key={idx} className="pl-10 border-l-2 border-slate-100 pb-10 flex gap-4">
+                            <div className="w-4 h-4 rounded-full bg-slate-200" />
+                            <div className="flex-1 bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-3">
+                              <div className="h-4 bg-slate-200 rounded w-1/4" />
+                              <div className="h-4 bg-slate-100 rounded w-full" />
+                            </div>
                           </div>
-                          <input 
-                            type="range" min="0" max="10" step="1"
-                            value={indicators.anxiety}
-                            onChange={(e) => setIndicators({...indicators, anxiety: parseInt(e.target.value)})}
-                            className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                          />
-                          <div className="flex justify-between text-[9px] text-slate-400 font-medium">
-                            <span>Calmo</span>
-                            <span>Crise/Extremo</span>
-                          </div>
-                        </div>
-
-                        {/* Vitality */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs font-bold text-slate-600">
-                            <span>Vitalidade / Energia</span>
-                            <span className="text-emerald-600 font-extrabold">{indicators.vitality} / 10</span>
-                          </div>
-                          <input 
-                            type="range" min="0" max="10" step="1"
-                            value={indicators.vitality}
-                            onChange={(e) => setIndicators({...indicators, vitality: parseInt(e.target.value)})}
-                            className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-600"
-                          />
-                          <div className="flex justify-between text-[9px] text-slate-400 font-medium">
-                            <span>Sem Energia</span>
-                            <span>Plena/Vigoroso</span>
-                          </div>
-                        </div>
-
-                        {/* Physical Pain */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs font-bold text-slate-600">
-                            <span>Dor Física</span>
-                            <span className="text-rose-600 font-extrabold">{indicators.physical_pain} / 10</span>
-                          </div>
-                          <input 
-                            type="range" min="0" max="10" step="1"
-                            value={indicators.physical_pain}
-                            onChange={(e) => setIndicators({...indicators, physical_pain: parseInt(e.target.value)})}
-                            className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"
-                          />
-                          <div className="flex justify-between text-[9px] text-slate-400 font-medium">
-                            <span>Sem Dor</span>
-                            <span>Dor Extrema</span>
-                          </div>
-                        </div>
-
-                        {/* Sleep Quality */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-xs font-bold text-slate-600">
-                            <span>Qualidade do Sono</span>
-                            <span className="text-amber-500 font-bold">{indicators.sleep_quality} / 10</span>
-                          </div>
-                          <input 
-                            type="range" min="0" max="10" step="1"
-                            value={indicators.sleep_quality}
-                            onChange={(e) => setIndicators({...indicators, sleep_quality: parseInt(e.target.value)})}
-                            className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                          />
-                          <div className="flex justify-between text-[9px] text-slate-400 font-medium">
-                            <span>Insônia/Péssimo</span>
-                            <span>Sono Reparador</span>
-                          </div>
-                        </div>
+                        ))}
                       </div>
                     </div>
+                  ) : (
+                    <>
+                      <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 space-y-4">
+                        <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest flex items-center gap-2">
+                          <Clock className="w-4 h-4" /> Registrar Nova Evolução (Prontuário)
+                        </h4>
+                        <textarea 
+                          value={newEvolution}
+                          onChange={(e) => setNewEvolution(e.target.value)}
+                          className="w-full p-6 bg-white border border-slate-200 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-indigo-500 min-h-[120px] font-medium" 
+                          placeholder="Descreva as percepções clínicas e o que ocorreu na sessão de hoje. Esta anotação será salva com data e hora."
+                        />
 
-                    <div className="flex justify-end">
-                      <button 
-                        onClick={handleAddEvolution}
-                        disabled={saving}
-                        className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 active:scale-95 flex items-center gap-2 disabled:opacity-50"
-                      >
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                        Salvar e Assinar Evolução
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-6 max-h-[500px] overflow-y-auto pr-4 hide-scrollbar">
-                    {evolutions.map((evol) => (
-                      <div key={evol.id} className="group relative pl-10 border-l-2 border-slate-100 pb-10 last:pb-0">
-                        <div className="absolute top-0 left-[-9px] w-4 h-4 rounded-full bg-white border-2 border-indigo-600 shadow-sm" />
-                        <div className="bg-white p-6 rounded-3xl border border-slate-100 group-hover:border-indigo-100 group-hover:shadow-md transition-all shadow-sm">
-                          <div className="flex justify-between mb-2">
-                             <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest">{evol.type} • {new Date(evol.created_at).toLocaleDateString('pt-BR')} às {new Date(evol.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</p>
-                             <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1"><User className="w-3 h-3" /> Assinado Digitalmente</span>
+                        {/* Indicadores Clínicos / Emocionais */}
+                        <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-6">
+                          <h5 className="font-bold text-slate-800 text-sm flex items-center gap-2">📊 Indicadores de Evolução Terapêutica</h5>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            {/* Anxiety */}
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-xs font-bold text-slate-600">
+                                <span>Ansiedade</span>
+                                <span className="text-indigo-600 font-extrabold">{indicators.anxiety} / 10</span>
+                              </div>
+                              <input 
+                                type="range" min="0" max="10" step="1"
+                                value={indicators.anxiety}
+                                onChange={(e) => setIndicators({...indicators, anxiety: parseInt(e.target.value)})}
+                                className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                              />
+                              <div className="flex justify-between text-[9px] text-slate-400 font-medium">
+                                <span>Calmo</span>
+                                <span>Crise/Extremo</span>
+                              </div>
+                            </div>
+
+                            {/* Vitality */}
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-xs font-bold text-slate-600">
+                                <span>Vitalidade / Energia</span>
+                                <span className="text-emerald-600 font-extrabold">{indicators.vitality} / 10</span>
+                              </div>
+                              <input 
+                                type="range" min="0" max="10" step="1"
+                                value={indicators.vitality}
+                                onChange={(e) => setIndicators({...indicators, vitality: parseInt(e.target.value)})}
+                                className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                              />
+                              <div className="flex justify-between text-[9px] text-slate-400 font-medium">
+                                <span>Sem Energia</span>
+                                <span>Plena/Vigoroso</span>
+                              </div>
+                            </div>
+
+                            {/* Physical Pain */}
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-xs font-bold text-slate-600">
+                                <span>Dor Física</span>
+                                <span className="text-rose-600 font-extrabold">{indicators.physical_pain} / 10</span>
+                              </div>
+                              <input 
+                                type="range" min="0" max="10" step="1"
+                                value={indicators.physical_pain}
+                                onChange={(e) => setIndicators({...indicators, physical_pain: parseInt(e.target.value)})}
+                                className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                              />
+                              <div className="flex justify-between text-[9px] text-slate-400 font-medium">
+                                <span>Sem Dor</span>
+                                <span>Dor Extrema</span>
+                              </div>
+                            </div>
+
+                            {/* Sleep Quality */}
+                            <div className="space-y-2">
+                              <div className="flex justify-between text-xs font-bold text-slate-600">
+                                <span>Qualidade do Sono</span>
+                                <span className="text-amber-500 font-bold">{indicators.sleep_quality} / 10</span>
+                              </div>
+                              <input 
+                                type="range" min="0" max="10" step="1"
+                                value={indicators.sleep_quality}
+                                onChange={(e) => setIndicators({...indicators, sleep_quality: parseInt(e.target.value)})}
+                                className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                              />
+                              <div className="flex justify-between text-[9px] text-slate-400 font-medium">
+                                <span>Insônia/Péssimo</span>
+                                <span>Sono Reparador</span>
+                              </div>
+                            </div>
                           </div>
-                          <p className="text-slate-600 leading-relaxed font-medium whitespace-pre-wrap">{evol.notes}</p>
+                        </div>
+
+                        <div className="flex justify-end">
+                          <button 
+                            onClick={handleAddEvolution}
+                            disabled={saving}
+                            className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 active:scale-95 flex items-center gap-2 disabled:opacity-50"
+                          >
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            Salvar e Assinar Evolução
+                          </button>
                         </div>
                       </div>
-                    ))}
-                    {evolutions.length === 0 && (
-                      <div className="text-center py-10 text-slate-400 font-medium">Nenhuma evolução registrada para este paciente ainda.</div>
-                    )}
-                  </div>
+                      
+                      <div className="space-y-6 max-h-[500px] overflow-y-auto pr-4 hide-scrollbar">
+                        {evolutions.map((evol) => (
+                          <div key={evol.id} className="group relative pl-10 border-l-2 border-slate-100 pb-10 last:pb-0">
+                            <div className="absolute top-0 left-[-9px] w-4 h-4 rounded-full bg-white border-2 border-indigo-600 shadow-sm" />
+                            <div className="bg-white p-6 rounded-3xl border border-slate-100 group-hover:border-indigo-100 group-hover:shadow-md transition-all shadow-sm">
+                              <div className="flex justify-between mb-2">
+                                 <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest">{evol.type} • {new Date(evol.created_at).toLocaleDateString('pt-BR')} às {new Date(evol.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</p>
+                                 <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1"><User className="w-3 h-3" /> Assinado Digitalmente</span>
+                              </div>
+                              <p className="text-slate-600 leading-relaxed font-medium whitespace-pre-wrap">{evol.notes}</p>
+                            </div>
+                          </div>
+                        ))}
+                        {evolutions.length === 0 && (
+                          <div className="text-center py-10 text-slate-400 font-medium">Nenhuma evolução registrada para este paciente ainda.</div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
               {activeTab === 'timeline' && (
                 <div className="space-y-12 animate-in fade-in duration-500">
-                  {loadingTimeline ? (
-                    <div className="py-20 flex justify-center"><Loader2 className="w-10 h-10 text-indigo-600 animate-spin" /></div>
+                  {loadingTimeline || loadingTab['timeline'] ? (
+                    <div className="space-y-12 animate-pulse">
+                      <div className="h-80 bg-slate-50 rounded-[2rem] border border-slate-100" />
+                      <div className="space-y-6">
+                        <div className="h-6 bg-slate-200 rounded w-1/4" />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="h-32 bg-slate-50 rounded-[2rem]" />
+                          <div className="h-32 bg-slate-50 rounded-[2rem]" />
+                        </div>
+                      </div>
+                      <div className="space-y-8">
+                        <div className="h-6 bg-slate-200 rounded w-1/4" />
+                        {Array.from({ length: 3 }).map((_, idx) => (
+                          <div key={idx} className="flex items-center gap-6">
+                            <div className="w-12 h-12 rounded-full bg-slate-200" />
+                            <div className="flex-1 h-24 bg-slate-50 rounded-[2rem]" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   ) : (
                     <>
                       {/* Gráfico de Evolução Emocional/Física */}
@@ -1452,134 +1554,154 @@ export default function PatientList() {
 
               {activeTab === 'homecare' && (
                 <div className="space-y-8 animate-in fade-in duration-500">
-                  <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 space-y-6">
-                    <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest flex items-center gap-2">
-                      <Heart className="w-4 h-4 text-rose-500" /> Prescrever Autocuidado / Home Care
-                    </h4>
-                    <p className="text-sm text-slate-500 font-medium">Recomende florais, fitoterápicos, meditações ou práticas diárias para o paciente fazer em casa. A prescrição será enviada de forma estruturada via WhatsApp.</p>
-                    
-                    <div className="space-y-4">
-                      {newPrescriptionItems.map((item, idx) => (
-                        <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 relative">
-                          {newPrescriptionItems.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => setNewPrescriptionItems(newPrescriptionItems.filter((_, i) => i !== idx))}
-                              className="absolute top-4 right-4 p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="space-y-2">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tipo de Orientação</label>
-                              <select
-                                value={item.type}
-                                onChange={(e) => {
-                                  const newItems = [...newPrescriptionItems];
-                                  newItems[idx].type = e.target.value;
-                                  setNewPrescriptionItems(newItems);
-                                }}
-                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700 cursor-pointer appearance-none"
-                              >
-                                <option value="floral">🌸 Floral de Bach / Frequencial</option>
-                                <option value="ervas">🌿 Fitoterapia / Ervas / Chá</option>
-                                <option value="exercicio">🧘 Prática / Exercício / Meditação</option>
-                                <option value="outro">📝 Outros Autocuidados</option>
-                              </select>
-                            </div>
-                            <div className="space-y-2 md:col-span-2">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nome do Recomendado / Prática</label>
-                              <input
-                                type="text"
-                                value={item.name}
-                                onChange={(e) => {
-                                  const newItems = [...newPrescriptionItems];
-                                  newItems[idx].name = e.target.value;
-                                  setNewPrescriptionItems(newItems);
-                                }}
-                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700"
-                                placeholder="Ex: Floral Rescue Remedy, Meditação Mindfulness de 10 min..."
-                              />
+                  {loadingTab['homecare'] ? (
+                    <div className="space-y-8 animate-pulse">
+                      <div className="h-48 bg-slate-50 rounded-[2rem] border border-slate-100" />
+                      <div className="space-y-4">
+                        <div className="h-6 bg-slate-200 rounded w-1/4" />
+                        {Array.from({ length: 2 }).map((_, idx) => (
+                          <div key={idx} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
+                            <div className="h-4 bg-slate-200 rounded w-1/3" />
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="h-16 bg-slate-100 rounded-2xl" />
+                              <div className="h-16 bg-slate-100 rounded-2xl" />
                             </div>
                           </div>
-                          <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Instruções de Uso / Posologia / Guia</label>
-                            <textarea
-                              value={item.usage}
-                              onChange={(e) => {
-                                const newItems = [...newPrescriptionItems];
-                                newItems[idx].usage = e.target.value;
-                                  setNewPrescriptionItems(newItems);
-                              }}
-                              className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-medium text-slate-700 min-h-[80px]"
-                              placeholder="Ex: Tomar 4 gotas sublinguais 4x ao dia. Praticar pela manhã logo após acordar."
-                            />
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-
-                    <div className="flex justify-between items-center pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setNewPrescriptionItems([...newPrescriptionItems, { type: 'floral', name: '', usage: '' }])}
-                        className="px-5 py-3 border border-indigo-200 hover:border-indigo-500 text-indigo-600 bg-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
-                      >
-                        + Adicionar Item de Autocuidado
-                      </button>
-                      <button
-                        onClick={handleSavePrescription}
-                        disabled={saving}
-                        className="px-8 py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center gap-2 disabled:opacity-50"
-                      >
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                        Salvar e Enviar WhatsApp
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Past Prescriptions History */}
-                  <div className="space-y-6">
-                    <h4 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                      <History className="w-5 h-5 text-indigo-600" /> Histórico de Prescrições Home Care
-                    </h4>
-                    <div className="space-y-4">
-                      {prescriptions.map((presc) => (
-                        <div key={presc.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-                          <div className="flex justify-between items-center">
-                            <p className="text-xs font-bold text-indigo-600">
-                              Prescrito em {new Date(presc.created_at).toLocaleDateString('pt-BR')} às {new Date(presc.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
-                            </p>
-                            <button
-                              onClick={() => handleResendPrescription(presc)}
-                              disabled={saving}
-                              className="px-4 py-2 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl text-xs font-bold border border-slate-200 hover:border-indigo-200 transition-colors flex items-center gap-1.5"
-                            >
-                              <Send className="w-3.5 h-3.5" /> Reenviar WhatsApp
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {presc.items?.map((item: any, i: number) => (
-                              <div key={i} className="p-4 bg-slate-50 rounded-2xl border border-slate-200/50 flex gap-3">
-                                <span className="text-2xl mt-0.5">
-                                  {item.type === 'floral' ? '🌸' : item.type === 'ervas' ? '🌿' : item.type === 'exercicio' ? '🧘' : '📝'}
-                                </span>
-                                <div>
-                                  <h5 className="font-bold text-slate-900 text-sm">{item.name}</h5>
-                                  <p className="text-xs text-slate-400 font-bold uppercase">{item.type}</p>
-                                  <p className="text-xs text-slate-600 font-semibold mt-1 bg-white p-2 rounded-lg border border-slate-100 whitespace-pre-wrap">{item.usage}</p>
+                  ) : (
+                    <>
+                      <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 space-y-6">
+                        <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest flex items-center gap-2">
+                          <Heart className="w-4 h-4 text-rose-500" /> Prescrever Autocuidado / Home Care
+                        </h4>
+                        <p className="text-sm text-slate-500 font-medium">Recomende florais, fitoterápicos, meditações ou práticas diárias para o paciente fazer em casa. A prescrição será enviada de forma estruturada via WhatsApp.</p>
+                        
+                        <div className="space-y-4">
+                          {newPrescriptionItems.map((item, idx) => (
+                            <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 relative">
+                              {newPrescriptionItems.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setNewPrescriptionItems(newPrescriptionItems.filter((_, i) => i !== idx))}
+                                  className="absolute top-4 right-4 p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="space-y-2">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tipo de Orientação</label>
+                                  <select
+                                    value={item.type}
+                                    onChange={(e) => {
+                                      const newItems = [...newPrescriptionItems];
+                                      newItems[idx].type = e.target.value;
+                                      setNewPrescriptionItems(newItems);
+                                    }}
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700 cursor-pointer appearance-none"
+                                  >
+                                    <option value="floral">🌸 Floral de Bach / Frequencial</option>
+                                    <option value="ervas">🌿 Fitoterapia / Ervas / Chá</option>
+                                    <option value="exercicio">🧘 Prática / Exercício / Meditação</option>
+                                    <option value="outro">📝 Outros Autocuidados</option>
+                                  </select>
+                                </div>
+                                <div className="space-y-2 md:col-span-2">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nome do Recomendado / Prática</label>
+                                  <input
+                                    type="text"
+                                    value={item.name}
+                                    onChange={(e) => {
+                                      const newItems = [...newPrescriptionItems];
+                                      newItems[idx].name = e.target.value;
+                                      setNewPrescriptionItems(newItems);
+                                    }}
+                                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700"
+                                    placeholder="Ex: Floral Rescue Remedy, Meditação Mindfulness de 10 min..."
+                                  />
                                 </div>
                               </div>
-                            ))}
-                          </div>
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Instruções de Uso / Posologia / Guia</label>
+                                <textarea
+                                  value={item.usage}
+                                  onChange={(e) => {
+                                    const newItems = [...newPrescriptionItems];
+                                    newItems[idx].usage = e.target.value;
+                                      setNewPrescriptionItems(newItems);
+                                  }}
+                                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none font-medium text-slate-700 min-h-[80px]"
+                                  placeholder="Ex: Tomar 4 gotas sublinguais 4x ao dia. Praticar pela manhã logo após acordar."
+                                />
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                      {prescriptions.length === 0 && (
-                        <div className="text-center py-10 text-slate-400 font-medium">Nenhuma recomendação de autocuidado prescrita ainda.</div>
-                      )}
-                    </div>
-                  </div>
+
+                        <div className="flex justify-between items-center pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setNewPrescriptionItems([...newPrescriptionItems, { type: 'floral', name: '', usage: '' }])}
+                            className="px-5 py-3 border border-indigo-200 hover:border-indigo-500 text-indigo-600 bg-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
+                          >
+                            + Adicionar Item de Autocuidado
+                          </button>
+                          <button
+                            onClick={handleSavePrescription}
+                            disabled={saving}
+                            className="px-8 py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center gap-2 disabled:opacity-50"
+                          >
+                            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                            Salvar e Enviar WhatsApp
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Past Prescriptions History */}
+                      <div className="space-y-6">
+                        <h4 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                          <History className="w-5 h-5 text-indigo-600" /> Histórico de Prescrições Home Care
+                        </h4>
+                        <div className="space-y-4">
+                          {prescriptions.map((presc) => (
+                            <div key={presc.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                              <div className="flex justify-between items-center">
+                                <p className="text-xs font-bold text-indigo-600">
+                                  Prescrito em {new Date(presc.created_at).toLocaleDateString('pt-BR')} às {new Date(presc.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
+                                </p>
+                                <button
+                                  onClick={() => handleResendPrescription(presc)}
+                                  disabled={saving}
+                                  className="px-4 py-2 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl text-xs font-bold border border-slate-200 hover:border-indigo-200 transition-colors flex items-center gap-1.5"
+                                >
+                                  <Send className="w-3.5 h-3.5" /> Reenviar WhatsApp
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {presc.items?.map((item: any, i: number) => (
+                                  <div key={i} className="p-4 bg-slate-50 rounded-2xl border border-slate-200/50 flex gap-3">
+                                    <span className="text-2xl mt-0.5">
+                                      {item.type === 'floral' ? '🌸' : item.type === 'ervas' ? '🌿' : item.type === 'exercicio' ? '🧘' : '📝'}
+                                    </span>
+                                    <div>
+                                      <h5 className="font-bold text-slate-900 text-sm">{item.name}</h5>
+                                      <p className="text-xs text-slate-400 font-bold uppercase">{item.type}</p>
+                                      <p className="text-xs text-slate-600 font-semibold mt-1 bg-white p-2 rounded-lg border border-slate-100 whitespace-pre-wrap">{item.usage}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                          {prescriptions.length === 0 && (
+                            <div className="text-center py-10 text-slate-400 font-medium">Nenhuma recomendação de autocuidado prescrita ainda.</div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

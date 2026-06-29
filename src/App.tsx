@@ -27,6 +27,7 @@ import CampaignsPage from '@/src/pages/admin/CampaignsPage';
 import CRMPage from '@/src/pages/admin/CRMPage';
 import ConfigPage from '@/src/pages/admin/ConfigPage';
 import ServiceCenterPage from '@/src/pages/admin/ServiceCenterPage';
+import QuickSellPage from '@/src/pages/admin/QuickSellPage';
 import TherapistPage from '@/src/pages/admin/TherapistPage';
 import UsersManager from '@/src/pages/admin/UsersManager';
 import TherapistsManagementPage from '@/src/pages/admin/TherapistsManagementPage';
@@ -123,6 +124,7 @@ export default function App() {
           <Route path="/admin/relatorios" element={<RoleGuard allowedRoles={['admin', 'financeiro']}><AdminLayout><ReportsPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/insumos" element={<RoleGuard allowedRoles={['admin', 'atendimento']}><AdminLayout><SuppliesPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/atendimento" element={<RoleGuard allowedRoles={['admin', 'atendimento']}><AdminLayout><ServiceCenterPage /></AdminLayout></RoleGuard>} />
+          <Route path="/admin/vendas" element={<RoleGuard allowedRoles={['admin', 'financeiro', 'atendimento']}><AdminLayout><QuickSellPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/crm" element={<RoleGuard allowedRoles={['admin', 'atendimento']}><AdminLayout><CRMPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/campanhas" element={<RoleGuard allowedRoles={['admin', 'atendimento']}><AdminLayout><CampaignsPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/sessoes" element={<RoleGuard allowedRoles={['admin', 'terapeuta']}><AdminLayout><SessionLogger /></AdminLayout></RoleGuard>} />

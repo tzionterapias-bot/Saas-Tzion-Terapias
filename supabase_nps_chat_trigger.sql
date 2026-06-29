@@ -61,6 +61,9 @@ BEGIN
       UPDATE service_tickets
       SET status = 'closed', last_message = NEW.message_body
       WHERE id = v_ticket_id;
+
+      -- Altera o tipo de remetente para evitar que o chatbot IA responda a esta mensagem
+      NEW.sender_type := 'customer_nps';
       
     ELSE
       -- Se o cliente enviou qualquer outro texto (não é uma nota de 0 a 10),

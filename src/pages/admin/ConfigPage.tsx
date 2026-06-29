@@ -562,11 +562,11 @@ export default function ConfigPage() {
                           
                           <div className="p-4 bg-slate-900 rounded-2xl flex items-center justify-between gap-4 mb-4 shadow-inner">
                             <code className="text-xs font-mono text-emerald-400 truncate flex-1 select-all">
-                              {import.meta.env.VITE_SUPABASE_URL}/functions/v1/asaas-webhook
+                              {window.location.origin}/api/webhooks/asaas
                             </code>
                             <button 
                               onClick={() => {
-                                navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/asaas-webhook`);
+                                navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/asaas`);
                                 alert('URL copiada!');
                               }}
                               className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold transition-colors shrink-0"

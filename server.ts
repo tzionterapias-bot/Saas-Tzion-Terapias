@@ -417,11 +417,20 @@ async function startServer() {
   });
 
   app.post("/api/financeiro/criar-cobranca", requireStaffAuth, async (req, res) => {
-    const { valor, pacienteId, description } = req.body;
+    const { valor, pacienteId, description, billingType } = req.body;
     
-    console.log(`Criando cobrança Asaas para paciente: ${pacienteId}, valor: ${valor}`);
+    console.log(`Criando cobrança Asaas para paciente: ${pacienteId}, valor: ${valor}, tipo: ${billingType}`);
 
-    const apiKey = process.env.ASAAS_API_KEY;
+    let apiKey = process.env.ASAAS_API_KEY;
+    if (!apiKey || apiKey === "your-asaas-key") {
+      try {
+        const { data: dbKey } = await supabase.rpc('get_asaas_key');
+        if (dbKey) apiKey = dbKey;
+      } catch (err) {
+        console.error("Erro ao carregar Asaas Key do banco:", err);
+      }
+    }
+
     if (!apiKey || apiKey === "your-asaas-key") {
       console.log("Asaas API Key não configurada. Usando MOCK.");
       return res.json({
@@ -534,7 +543,7 @@ async function startServer() {
         },
         body: JSON.stringify({
           customer: asaasCustomerId,
-          billingType: "UNDEFINED", // permite PIX, Cartão ou Boleto no checkout
+          billingType: billingType || "UNDEFINED",
           value: Number(valor),
           dueDate: dueDate,
           description: description || "Tzion Terapias - Serviços Terapêuticos",
@@ -563,9 +572,76 @@ async function startServer() {
     }
   });
 
+  app.get("/api/financeiro/obter-pix-qrcode/:paymentId", requireStaffAuth, async (req, res) => {
+    const { paymentId } = req.params;
+    let apiKey = process.env.ASAAS_API_KEY;
+    if (!apiKey || apiKey === "your-asaas-key") {
+      try {
+        const { data: dbKey } = await supabase.rpc('get_asaas_key');
+        if (dbKey) apiKey = dbKey;
+      } catch (err) {
+        console.error("Erro ao carregar Asaas Key do banco para QR Code:", err);
+      }
+    }
+    
+    if (!apiKey || apiKey === "your-asaas-key" || paymentId.startsWith("mock_")) {
+      console.log("Asaas API Key não configurada ou ID mock. Retornando QR Code mock.");
+      return res.json({
+        success: true,
+        encodedImage: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        payload: "00020101021226870014br.gov.bcb.pix25650000000000000000000000000000000000000000000000000000005303986540510.005802BR5920Tzion Terapias6009Sao Paulo62070503***6304E22A"
+      });
+    }
+
+    const isProduction = process.env.ASAAS_ENV === "production";
+    const asaasBaseUrl = isProduction ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
+
+    try {
+      const response = await fetch(`${asaasBaseUrl}/payments/${paymentId}/pixQrCode`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "access_token": apiKey
+        }
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("Erro ao obter PIX QR Code do Asaas:", errText);
+        return res.status(500).json({ error: `Erro no Asaas ao obter QR Code: ${errText}` });
+      }
+
+      const data = await response.json();
+      return res.json({
+        success: data.success,
+        encodedImage: data.encodedImage,
+        payload: data.payload
+      });
+    } catch (err) {
+      console.error("Erro interno ao obter PIX QR Code:", err);
+      return res.status(500).json({ error: "Erro interno no servidor ao obter QR Code." });
+    }
+  });
+
   app.post("/api/webhooks/asaas", async (req, res) => {
     console.log("Asaas Webhook received:", req.body);
     const { event, payment } = req.body;
+    
+    // Validar token de acesso do webhook se estiver configurado
+    try {
+      const { data: setts } = await supabase.from('settings').select('value').eq('key', 'integrations').maybeSingle();
+      const expectedToken = setts?.value?.asaas_webhook_token;
+      
+      if (expectedToken && expectedToken.trim() !== '') {
+        const headerToken = req.headers['asaas-access-token'];
+        if (!headerToken || headerToken !== expectedToken) {
+          console.warn("[WEBHOOK][ASAAS] Token de acesso do webhook inválido ou ausente.");
+          return res.status(401).json({ error: "Unauthorized" });
+        }
+      }
+    } catch (err) {
+      console.error("[WEBHOOK][ASAAS] Erro ao validar token do webhook:", err);
+    }
     
     if (!payment || !payment.id) {
       return res.sendStatus(200);
@@ -867,7 +943,13 @@ async function startServer() {
       const financeRes = await executeFinancialSync();
 
       const now = new Date();
-      const currentHour = now.getHours();
+      // Obter a hora atual em Brasília (America/Sao_Paulo) para evitar problemas com fuso horário do servidor
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Sao_Paulo',
+        hour: 'numeric',
+        hour12: false
+      });
+      const currentHour = Number(formatter.format(now));
       let remindersRan = false;
       let retentionRan = false;
 
@@ -1263,13 +1345,18 @@ function saveReminderState(state: any) {
 async function startRemindersWorker() {
   console.log("[WORKER][REMINDERS] Reminders Worker initialized.");
 
-  // Check every 15 minutes
   setInterval(async () => {
     try {
       const now = new Date();
-      const currentHour = now.getHours();
+      // Obter a hora atual em Brasília (America/Sao_Paulo)
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Sao_Paulo',
+        hour: 'numeric',
+        hour12: false
+      });
+      const currentHour = Number(formatter.format(now));
 
-      // Envia os lembretes entre as 9h e 10h da manhã
+      // Envia os lembretes entre as 9h e 10h da manhã (Horário de Brasília)
       if (currentHour >= 9 && currentHour < 10) {
         const state = getReminderState();
         const todayStr = now.toDateString();
@@ -1296,15 +1383,25 @@ async function startRemindersWorker() {
 
 async function runDailyRemindersBackend() {
   try {
-    // Buscar agendamentos para o dia seguinte
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-    const startOfTomorrow = tomorrow.toISOString();
+    // Buscar agendamentos para o dia seguinte considerando o fuso horário de Brasília (America/Sao_Paulo)
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    // Obtém a data de amanhã em Brasília
+    const tomorrowDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const tomorrowStr = formatter.format(tomorrowDate);
 
-    const dayAfter = new Date(tomorrow);
-    dayAfter.setDate(dayAfter.getDate() + 1);
-    const startOfDayAfter = dayAfter.toISOString();
+    // Obtém o dia seguinte a amanhã em Brasília
+    const dayAfterDate = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000);
+    const dayAfterStr = formatter.format(dayAfterDate);
+
+    // Meia-noite de amanhã e do dia seguinte em Brasília (UTC-3 -> 03:00 UTC)
+    const startOfTomorrow = `${tomorrowStr}T03:00:00.000Z`;
+    const startOfDayAfter = `${dayAfterStr}T03:00:00.000Z`;
 
     const { data: appointments, error } = await supabase
       .from('appointments')
@@ -1473,13 +1570,18 @@ async function runDailyRetentionBackend() {
 async function startRetentionWorker() {
   console.log("[WORKER][RETENTION] Retention Worker initialized.");
 
-  // Check every 15 minutes
   setInterval(async () => {
     try {
       const now = new Date();
-      const currentHour = now.getHours();
+      // Obter a hora atual em Brasília (America/Sao_Paulo)
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Sao_Paulo',
+        hour: 'numeric',
+        hour12: false
+      });
+      const currentHour = Number(formatter.format(now));
 
-      // Envia os lembretes de retenção entre as 9h e 10h da manhã
+      // Envia os lembretes de retenção entre as 9h e 10h da manhã (Horário de Brasília)
       if (currentHour >= 9 && currentHour < 10) {
         const state = getReminderState();
         const todayStr = now.toDateString();
@@ -1655,7 +1757,15 @@ async function executeFinancialSync() {
     throw pErr;
   }
 
-  const apiKey = process.env.ASAAS_API_KEY;
+  let apiKey = process.env.ASAAS_API_KEY;
+  if (!apiKey || apiKey === "your-asaas-key") {
+    try {
+      const { data: dbKey } = await supabase.rpc('get_asaas_key');
+      if (dbKey) apiKey = dbKey;
+    } catch (err) {
+      console.error("Erro ao obter Asaas Key para sincronização:", err);
+    }
+  }
   const isMock = !apiKey || apiKey === "your-asaas-key";
   const isProduction = process.env.ASAAS_ENV === "production";
   const asaasBaseUrl = isProduction ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";

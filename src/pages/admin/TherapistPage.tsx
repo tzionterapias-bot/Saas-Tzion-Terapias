@@ -837,6 +837,21 @@ export default function TherapistPage() {
           await supabase.from('appointments').update(updateData).eq('id', createdAppt.id);
       }
 
+      // Buscar endereço no perfil da clínica para agendamento presencial
+      let localAddress = 'Nosso consultório está de portas abertas para te receber.';
+      try {
+          const { data: clinicProfileSett } = await supabase
+              .from('settings')
+              .select('value')
+              .eq('key', 'clinic_profile')
+              .maybeSingle();
+          if (clinicProfileSett?.value?.address && clinicProfileSett.value.address.trim() !== '') {
+              localAddress = clinicProfileSett.value.address.trim();
+          }
+      } catch (err) {
+          console.error("Erro ao buscar endereço da clínica:", err);
+      }
+
       // 3. Envia WhatsApps
       const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
       if (patientData && patientData.phone) {
@@ -852,7 +867,7 @@ export default function TherapistPage() {
          } else if (newApp.type === 'Online') {
              mensagem += `💻 *Sessão Online:*\nO link seguro do Google Meet será gerado pelo seu terapeuta e enviado logo antes da sessão. Fique de olho!\n\n`;
          } else {
-             mensagem += `📍 *Local Presencial:*\nNosso consultório está de portas abertas para te receber.\n\n`;
+             mensagem += `📍 *Local Presencial:*\n${localAddress}\n\n`;
          }
          mensagem += `Um abraço e te esperamos! 💙`;
          await sendWhatsAppMessage(newApp.patient_id, patientData.phone, mensagem, 'appointment_created');

@@ -14,6 +14,8 @@ export interface Department {
 interface Props {
   activeDept: string;
   onSelect: (id: string) => void;
+  isMobileDrawer?: boolean;
+  onClose?: () => void;
 }
 
 const getIconForDept = (name: string) => {
@@ -25,7 +27,7 @@ const getIconForDept = (name: string) => {
   return HelpCircle;
 };
 
-export default function DepartmentSidebar({ activeDept, onSelect }: Props) {
+export default function DepartmentSidebar({ activeDept, onSelect, isMobileDrawer = false, onClose }: Props) {
   const [departments, setDepartments] = useState<Department[]>([
     { id: 'all', name: 'Todos os Tickets', icon: LayoutGrid, color: 'indigo', count: 0 }
   ]);
@@ -76,8 +78,9 @@ export default function DepartmentSidebar({ activeDept, onSelect }: Props) {
   useEffect(() => {
     fetchDeptsAndTickets();
 
+    const instanceId = Math.random().toString(36).substring(2, 9);
     const channel = supabase
-      .channel('sidebar_tickets_changes')
+      .channel(`sidebar_tickets_changes_${instanceId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_tickets' }, () => {
         fetchDeptsAndTickets();
       })
@@ -121,9 +124,25 @@ export default function DepartmentSidebar({ activeDept, onSelect }: Props) {
   };
 
   return (
-    <div className="w-20 lg:w-64 bg-white/60 backdrop-blur-3xl border-r border-slate-200/60 flex flex-col h-full transition-all relative">
-      <div className="p-6 border-b border-slate-200/50 hidden lg:block bg-white/40">
+    <div className={cn(
+      "flex flex-col h-full transition-all relative",
+      isMobileDrawer 
+        ? "w-full bg-white" 
+        : "w-20 lg:w-64 bg-white/60 backdrop-blur-3xl border-r border-slate-200/60"
+    )}>
+      <div className={cn(
+        "p-6 border-b border-slate-200/50 bg-white/40 flex items-center justify-between",
+        isMobileDrawer ? "flex" : "hidden lg:flex"
+      )}>
         <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Departamentos</h3>
+        {isMobileDrawer && onClose && (
+          <button 
+            onClick={onClose}
+            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
       
       <div className="flex-1 overflow-y-auto py-4">
@@ -147,7 +166,7 @@ export default function DepartmentSidebar({ activeDept, onSelect }: Props) {
                 )}>
                   <dept.icon className="w-5 h-5" />
                 </div>
-                <div className="flex-1 text-left hidden lg:block">
+                <div className={cn("flex-1 text-left", isMobileDrawer ? "block" : "hidden lg:block")}>
                   <p className={cn(
                     "font-bold text-sm leading-none transition-colors",
                     activeDept === dept.id ? "text-indigo-700" : "text-slate-600 group-hover:text-indigo-600"
@@ -155,17 +174,25 @@ export default function DepartmentSidebar({ activeDept, onSelect }: Props) {
                   <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">{dept.count} ativos</p>
                 </div>
                 {activeDept === dept.id && (
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-8 bg-indigo-600 rounded-l-full hidden lg:block shadow-[0_0_10px_rgba(79,70,229,0.5)]" />
+                  <div className={cn(
+                    "absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-8 bg-indigo-600 rounded-l-full shadow-[0_0_10px_rgba(79,70,229,0.5)]",
+                    isMobileDrawer ? "block" : "hidden lg:block"
+                  )} />
                 )}
                 
-                {/* Lixeira (Hover) */}
+                {/* Lixeira (Hover/Click) */}
                 {dept.id !== 'all' && (
                    <button 
                      onClick={(e) => {
                        e.stopPropagation();
                        setDeptToDelete(dept);
                      }}
-                     className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-rose-50 text-rose-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-500 hover:text-white hidden lg:flex scale-90 hover:scale-100 shadow-sm"
+                     className={cn(
+                       "absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-rose-50 text-rose-500 rounded-lg scale-90 shadow-sm transition-all",
+                       isMobileDrawer 
+                         ? "flex" 
+                         : "opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white hidden lg:flex hover:scale-100"
+                     )}
                      title="Excluir Departamento"
                    >
                      <Trash2 className="w-4 h-4" />
@@ -176,7 +203,7 @@ export default function DepartmentSidebar({ activeDept, onSelect }: Props) {
           </div>
         </div>
       
-      <div className="p-4 border-t border-slate-50 hidden lg:block">
+      <div className={cn("p-4 border-t border-slate-50", isMobileDrawer ? "block" : "hidden lg:block")}>
         <div className="bg-slate-900 rounded-2xl p-4 text-white space-y-3 relative overflow-hidden">
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Status do Sistema</p>
           <div className="flex items-center gap-2">

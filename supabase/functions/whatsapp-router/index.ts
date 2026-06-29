@@ -133,11 +133,11 @@ serve(async (req) => {
       }
     }
 
-    // 1. Buscar ticket aberto para este cliente
+    // 1. Buscar ticket aberto para este cliente (compara com e sem o sufixo @s.whatsapp.net)
     const { data: ticket, error: ticketError } = await supabase
       .from("service_tickets")
       .select("*")
-      .eq("customer_phone", customerPhone)
+      .or(`customer_phone.eq.${customerPhone},customer_phone.eq.${remoteJid}`)
       .neq("status", "closed")
       .order('created_at', { ascending: false })
       .limit(1)
@@ -197,9 +197,9 @@ serve(async (req) => {
 
         // Salva a resposta no histórico de chat
         await supabase.from("chat_messages").insert({
-          customer_phone: customerPhone,
+          customer_phone: remoteJid,
           message_body: text,
-          sender_type: "customer",
+          sender_type: "customer_nps",
           message_type: "text",
           instance_id: body.instanceId || body.data?.instanceId || Deno.env.get("EVOLUTION_INSTANCE_NAME") || "tzion"
         });
@@ -217,7 +217,7 @@ serve(async (req) => {
 
         // Salvar a mensagem no histórico
         await supabase.from("chat_messages").insert({
-          customer_phone: customerPhone,
+          customer_phone: remoteJid,
           message_body: text,
           sender_type: "customer",
           message_type: "text",
@@ -233,7 +233,7 @@ serve(async (req) => {
       const { data: newTicket } = await supabase
         .from("service_tickets")
         .insert({
-          customer_phone: customerPhone,
+          customer_phone: remoteJid,
           customer_name: customerName,
           status: "open",
           metadata: { waiting_triagem: true }
@@ -290,7 +290,7 @@ serve(async (req) => {
 
     // 4. Se já tiver departamento atribuído, salvar a mensagem no histórico
     await supabase.from("chat_messages").insert({
-      customer_phone: customerPhone,
+      customer_phone: remoteJid,
       message_body: text,
       sender_type: "customer",
       message_type: "text",

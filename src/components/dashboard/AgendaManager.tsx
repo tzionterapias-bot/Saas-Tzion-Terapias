@@ -279,11 +279,25 @@ export default function AgendaManager() {
       // 1. Busca dados de contato
       const { data: patientData } = await supabase.from('patients').select('phone, name').eq('id', newAppt.patient_id).single();
       const { data: therapistData } = await supabase.from('therapists').select('phone, name').eq('id', newAppt.therapist_id).single();
-      
       const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
       const dataFormatada = new Date(startTime).toLocaleDateString('pt-BR');
       let meetLink = '';
       let googleEventId = '';
+
+      // Buscar endereço no perfil da clínica para agendamento presencial
+      let localAddress = 'Nosso consultório está de portas abertas para te receber.';
+      try {
+          const { data: clinicProfileSett } = await supabase
+              .from('settings')
+              .select('value')
+              .eq('key', 'clinic_profile')
+              .maybeSingle();
+          if (clinicProfileSett?.value?.address && clinicProfileSett.value.address.trim() !== '') {
+              localAddress = clinicProfileSett.value.address.trim();
+          }
+      } catch (err) {
+          console.error("Erro ao buscar endereço da clínica:", err);
+      }
 
       // 2. Dispara o Webhook (aguardando o n8n criar o evento)
       try {
@@ -404,7 +418,7 @@ export default function AgendaManager() {
           } else if (newAppt.type === 'Online') {
               mensagem += `💻 *Sessão Online:*\nO link seguro do Google Meet será gerado pelo seu terapeuta e enviado logo antes da sessão. Fique de olho!\n\n`;
           } else {
-              mensagem += `📍 *Local Presencial:*\nNosso consultório está de portas abertas para te receber.\n\n`;
+              mensagem += `📍 *Local Presencial:*\n${localAddress}\n\n`;
           }
           mensagem += `Um abraço e te esperamos! 💙`;
           
@@ -499,9 +513,7 @@ export default function AgendaManager() {
       const { data: patientData } = await supabase.from('patients').select('phone, name').eq('id', newAppt.patient_id).single();
       if (patientData && patientData.phone) {
          const firstName = patientData.name.split(' ')[0];
-         let mensagem = `Olá, *${firstName}*! ✨\n\n`;
-         mensagem += `As ${newAppt.batch_dates.length} sessões do seu pacote na *Clínica Tzion Terapias* foram agendadas!\n\n`;
-         mensagem += `Confira as próximas datas:\n`;
+         let mensagem = `Olá, *${firstName}*! ✨\n\nAs ${newAppt.batch_dates.length} sessões do seu pacote na *Clínica Tzion Terapias* foram agendadas!\n\nConfira as próximas datas:\n`;
          
          newAppt.batch_dates.slice(0, 4).forEach((bd, i) => {
             mensagem += `📅 ${new Date(bd.date).toLocaleDateString('pt-BR')} às ${bd.time}\n`;
@@ -793,6 +805,22 @@ export default function AgendaManager() {
            alert('Paciente não possui telefone cadastrado.');
            return;
        }
+
+        // Buscar endereço no perfil da clínica para agendamento presencial
+        let localAddress = 'Nosso consultório está prontinho para te receber.';
+        try {
+            const { data: clinicProfileSett } = await supabase
+                .from('settings')
+                .select('value')
+                .eq('key', 'clinic_profile')
+                .maybeSingle();
+            if (clinicProfileSett?.value?.address && clinicProfileSett.value.address.trim() !== '') {
+                localAddress = clinicProfileSett.value.address.trim();
+            }
+        } catch (err) {
+            console.error("Erro ao buscar endereço da clínica:", err);
+        }
+
        const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
        const dataFormatada = new Date(event.start_time).toLocaleDateString('pt-BR');
        const horaFormatada = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -809,7 +837,7 @@ export default function AgendaManager() {
                mensagem += `💻 *Sessão Online:*\nO link do Google Meet será gerado e enviado logo antes da sessão iniciar. Fique de olho!\n\n`;
            }
        } else {
-           mensagem += `📍 *Local Presencial:*\nNosso consultório está prontinho para te receber.\n\n`;
+           mensagem += `📍 *Local Presencial:*\n${localAddress}\n\n`;
        }
        mensagem += `Um abraço e até mais tarde! 💙`;
        
@@ -919,42 +947,44 @@ export default function AgendaManager() {
       while(totalSlots.length % 7 !== 0) totalSlots.push(null);
 
       return (
-        <div className="grid grid-cols-7 gap-px rounded-[2rem] overflow-hidden border border-slate-200 shadow-sm bg-slate-200">
-          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
-            <div key={day} className="bg-slate-50 p-4 text-center">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{day}</span>
-            </div>
-          ))}
-          {totalSlots.map((dayNum, i) => {
-            if (dayNum === null) return <div key={i} className="bg-slate-50/50 h-32 p-3 opacity-30" />;
-            
-            const cellDate = new Date(year, month, dayNum);
-            const dayAppts = appointments.filter(a => {
-               const d = new Date(a.start_time);
-               return d.getDate() === dayNum && d.getMonth() === month && d.getFullYear() === year;
-            });
-            const isToday = cellDate.toDateString() === new Date().toDateString();
-            
-            return (
-              <div 
-                key={i} 
-                onClick={() => dayAppts.length > 0 && setSelectedDateAppointments({ date: cellDate, appts: dayAppts })}
-                className={cn("bg-white h-32 p-3 transition-all group relative", dayAppts.length > 0 ? 'hover:bg-indigo-50/30 cursor-pointer' : '')}
-              >
-                <span className={cn("text-sm font-bold", isToday ? 'bg-indigo-600 text-white w-7 h-7 flex items-center justify-center rounded-lg shadow-lg shadow-indigo-100' : 'text-slate-600')}>
-                  {dayNum}
-                </span>
-                <div className="mt-2 space-y-1">
-                  {dayAppts.slice(0, 2).map((appt, idx) => (
-                    <div key={idx} className="px-2 py-1 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded text-[9px] font-bold truncate">
-                      {new Date(appt.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {appt.patient_name}
-                    </div>
-                  ))}
-                  {dayAppts.length > 2 && <div className="text-[8px] text-slate-400 font-bold px-1">+{dayAppts.length - 2} mais</div>}
-                </div>
+        <div className="overflow-x-auto w-full rounded-[2rem] border border-slate-200 shadow-sm bg-slate-200 custom-scrollbar">
+          <div className="grid grid-cols-7 gap-px min-w-[700px] bg-slate-200">
+            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day) => (
+              <div key={day} className="bg-slate-50 p-4 text-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{day}</span>
               </div>
-            );
-          })}
+            ))}
+            {totalSlots.map((dayNum, i) => {
+              if (dayNum === null) return <div key={i} className="bg-slate-50/50 h-32 p-3 opacity-30" />;
+              
+              const cellDate = new Date(year, month, dayNum);
+              const dayAppts = appointments.filter(a => {
+                 const d = new Date(a.start_time);
+                 return d.getDate() === dayNum && d.getMonth() === month && d.getFullYear() === year;
+              });
+              const isToday = cellDate.toDateString() === new Date().toDateString();
+              
+              return (
+                <div 
+                  key={i} 
+                  onClick={() => dayAppts.length > 0 && setSelectedDateAppointments({ date: cellDate, appts: dayAppts })}
+                  className={cn("bg-white h-32 p-3 transition-all group relative", dayAppts.length > 0 ? 'hover:bg-indigo-50/30 cursor-pointer' : '')}
+                >
+                  <span className={cn("text-sm font-bold", isToday ? 'bg-indigo-600 text-white w-7 h-7 flex items-center justify-center rounded-lg shadow-lg shadow-indigo-100' : 'text-slate-600')}>
+                    {dayNum}
+                  </span>
+                  <div className="mt-2 space-y-1">
+                    {dayAppts.slice(0, 2).map((appt, idx) => (
+                      <div key={idx} className="px-2 py-1 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded text-[9px] font-bold truncate">
+                        {new Date(appt.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {appt.patient_name}
+                      </div>
+                    ))}
+                    {dayAppts.length > 2 && <div className="text-[8px] text-slate-400 font-bold px-1">+{dayAppts.length - 2} mais</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       );
     }
@@ -989,7 +1019,11 @@ export default function AgendaManager() {
               <div key={`content-${i}`} className="bg-white h-[380px] overflow-y-auto custom-scrollbar p-2 sm:p-4 space-y-2 sm:space-y-3">
                  {dayAppts.length === 0 && <p className="text-xs sm:text-sm text-slate-400 text-center mt-10">Livre</p>}
                  {dayAppts.map(appt => (
-                   <div key={appt.id} className="p-2 sm:p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex flex-col gap-1.5 hover:border-indigo-300 transition-colors cursor-pointer min-w-0">
+                    <div 
+                      key={appt.id} 
+                      onClick={() => setSelectedDateAppointments({ date: date, appts: dayAppts })}
+                      className="p-2 sm:p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex flex-col gap-1.5 hover:border-indigo-300 transition-colors cursor-pointer min-w-0"
+                    >
                      <div className="flex flex-wrap items-center justify-between gap-1">
                        <span className="text-indigo-700 font-black text-[10px] sm:text-xs shrink-0">{new Date(appt.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
                        <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-indigo-400 shrink-0">{appt.type}</span>
@@ -1008,28 +1042,28 @@ export default function AgendaManager() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between bg-white p-4 sm:p-6 rounded-[2rem] border border-slate-200 shadow-sm gap-4">
+        <div className="flex flex-wrap items-center justify-between sm:justify-start gap-4">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button onClick={handlePrev} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
               <ChevronLeft className="w-5 h-5 text-slate-400" />
             </button>
-            <h2 className="text-xl font-bold text-slate-800 min-w-[200px] text-center capitalize">{headerTitle}</h2>
+            <h2 className="text-lg sm:text-xl font-bold text-slate-800 min-w-[150px] sm:min-w-[200px] text-center capitalize leading-none">{headerTitle}</h2>
             <button onClick={handleNext} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
                <ChevronRight className="w-5 h-5 text-slate-400" />
             </button>
           </div>
-          <button onClick={handleToday} className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-bold hover:bg-slate-50 transition-colors text-slate-600">Hoje</button>
+          <button onClick={handleToday} className="px-3 py-1.5 sm:px-4 sm:py-2 border border-slate-200 rounded-lg text-xs sm:text-sm font-bold hover:bg-slate-50 transition-colors text-slate-600">Hoje</button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 w-full lg:w-auto">
           <div className="flex bg-slate-100 p-1 rounded-xl">
-            <button onClick={() => setViewMode('day')} className={cn("px-4 py-1.5 text-sm font-bold rounded-lg transition-all", viewMode === 'day' ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700")}>Dia</button>
-            <button onClick={() => setViewMode('week')} className={cn("px-4 py-1.5 text-sm font-bold rounded-lg transition-all", viewMode === 'week' ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700")}>Semana</button>
-            <button onClick={() => setViewMode('month')} className={cn("px-4 py-1.5 text-sm font-bold rounded-lg transition-all", viewMode === 'month' ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700")}>Mês</button>
+            <button onClick={() => setViewMode('day')} className={cn("px-3 py-1.5 sm:px-4 sm:py-1.5 text-xs sm:text-sm font-bold rounded-lg transition-all", viewMode === 'day' ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700")}>Dia</button>
+            <button onClick={() => setViewMode('week')} className={cn("px-3 py-1.5 sm:px-4 sm:py-1.5 text-xs sm:text-sm font-bold rounded-lg transition-all", viewMode === 'week' ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700")}>Semana</button>
+            <button onClick={() => setViewMode('month')} className={cn("px-3 py-1.5 sm:px-4 sm:py-1.5 text-xs sm:text-sm font-bold rounded-lg transition-all", viewMode === 'month' ? "bg-white shadow-sm text-indigo-600" : "text-slate-500 hover:text-slate-700")}>Mês</button>
           </div>
           <button 
             onClick={handleOpenWizard}
-            className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-95"
+            className="px-4 py-2 sm:px-6 sm:py-2.5 bg-indigo-600 text-white rounded-xl text-xs sm:text-sm font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all active:scale-95 text-center flex-1 sm:flex-initial"
           >
             + Novo Agendamento
           </button>

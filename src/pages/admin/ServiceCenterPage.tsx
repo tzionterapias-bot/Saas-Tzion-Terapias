@@ -9,6 +9,7 @@ export default function ServiceCenterPage() {
   const [selectedDeptId, setSelectedDeptId] = React.useState('all');
   const [selectedTicket, setSelectedTicket] = React.useState<Ticket | null>(null);
   const [activeView, setActiveView] = React.useState<'meus' | 'fila' | 'finalizados'>('meus');
+  const [isMobileDeptOpen, setIsMobileDeptOpen] = React.useState(false);
 
   React.useEffect(() => {
     const handleTransfer = (e: any) => {
@@ -31,14 +32,39 @@ export default function ServiceCenterPage() {
   ];
 
   return (
-    <div className="flex h-[calc(100vh-11rem)] lg:h-[calc(100vh-14rem)] min-h-[500px] bg-white/40 backdrop-blur-3xl rounded-[3rem] border border-white/60 overflow-hidden shadow-[0_8px_40px_rgba(0,0,0,0.04)] animate-in fade-in zoom-in-95 duration-500">
-      <div className={cn("h-full shrink-0 z-20", selectedTicket ? "hidden lg:block" : "block")}>
+    <div className="flex h-full w-full bg-white overflow-hidden animate-in fade-in duration-300 relative">
+      {/* Drawer overlay para mobile */}
+      {isMobileDeptOpen && (
+        <div 
+          onClick={() => setIsMobileDeptOpen(false)}
+          className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-[150] lg:hidden animate-in fade-in duration-200"
+        />
+      )}
+
+      {/* Drawer contendo a barra lateral de departamentos para mobile */}
+      <div className={cn(
+        "fixed inset-y-0 left-0 w-72 bg-white z-[160] shadow-2xl transition-transform duration-300 transform lg:hidden flex flex-col border-r border-slate-200",
+        isMobileDeptOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
         <DepartmentSidebar 
           activeDept={selectedDeptId} 
           onSelect={(id) => {
             setSelectedDeptId(id);
             setSelectedTicket(null);
-            // Removemos o reset de aba aqui para que o usuário continue na aba que ele escolheu ver
+            setIsMobileDeptOpen(false);
+          }} 
+          isMobileDrawer={true}
+          onClose={() => setIsMobileDeptOpen(false)}
+        />
+      </div>
+
+      {/* Barra lateral estática para desktop */}
+      <div className="hidden lg:block h-full shrink-0 z-20">
+        <DepartmentSidebar 
+          activeDept={selectedDeptId} 
+          onSelect={(id) => {
+            setSelectedDeptId(id);
+            setSelectedTicket(null);
           }} 
         />
       </div>
@@ -74,6 +100,7 @@ export default function ServiceCenterPage() {
               activeTicketId={selectedTicket?.id}
               onSelectTicket={setSelectedTicket}
               view={activeView}
+              onOpenDepts={() => setIsMobileDeptOpen(true)}
             />
           </div>
         

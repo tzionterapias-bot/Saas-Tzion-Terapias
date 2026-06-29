@@ -121,8 +121,9 @@ export default function ChatWindow({ ticket, onBack }: Props) {
     };
     fetchDepts();
 
+    const instanceId = Math.random().toString(36).substring(2, 9);
     const channel = supabase
-      .channel(`chat_${ticket.phone}`)
+      .channel(`chat_${ticket.phone}_${instanceId}`)
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 

@@ -3,7 +3,7 @@ import { supabase } from '@/src/lib/supabase';
 import { 
   LayoutDashboard, Users, Calendar, Banknote, MessageSquare, 
   BookOpen, Settings, LogOut, Heart, Headset, Menu, X, Bell, Search, User, Award,
-  Sun, Moon, Shield, Megaphone, PieChart, Globe, Monitor, UserCog
+  Sun, Moon, Shield, Megaphone, PieChart, Globe, Monitor, UserCog, Briefcase
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
@@ -32,6 +32,7 @@ const menuCategories = [
     title: 'Gestão & Vendas',
     items: [
       { icon: Banknote, label: 'Financeiro', path: '/admin/financeiro', roles: ['admin', 'financeiro', 'atendimento'] },
+      { icon: Briefcase, label: 'Venda Rápida', path: '/admin/vendas', roles: ['admin', 'financeiro', 'atendimento'] },
       { icon: Headset, label: 'Central de Atendimento', path: '/admin/atendimento', roles: ['admin', 'atendimento'] },
       { icon: MessageSquare, label: 'CRM & Marketing', path: '/admin/crm', roles: ['admin', 'atendimento'] },
       { icon: Megaphone, label: 'Campanhas', path: '/admin/campanhas', roles: ['admin', 'atendimento'] },
@@ -57,27 +58,57 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { user, logout } = useAuth();
   const { activeSession, setShowBlockModal } = useActiveSession();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [whiteLabel, setWhiteLabel] = useState<any>(null);
+  const [whiteLabel, setWhiteLabel] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem('white_label');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Aplica as cores de marca nas variáveis CSS imediatamente para evitar flash de cor
+        const root = document.documentElement;
+        if (parsed.primaryColor) {
+          root.style.setProperty('--color-indigo-600', parsed.primaryColor);
+          root.style.setProperty('--color-indigo-700', `color-mix(in srgb, ${parsed.primaryColor} 85%, black)`);
+          root.style.setProperty('--color-indigo-500', parsed.primaryColor);
+        }
+        if (parsed.secondaryColor) {
+          root.style.setProperty('--color-indigo-50', parsed.secondaryColor);
+          root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${parsed.secondaryColor} 70%, white)`);
+        } else if (parsed.primaryColor) {
+          root.style.setProperty('--color-indigo-50', `color-mix(in srgb, ${parsed.primaryColor} 10%, white)`);
+          root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${parsed.primaryColor} 20%, white)`);
+        }
+        return parsed;
+      }
+    } catch (e) {
+      console.error("Erro ao ler cache de white label:", e);
+    }
+    return null;
+  });
 
   useEffect(() => {
     async function loadWhiteLabel() {
       const { data } = await supabase.from('settings').select('value').eq('key', 'white_label').maybeSingle();
       if (data && data.value) {
-        setWhiteLabel(data.value);
+        const valueStr = JSON.stringify(data.value);
+        const cachedStr = localStorage.getItem('white_label');
         
-        // Apply brand colors to CSS variables for system-wide Tailwind overrides
-        const root = document.documentElement;
-        if (data.value.primaryColor) {
-          root.style.setProperty('--color-indigo-600', data.value.primaryColor);
-          root.style.setProperty('--color-indigo-700', `color-mix(in srgb, ${data.value.primaryColor} 85%, black)`);
-          root.style.setProperty('--color-indigo-500', data.value.primaryColor);
-        }
-        if (data.value.secondaryColor) {
-          root.style.setProperty('--color-indigo-50', data.value.secondaryColor);
-          root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${data.value.secondaryColor} 70%, white)`);
-        } else if (data.value.primaryColor) {
-          root.style.setProperty('--color-indigo-50', `color-mix(in srgb, ${data.value.primaryColor} 10%, white)`);
-          root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${data.value.primaryColor} 20%, white)`);
+        if (valueStr !== cachedStr) {
+          localStorage.setItem('white_label', valueStr);
+          setWhiteLabel(data.value);
+          
+          const root = document.documentElement;
+          if (data.value.primaryColor) {
+            root.style.setProperty('--color-indigo-600', data.value.primaryColor);
+            root.style.setProperty('--color-indigo-700', `color-mix(in srgb, ${data.value.primaryColor} 85%, black)`);
+            root.style.setProperty('--color-indigo-500', data.value.primaryColor);
+          }
+          if (data.value.secondaryColor) {
+            root.style.setProperty('--color-indigo-50', data.value.secondaryColor);
+            root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${data.value.secondaryColor} 70%, white)`);
+          } else if (data.value.primaryColor) {
+            root.style.setProperty('--color-indigo-50', `color-mix(in srgb, ${data.value.primaryColor} 10%, white)`);
+            root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${data.value.primaryColor} 20%, white)`);
+          }
         }
       }
     }
@@ -379,23 +410,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           <div className="flex items-center gap-4 md:gap-6">
             
-            {/* Search - Mobile Toggle & Desktop Input */}
-            <div className="flex items-center relative">
-              <button 
-                onClick={() => setIsSearchOpen(!isSearchOpen)}
-                className="md:hidden p-2.5 text-slate-400 hover:text-indigo-600 rounded-xl hover:bg-slate-50 transition-colors"
-              >
-                <Search className="w-6 h-6" />
-              </button>
-
-              <div className={cn(
-                "absolute right-0 top-14 md:static md:flex items-center relative group w-[280px] md:w-auto bg-white md:bg-transparent shadow-xl md:shadow-none p-4 md:p-0 rounded-2xl border border-slate-100 md:border-none z-50 transition-all origin-top-right",
-                isSearchOpen ? "scale-100 opacity-100" : "scale-95 opacity-0 pointer-events-none md:scale-100 md:opacity-100 md:pointer-events-auto"
-              )}>
-                <Search className="absolute left-7 md:left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-600 transition-colors z-10" />
+            {/* Search - Desktop Only */}
+            <div className="hidden md:flex items-center relative">
+              <div className="static flex items-center relative group w-auto bg-transparent shadow-none p-0 border-none z-50">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-600 transition-colors z-10" />
                 <input 
                   placeholder="Pesquisar pacientes..."
-                  className="w-full pl-11 pr-4 py-3 md:py-2.5 bg-slate-50 border border-transparent rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm md:w-64 font-medium"
+                  className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-transparent rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-sm w-64 font-medium"
                 />
               </div>
             </div>
@@ -506,7 +527,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* Content Area */}
         <div className={cn(
           "flex-1 min-h-0",
-          location.pathname === '/admin/editor-site'
+          ['/admin/editor-site', '/admin/atendimento'].includes(location.pathname)
             ? "overflow-hidden flex flex-col"
             : "overflow-y-auto p-4 lg:p-8 xl:p-12"
         )}>
@@ -524,7 +545,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               '/admin/usuarios',
               '/admin/config',
               '/admin/financeiro',
-              '/admin/atendimento',
               '/admin/crm',
               '/admin/campanhas',
               '/admin/editor-site',

@@ -22,6 +22,7 @@ interface Props {
   onSelectTicket: (ticket: Ticket) => void;
   filterDeptId: string;
   view: 'meus' | 'fila' | 'finalizados';
+  onOpenDepts?: () => void;
 }
 
 import NewTicketModal from './NewTicketModal';
@@ -53,7 +54,7 @@ function getInitials(name: string) {
   return name.substring(0, 2).toUpperCase();
 }
 
-export default function TicketList({ activeTicketId, onSelectTicket, filterDeptId, view }: Props) {
+export default function TicketList({ activeTicketId, onSelectTicket, filterDeptId, view, onOpenDepts }: Props) {
   const [tickets, setTickets] = React.useState<Ticket[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
@@ -116,15 +117,16 @@ export default function TicketList({ activeTicketId, onSelectTicket, filterDeptI
   React.useEffect(() => {
     fetchTickets();
 
+    const instanceId = Math.random().toString(36).substring(2, 9);
     const ticketChannel = supabase
-      .channel('service_tickets_changes')
+      .channel(`service_tickets_changes_${instanceId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_tickets' }, () => {
         fetchTickets();
       })
       .subscribe();
 
     const msgChannel = supabase
-      .channel('global_chat_messages_alert')
+      .channel(`global_chat_messages_alert_${instanceId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         const newMsg = payload.new;
         if (newMsg.sender_type === 'customer') {
@@ -171,6 +173,15 @@ export default function TicketList({ activeTicketId, onSelectTicket, filterDeptI
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-800 tracking-tight">Atendimentos</h2>
           <div className="flex items-center gap-1.5">
+             {onOpenDepts && (
+               <button 
+                 onClick={onOpenDepts}
+                 className="lg:hidden p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-slate-700"
+                 title="Departamentos"
+               >
+                 <Filter className="w-4 h-4" />
+               </button>
+             )}
              <button 
                onClick={fetchTickets}
                className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-slate-700"
@@ -199,8 +210,25 @@ export default function TicketList({ activeTicketId, onSelectTicket, filterDeptI
 
       <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/50">
         {loading && tickets.length === 0 ? (
-          <div className="flex justify-center p-10">
-             <RefreshCw className="w-6 h-6 text-slate-400 animate-spin" />
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div key={idx} className="p-3.5 bg-white border border-slate-100 rounded-2xl flex gap-3 shadow-sm animate-pulse">
+                {/* Avatar Skeleton */}
+                <div className="w-11 h-11 rounded-full bg-slate-100 shrink-0" />
+                {/* Info Skeleton */}
+                <div className="flex-1 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div className="h-4 bg-slate-100 rounded w-1/3" />
+                    <div className="h-3 bg-slate-100 rounded w-10" />
+                  </div>
+                  <div className="h-3.5 bg-slate-50 rounded w-3/4" />
+                  <div className="flex justify-between items-center pt-1">
+                    <div className="h-3 bg-slate-50 rounded w-24" />
+                    <div className="h-3.5 bg-slate-100 rounded-full w-8" />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           filteredTickets.map((ticket) => (

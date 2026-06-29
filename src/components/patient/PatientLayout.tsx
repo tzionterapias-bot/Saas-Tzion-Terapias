@@ -25,28 +25,58 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const [whiteLabel, setWhiteLabel] = useState<any>(null);
+  const [whiteLabel, setWhiteLabel] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem('white_label');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Aplica as cores de marca nas variáveis CSS imediatamente para evitar flash de cor
+        const root = document.documentElement;
+        if (parsed.primaryColor) {
+          root.style.setProperty('--color-indigo-600', parsed.primaryColor);
+          root.style.setProperty('--color-indigo-700', `color-mix(in srgb, ${parsed.primaryColor} 85%, black)`);
+          root.style.setProperty('--color-indigo-500', parsed.primaryColor);
+        }
+        if (parsed.secondaryColor) {
+          root.style.setProperty('--color-indigo-50', parsed.secondaryColor);
+          root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${parsed.secondaryColor} 70%, white)`);
+        } else if (parsed.primaryColor) {
+          root.style.setProperty('--color-indigo-50', `color-mix(in srgb, ${parsed.primaryColor} 10%, white)`);
+          root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${parsed.primaryColor} 20%, white)`);
+        }
+        return parsed;
+      }
+    } catch (e) {
+      console.error("Erro ao ler cache de white label:", e);
+    }
+    return null;
+  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     async function loadWhiteLabel() {
       const { data } = await supabase.from('settings').select('value').eq('key', 'white_label').maybeSingle();
       if (data && data.value) {
-        setWhiteLabel(data.value);
+        const valueStr = JSON.stringify(data.value);
+        const cachedStr = localStorage.getItem('white_label');
         
-        // Apply brand colors to CSS variables for system-wide Tailwind overrides
-        const root = document.documentElement;
-        if (data.value.primaryColor) {
-          root.style.setProperty('--color-indigo-600', data.value.primaryColor);
-          root.style.setProperty('--color-indigo-700', `color-mix(in srgb, ${data.value.primaryColor} 85%, black)`);
-          root.style.setProperty('--color-indigo-500', data.value.primaryColor);
-        }
-        if (data.value.secondaryColor) {
-          root.style.setProperty('--color-indigo-50', data.value.secondaryColor);
-          root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${data.value.secondaryColor} 70%, white)`);
-        } else if (data.value.primaryColor) {
-          root.style.setProperty('--color-indigo-50', `color-mix(in srgb, ${data.value.primaryColor} 10%, white)`);
-          root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${data.value.primaryColor} 20%, white)`);
+        if (valueStr !== cachedStr) {
+          localStorage.setItem('white_label', valueStr);
+          setWhiteLabel(data.value);
+          
+          const root = document.documentElement;
+          if (data.value.primaryColor) {
+            root.style.setProperty('--color-indigo-600', data.value.primaryColor);
+            root.style.setProperty('--color-indigo-700', `color-mix(in srgb, ${data.value.primaryColor} 85%, black)`);
+            root.style.setProperty('--color-indigo-500', data.value.primaryColor);
+          }
+          if (data.value.secondaryColor) {
+            root.style.setProperty('--color-indigo-50', data.value.secondaryColor);
+            root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${data.value.secondaryColor} 70%, white)`);
+          } else if (data.value.primaryColor) {
+            root.style.setProperty('--color-indigo-50', `color-mix(in srgb, ${data.value.primaryColor} 10%, white)`);
+            root.style.setProperty('--color-indigo-100', `color-mix(in srgb, ${data.value.primaryColor} 20%, white)`);
+          }
         }
       }
     }
