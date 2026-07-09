@@ -4,7 +4,8 @@ import {
   Plus, Calendar, ArrowUpRight, ArrowDownRight,
   FileText, CheckCircle2, AlertCircle, Loader2, Link as LinkIcon, X, Save,
   Users, Briefcase, PieChart, Wallet, Clock, UserCheck, Percent,
-  MessageCircle, ChevronLeft, ChevronRight, Ban, Receipt, BarChart2, Settings
+  MessageCircle, ChevronLeft, ChevronRight, Ban, Receipt, BarChart2, Settings,
+  Award, Check, Pencil
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -21,6 +22,11 @@ import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 interface Payment {
   id: string;
   amount: number;
+  net_amount?: number | null;      // Valor líquido após taxas de cartão/Asaas
+  card_fee_rate?: number | null;   // % da taxa cobrada
+  card_fee_val?: number | null;    // Valor da taxa em R$
+  installments?: number | null;    // Número de parcelas (crédito)
+  is_fixed?: boolean;              // Se é uma despesa fixa
   type: 'income' | 'expense';
   status: 'paid' | 'pending' | 'cancelled';
   description: string;
@@ -47,6 +53,21 @@ interface Therapist {
   user_id: string | null;
 }
 
+interface StaffBonus {
+  id: string;
+  staff_id: string;
+  month: number;
+  year: number;
+  clinic_net_base: number;
+  commission_rate: number;
+  bonus_amount: number;
+  status: 'pending' | 'paid';
+  paid_at: string | null;
+  payment_method: string | null;
+  notes: string | null;
+  staff?: { name: string; role: string; base_salary: number };
+}
+
 interface CommissionPayout {
   id: string;
   therapist_id: string;
@@ -60,6 +81,7 @@ interface CommissionPayout {
   notes: string | null;
   therapists?: { name: string };
 }
+
 
 interface DailyClosing {
   id: string;
@@ -81,7 +103,11 @@ const MONTH_NAMES = Array.from({ length: 12 }, (_, i) =>
 );
 
 const CATEGORIES_INCOME = ['Sessão', 'Avaliação', 'Pacote', 'Serviço', 'Outros'];
-const CATEGORIES_EXPENSE = ['Aluguel', 'Insumos', 'Marketing', 'Impostos', 'Salário', 'Manutenção', 'Outros'];
+const CATEGORIES_EXPENSE = [
+  'Aluguel', 'Internet', 'Energia', 'Água', 'Telefone', 
+  'Insumos', 'Marketing', 'Impostos', 'Salário', 'Manutenção', 
+  'Sistemas/Software', 'Limpeza', 'Outros'
+];
 const PAYMENT_METHODS = [
   { value: 'pix', label: 'PIX' },
   { value: 'credit_card', label: 'Cartão de Crédito (Maquininha)' },
@@ -89,8 +115,34 @@ const PAYMENT_METHODS = [
   { value: 'cash', label: 'Dinheiro' },
   { value: 'transfer', label: 'Transferência' },
   { value: 'boleto', label: 'Boleto' },
-  { value: 'asaas', label: 'Asaas (Cobrança Online - PIX/Cartão/Boleto)' },
+  { value: 'asaas_pix', label: 'PIX (Gerar QR Code - Asaas)' },
+  { value: 'asaas_credit', label: 'Cartão de Crédito Online (Enviar WhatsApp - Asaas)' },
 ];
+
+// ── Taxas de pagamento configuráveis ───────────────────────────────────────
+export const DEFAULT_FEE_RATES = {
+  debit: 1.50,          // Débito (maquininha)
+  credit_1x: 2.50,      // Crédito à vista
+  credit_2_6x: 3.50,    // Crédito parcelado 2x–6x
+  credit_7_12x: 4.99,   // Crédito parcelado 7x–12x
+  asaas_pix: 0.99,      // PIX via Asaas
+  asaas_credit: 3.49,   // Cartão online via Asaas
+};
+export type FeeRates = typeof DEFAULT_FEE_RATES;
+
+const INSTALLMENT_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+function getFeeRate(method: string, installments: number, rates: FeeRates): number {
+  if (method === 'debit_card') return rates.debit;
+  if (method === 'credit_card') {
+    if (installments === 1) return rates.credit_1x;
+    if (installments <= 6) return rates.credit_2_6x;
+    return rates.credit_7_12x;
+  }
+  if (method === 'asaas_pix') return rates.asaas_pix;
+  if (method === 'asaas_credit' || method === 'asaas') return rates.asaas_credit;
+  return 0;
+}
 
 const getMethodLabel = (method: string) => {
   const found = PAYMENT_METHODS.find(m => m.value === method);
@@ -162,12 +214,14 @@ export default function FinancialPage() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [payouts, setPayouts] = useState<CommissionPayout[]>([]);
   const [closings, setClosings] = useState<DailyClosing[]>([]);
+  const [staffBonuses, setStaffBonuses] = useState<StaffBonus[]>([]);
 
   // ── Filter State ────────────────────────────────────────────────────────────
   const now = new Date();
   const [filterMonth, setFilterMonth] = useState(now.getMonth());
   const [filterYear] = useState(now.getFullYear());
   const [commissionMonth, setCommissionMonth] = useState(now.getMonth());
+  const [staffBonusMonth, setStaffBonusMonth] = useState(now.getMonth());
   const [cashflowPage, setCashflowPage] = useState(1);
   const [payablesPage, setPayablesPage] = useState(1);
   const ITEMS = 10;
@@ -179,7 +233,11 @@ export default function FinancialPage() {
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showPayoutModal, setShowPayoutModal] = useState<CommissionPayout | null>(null);
   const [showTherapistConfigModal, setShowTherapistConfigModal] = useState<Therapist | null>(null);
-  const [createdAsaasPayment, setCreatedAsaasPayment] = useState<{ url: string; amount: number; patientName: string; phone: string | null } | null>(null);
+  const [showBonusModal, setShowBonusModal] = useState<StaffBonus | null>(null);
+  const [bonusPayMethod, setBonusPayMethod] = useState('pix');
+  const [bonusPayNote, setBonusPayNote] = useState('');
+  const [createdAsaasPayment, setCreatedAsaasPayment] = useState<{ url: string; amount: number; patientName: string; phone: string | null; paymentId: string } | null>(null);
+  const [createdPixQrCode, setCreatedPixQrCode] = useState<{ encodedImage: string; payload: string; amount: number; patientName: string; paymentId: string } | null>(null);
   const [confirmingPayment, setConfirmingPayment] = useState<Payment | null>(null);
   const [confirmMethod, setConfirmMethod] = useState('pix');
   const [confirmFeeRate, setConfirmFeeRate] = useState('0');
@@ -187,18 +245,25 @@ export default function FinancialPage() {
   const [uploadingFile, setUploadingFile] = useState(false);
 
   // ── Form State ──────────────────────────────────────────────────────────────
-  const emptyEntry = { amount: '', description: '', type: 'income' as const, status: 'paid' as const, category: 'Sessão', payment_method: 'pix', due_date: '' };
+  const emptyEntry = { amount: '', description: '', type: 'income' as const, status: 'paid' as const, category: 'Sessão', payment_method: 'pix', due_date: '', is_fixed: false };
   const [newEntry, setNewEntry] = useState(emptyEntry);
-  const emptySell = { patient_id: '', service_id: '', payment_method: 'pix', therapist_id: '', referral_source: 'therapist' as const };
+  const emptySell = { patient_id: '', service_id: '', payment_method: 'asaas_pix', therapist_id: '', referral_source: 'therapist' as const };
   const [sellData, setSellData] = useState(emptySell);
   const [cardFeeRateInput, setCardFeeRateInput] = useState('0');
   const [multimodalItems, setMultimodalItems] = useState<{ service_id: string; sessions: number }[]>([]);
   const [newStaff, setNewStaff] = useState({ name: '', role: '', commission_rate: '0', base_salary: '0' });
-  const [newSupplier, setNewSupplier] = useState({ company_name: '', cnpj: '', category: 'Manutenção' });
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [newSupplier, setNewSupplier] = useState({ company_name: '', cnpj: '', category: 'Manutenção', phone: '', email: '', products_provided: '' });
   const [payoutNote, setPayoutNote] = useState('');
   const [payoutMethod, setPayoutMethod] = useState('pix');
   const [closingInput, setClosingInput] = useState({ physical_balance: '', notes: '' });
   const [therapistConfig, setTherapistConfig] = useState({ commission_rate_clinic: '50', commission_rate_self: '25', pix_key: '', phone: '' });
+  // ── Taxas de pagamento e parcelamento ───────────────────────────────────────
+  const [feeRates, setFeeRates] = useState<FeeRates>(DEFAULT_FEE_RATES);
+  const [feeRatesInput, setFeeRatesInput] = useState<FeeRates>(DEFAULT_FEE_RATES);
+  const [showFeeSettingsModal, setShowFeeSettingsModal] = useState(false);
+  const [installments, setInstallments] = useState(1);
+  const [confirmInstallments, setConfirmInstallments] = useState(1);
 
   // ─── Toast Helper ────────────────────────────────────────────────────────────
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
@@ -223,8 +288,15 @@ export default function FinancialPage() {
     setPayments((paymentsRes.data || []) as Payment[]);
     setServices(servicesRes.data || []);
     setPatients(patientsRes.data || []);
-    setStaff(staffRes.data || []);
-    setSuppliers(suppliersRes.data || []);
+    if (staffRes.data) setStaff(staffRes.data);
+    if (suppliersRes.data) setSuppliers(suppliersRes.data);
+
+    // Carregar bônus da equipe
+    const { data: bonusesData } = await supabase
+      .from('staff_bonuses')
+      .select('*, staff(name, role, base_salary)')
+      .order('created_at', { ascending: false });
+    setStaffBonuses((bonusesData || []) as StaffBonus[]);
 
     // Terapeuta — tenta selecionar colunas novas, mas faz fallback seguro
     const therapistsRes = await supabase
@@ -268,10 +340,66 @@ export default function FinancialPage() {
       setClosings([]);
     }
 
+    // Carregar taxas de pagamento salvas
+    const { data: feeSettingsData } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'payment_fee_rates')
+      .single();
+    if (feeSettingsData?.value) {
+      try {
+        const saved = JSON.parse(feeSettingsData.value) as Partial<FeeRates>;
+        const merged = { ...DEFAULT_FEE_RATES, ...saved };
+        setFeeRates(merged);
+        setFeeRatesInput(merged);
+      } catch { /* ignora erro de parse */ }
+    }
+
     setLoading(false);
   }, [showToast]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    fetchAll();
+
+    // Tentar usar Realtime (mas temos o polling de segurança abaixo)
+    const channel = supabase
+      .channel('public:payments')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'payments' },
+        (payload) => {
+          if (payload.new.status === 'paid') {
+            setCreatedPixQrCode(null);
+            setCreatedAsaasPayment(null);
+            showToast('✅ Pagamento reconhecido com sucesso!', 'success');
+            fetchAll(); // Refresh the lists automatically
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchAll, showToast]);
+
+  // POLLING DE SEGURANÇA: Se o Realtime falhar por bloqueio de rede ou RLS
+  useEffect(() => {
+    const activePaymentId = createdPixQrCode?.paymentId || createdAsaasPayment?.paymentId;
+    if (!activePaymentId) return;
+
+    const interval = setInterval(async () => {
+      const { data } = await supabase.from('payments').select('status').eq('id', activePaymentId).single();
+      if (data?.status === 'paid') {
+        setCreatedPixQrCode(null);
+        setCreatedAsaasPayment(null);
+        showToast('✅ Pagamento reconhecido com sucesso!', 'success');
+        fetchAll(); // Refresh the lists automatically
+      }
+    }, 3000); // Poll a cada 3 segundos
+
+    return () => clearInterval(interval);
+  }, [createdPixQrCode?.paymentId, createdAsaasPayment?.paymentId, fetchAll, showToast]);
 
   const getPatientsForPayout = useCallback((therapistId: string, month: number, year: number) => {
     const tPayments = payments.filter(p =>
@@ -313,7 +441,13 @@ export default function FinancialPage() {
   const dashboardStats = useMemo(() => {
     const paidIncomes = monthlyPaid.filter(p => p.type === 'income');
     const grossIncome = paidIncomes.reduce((s, p) => s + (p.net_amount !== null && p.net_amount !== undefined ? Math.abs(p.net_amount) : Math.abs(p.amount)), 0);
-    const grossExpense = monthlyPaid.filter(p => p.type === 'expense').reduce((s, p) => s + Math.abs(p.amount), 0);
+    
+    // Despesas operacionais não incluem repasses ou bônus de equipe, pois estes já são deduzidos do faturamento ou lucro
+    const grossExpense = monthlyPaid.filter(p => 
+      p.type === 'expense' && 
+      p.category !== 'Repasse Terapeuta' && 
+      p.category !== 'Bônus Equipe'
+    ).reduce((s, p) => s + Math.abs(p.amount), 0);
 
     let totalTherapistShare = 0;
     
@@ -324,7 +458,10 @@ export default function FinancialPage() {
           const rate = (p.referral_source || 'therapist') === 'clinic'
             ? (th.commission_rate_clinic ?? 50)
             : (th.commission_rate_self ?? 25);
-          const base = Math.abs(p.amount);
+          
+          // Calcula a comissão com base no valor líquido (após taxas de cartão)
+          const base = (p.net_amount !== null && p.net_amount !== undefined) ? Math.abs(p.net_amount) : Math.abs(p.amount);
+          
           const clinicShare = base * (rate / 100);
           const therapistNet = base - clinicShare;
           totalTherapistShare += therapistNet;
@@ -373,8 +510,11 @@ export default function FinancialPage() {
     const clinicRefs = tPayments.filter(p => (p.referral_source || 'therapist') === 'clinic');
     const selfRefs = tPayments.filter(p => (p.referral_source || 'therapist') === 'therapist');
 
-    const grossClinic = clinicRefs.reduce((s, p) => s + Math.abs(p.amount), 0);
-    const grossSelf = selfRefs.reduce((s, p) => s + Math.abs(p.amount), 0);
+    // 🔧 BUG FIX: usar net_amount (valor líquido após taxas de cartão) como base de cálculo
+    const netBase = (p: Payment) =>
+      (p.net_amount !== null && p.net_amount !== undefined) ? Math.abs(p.net_amount) : Math.abs(p.amount);
+    const grossClinic = clinicRefs.reduce((s, p) => s + netBase(p), 0);
+    const grossSelf = selfRefs.reduce((s, p) => s + netBase(p), 0);
     const grossTotal = grossClinic + grossSelf;
 
     const clinicShareFromClinic = grossClinic * (rate_clinic / 100);
@@ -436,6 +576,10 @@ export default function FinancialPage() {
       showToast('Preencha o valor e a descrição.', 'error');
       return;
     }
+    if (Number(newEntry.amount) <= 0) {
+      showToast('O valor deve ser maior que zero.', 'error');
+      return;
+    }
     if (newEntry.payment_method === 'asaas') {
       showToast('Cobranças Asaas devem ser feitas na aba "Vender Serviço" associada a um paciente.', 'error');
       return;
@@ -449,6 +593,7 @@ export default function FinancialPage() {
       category: newEntry.category,
       payment_method: newEntry.payment_method,
       due_date: newEntry.due_date || null,
+      is_fixed: newEntry.is_fixed,
       created_at: new Date().toISOString(),
     }]);
     if (error) { showToast('Erro ao salvar lançamento.', 'error'); }
@@ -491,23 +636,23 @@ export default function FinancialPage() {
     let asaasId: string | null = null;
     let asaasLink: string | null = null;
 
-    if (sellData.payment_method === 'asaas') {
+    const isAsaas = sellData.payment_method.startsWith('asaas_');
+    const isAsaasPix = sellData.payment_method === 'asaas_pix';
+
+    if (isAsaas) {
       try {
-        const response = await fetch('/api/financeiro/criar-cobranca', {
+        const { data: result, error: fnError } = await supabase.functions.invoke('asaas-integration/checkout', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
+          body: {
             valor: service.price,
             pacienteId: sellData.patient_id,
-            description: `${service.name} — Tzion Terapias`
-          })
+            description: `${service.name} — Tzion Terapias`,
+            billingType: isAsaasPix ? 'PIX' : 'CREDIT_CARD'
+          }
         });
 
-        const result = await response.json();
-        if (!response.ok) {
-          showToast(result.error || 'Erro ao gerar cobrança no Asaas.', 'error');
+        if (fnError || result?.error) {
+          showToast(result?.error || 'Erro ao gerar cobrança no Asaas.', 'error');
           setSaving(false);
           return;
         }
@@ -522,19 +667,20 @@ export default function FinancialPage() {
       }
     }
 
-    const rate = (sellData.payment_method === 'credit_card' || sellData.payment_method === 'debit_card')
+    const isCardPayment = sellData.payment_method === 'credit_card' || sellData.payment_method === 'debit_card';
+    const rate = isCardPayment
       ? (parseFloat(cardFeeRateInput) || 0)
-      : 0;
+      : getFeeRate(sellData.payment_method, installments, feeRates);
     const feeVal = service.price * (rate / 100);
     const netVal = service.price - feeVal;
 
-    const { error: payErr } = await supabase.from('payments').insert([{
+    const { data: payData, error: payErr } = await supabase.from('payments').insert([{
       amount: service.price,
       type: 'income',
       status: 'pending',
       description: `${service.name} — ${patient.name}${therapist ? ` (${therapist.name})` : ''}`,
       category: 'Serviço',
-      payment_method: sellData.payment_method,
+      payment_method: isAsaas ? 'asaas' : sellData.payment_method,
       patient_id: sellData.patient_id,
       therapist_id: sellData.therapist_id || null,
       referral_source: sellData.referral_source,
@@ -544,9 +690,9 @@ export default function FinancialPage() {
       card_fee_rate: rate,
       card_fee_val: feeVal,
       net_amount: netVal
-    }]);
+    }]).select().single();
 
-    if (payErr) { showToast('Erro ao registrar pagamento.', 'error'); setSaving(false); return; }
+    if (payErr || !payData) { showToast('Erro ao registrar pagamento.', 'error'); setSaving(false); return; }
 
     // Criar pacote de sessões como 'pending' (será ativado quando o pagamento for confirmado)
     const { data: pkgData, error: pkgErr } = await supabase.from('patient_packages').insert([{
@@ -578,19 +724,43 @@ export default function FinancialPage() {
       }
     }
 
-    if (sellData.payment_method === 'asaas' && asaasLink) {
+    if (isAsaasPix && asaasId) {
+      try {
+        const { data: qrData, error: fnError } = await supabase.functions.invoke(`asaas-integration/pix`, {
+          method: 'POST',
+          body: { paymentId: asaasId }
+        });
+        
+        if (!fnError && qrData && (qrData.success || qrData.encodedImage)) {
+          setCreatedPixQrCode({
+            encodedImage: qrData.encodedImage,
+            payload: qrData.payload,
+            amount: service.price,
+            patientName: patient.name,
+            paymentId: payData.id
+          });
+          showToast('QR Code do PIX gerado com sucesso!');
+        } else {
+          showToast(qrData?.error || 'Erro ao gerar QR Code do PIX.', 'error');
+        }
+      } catch (err) {
+        console.error('Erro ao buscar QR Code:', err);
+        showToast('Erro ao buscar QR Code do PIX.', 'error');
+      }
+    } else if (sellData.payment_method === 'asaas_credit' && asaasLink) {
       setCreatedAsaasPayment({
         url: asaasLink,
         amount: service.price,
         patientName: patient.name,
-        phone: patient.phone
+        phone: patient.phone,
+        paymentId: payData.id
       });
 
       // Enviar cobrança automaticamente se tiver telefone
       if (patient.phone) {
         try {
           const firstName = patient.name.split(' ')[0];
-          const msg = `Olá, *${firstName}*! ✨\n\nSegue o link para pagamento do seu pacote *${service.name}* na Tzion Terapias:\n\n🔗 ${asaasLink}\n\nVocê pode pagar via PIX, Cartão de Crédito ou Boleto. Qualquer dúvida, estamos à disposição! 💙`;
+          const msg = `Olá, *${firstName}*! ✨\n\nSegue o link para pagamento do seu pacote/serviço *${service.name}* na Tzion Terapias:\n\n🔗 ${asaasLink}\n\n💳 Você pode parcelar no Cartão de Crédito em até 12x, ou pagar via PIX/Boleto.\n\nQualquer dúvida, estamos à disposição! 💙`;
           await sendWhatsAppMessage(patient.id, patient.phone, msg, 'payment_link_sent');
           showToast('Cobrança gerada e enviada via WhatsApp!');
         } catch (err) {
@@ -604,7 +774,9 @@ export default function FinancialPage() {
       showToast('Venda registrada! Confirme o pagamento quando receber.');
     }
 
-    setShowSellModal(false);
+    if (!isAsaasPix && sellData.payment_method !== 'asaas_credit') {
+      setShowSellModal(false);
+    }
     setSellData(emptySell);
     fetchAll();
     setSaving(false);
@@ -615,9 +787,9 @@ export default function FinancialPage() {
     setSaving(true);
 
     const price = Math.abs(confirmingPayment.amount);
-    const rate = (confirmMethod === 'credit_card' || confirmMethod === 'debit_card')
-      ? (parseFloat(confirmFeeRate) || 0)
-      : 0;
+    const methodHasFee = confirmMethod === 'credit_card' || confirmMethod === 'debit_card'
+      || confirmMethod === 'asaas' || confirmMethod === 'asaas_pix' || confirmMethod === 'asaas_credit';
+    const rate = methodHasFee ? (parseFloat(confirmFeeRate) || 0) : 0;
     const feeVal = price * (rate / 100);
     const netVal = price - feeVal;
 
@@ -771,13 +943,24 @@ export default function FinancialPage() {
       return;
     }
 
+    // 🔧 BUG FIX: Registrar repasse como despesa no fluxo de caixa
+    const mesRepasse = MONTH_NAMES[payout.month - 1];
+    await supabase.from('payments').insert({
+      amount: payout.therapist_net,
+      type: 'expense',
+      status: 'paid',
+      description: `Repasse ${mesRepasse}/${payout.year} — ${therapist?.name || 'Terapeuta'}`,
+      category: 'Repasse Terapeuta',
+      payment_method: payoutMethod,
+      created_at: new Date().toISOString(),
+    });
+
     // 2. Notificar terapeuta via WhatsApp
     if (therapist?.phone) {
-      const mes = MONTH_NAMES[payout.month - 1];
       const msg =
         `✅ *Repasse Confirmado — Tzion Terapias*\n\n` +
         `Olá, *${therapist.name}*!\n\n` +
-        `O seu repasse de *${mes}/${payout.year}* foi processado:\n\n` +
+        `O seu repasse de *${mesRepasse}/${payout.year}* foi processado:\n\n` +
         `💰 Faturamento Bruto: R$ ${fmt(payout.gross_total)}\n` +
         `🏥 Taxa Clínica: R$ ${fmt(payout.clinic_share)}\n` +
         `✅ *Valor Líquido: R$ ${fmt(payout.therapist_net)}*\n\n` +
@@ -827,21 +1010,144 @@ export default function FinancialPage() {
   const handleCreateStaff = async () => {
     if (!newStaff.name || !newStaff.role) return;
     setSaving(true);
-    const { error } = await supabase.from('staff').insert([{
-      name: newStaff.name, role: newStaff.role,
-      commission_rate: Number(newStaff.commission_rate),
-      base_salary: Number(newStaff.base_salary),
-    }]);
-    if (!error) { showToast('Colaborador cadastrado!'); setShowStaffModal(false); setNewStaff({ name: '', role: '', commission_rate: '0', base_salary: '0' }); fetchAll(); }
-    else showToast('Erro ao cadastrar colaborador.', 'error');
+    
+    if (editingStaffId) {
+      const { error } = await supabase.from('staff').update({
+        name: newStaff.name, role: newStaff.role,
+        commission_rate: Number(newStaff.commission_rate),
+        base_salary: Number(newStaff.base_salary),
+      }).eq('id', editingStaffId);
+      
+      if (!error) { showToast('Colaborador atualizado!'); setShowStaffModal(false); setEditingStaffId(null); setNewStaff({ name: '', role: '', commission_rate: '0', base_salary: '0' }); fetchAll(); }
+      else showToast('Erro ao atualizar colaborador.', 'error');
+    } else {
+      const { error } = await supabase.from('staff').insert([{
+        name: newStaff.name, role: newStaff.role,
+        commission_rate: Number(newStaff.commission_rate),
+        base_salary: Number(newStaff.base_salary),
+      }]);
+      if (!error) { showToast('Colaborador cadastrado!'); setShowStaffModal(false); setNewStaff({ name: '', role: '', commission_rate: '0', base_salary: '0' }); fetchAll(); }
+      else showToast('Erro ao cadastrar colaborador.', 'error');
+    }
+    
     setSaving(false);
   };
+
+  // ── Bônus da Equipe Administrativa ──────────────────────────────────────
+
+  // Cálculo da receita líquida da clínica para o mês selecionado na aba Equipe
+  const staffBonusClinicNet = useMemo(() => {
+    const monthPayments = payments.filter(p => {
+      const d = new Date(p.created_at);
+      return d.getMonth() === staffBonusMonth && d.getFullYear() === filterYear && p.status === 'paid';
+    });
+    const grossIncome = monthPayments
+      .filter(p => p.type === 'income')
+      .reduce((s, p) => s + ((p.net_amount !== null && p.net_amount !== undefined) ? Math.abs(p.net_amount) : Math.abs(p.amount)), 0);
+    // Total repassado aos terapeutas neste mês
+    let totalTherapistNet = 0;
+    monthPayments.filter(p => p.type === 'income').forEach(p => {
+      if (p.therapist_id) {
+        const th = therapists.find(t => t.id === p.therapist_id);
+        if (th) {
+          const rate = (p.referral_source || 'therapist') === 'clinic'
+            ? (th.commission_rate_clinic ?? 50)
+            : (th.commission_rate_self ?? 25);
+          const base = (p.net_amount !== null && p.net_amount !== undefined) ? Math.abs(p.net_amount) : Math.abs(p.amount);
+          totalTherapistNet += base - base * (rate / 100);
+        }
+      }
+    });
+    return { grossIncome, totalTherapistNet, clinicNet: grossIncome - totalTherapistNet };
+  }, [payments, therapists, staffBonusMonth, filterYear]);
+
+  // Bonificacões calculadas por colaborador
+  const staffBonusProjections = useMemo(() =>
+    staff
+      .filter(s => (s.commission_rate || 0) > 0)
+      .map(s => {
+        const existing = staffBonuses.find(
+          b => b.staff_id === s.id && b.month === staffBonusMonth + 1 && b.year === filterYear
+        );
+        const bonusAmount = Math.round(staffBonusClinicNet.clinicNet * ((s.commission_rate || 0) / 100) * 100) / 100;
+        return { ...s, bonusAmount, existing };
+      }),
+    [staff, staffBonuses, staffBonusClinicNet, staffBonusMonth, filterYear]
+  );
+
+  const handleGenerateStaffBonuses = async () => {
+    if (staff.filter(s => (s.commission_rate || 0) > 0).length === 0) {
+      showToast('Nenhum colaborador com % de bônus configurada.', 'error'); return;
+    }
+    setSaving(true);
+    const toInsert = staff
+      .filter(s => (s.commission_rate || 0) > 0)
+      .map(s => ({
+        staff_id: s.id,
+        month: staffBonusMonth + 1,
+        year: filterYear,
+        clinic_net_base: staffBonusClinicNet.clinicNet,
+        commission_rate: s.commission_rate,
+        bonus_amount: Math.round(staffBonusClinicNet.clinicNet * (s.commission_rate / 100) * 100) / 100,
+        status: 'pending',
+      }));
+    const { error } = await supabase.from('staff_bonuses').upsert(toInsert, { onConflict: 'staff_id,month,year', ignoreDuplicates: false });
+    if (!error) {
+      showToast('Bônus gerados com sucesso!');
+      // Recarregar bonificacões
+      const { data } = await supabase.from('staff_bonuses').select('*, staff(name, role, base_salary)').order('created_at', { ascending: false });
+      setStaffBonuses((data || []) as StaffBonus[]);
+    } else {
+      if (error.code === '42P01') showToast('Execute o supabase_staff_bonus_v1.sql no Supabase primeiro!', 'error');
+      else showToast('Erro ao gerar bônus: ' + error.message, 'error');
+    }
+    setSaving(false);
+  };
+
+  const handleConfirmStaffBonus = async () => {
+    if (!showBonusModal) return;
+    setSaving(true);
+    const bonus = showBonusModal;
+    const { error } = await supabase.from('staff_bonuses').update({
+      status: 'paid',
+      paid_at: new Date().toISOString(),
+      payment_method: bonusPayMethod,
+      notes: bonusPayNote || null,
+    }).eq('id', bonus.id);
+    if (error) {
+      showToast('Erro ao confirmar bônus: ' + error.message, 'error');
+      setSaving(false); return;
+    }
+    // Registrar como despesa no fluxo de caixa
+    const staffMember = staff.find(s => s.id === bonus.staff_id);
+    const mes = MONTH_NAMES[bonus.month - 1];
+    await supabase.from('payments').insert({
+      amount: bonus.bonus_amount,
+      type: 'expense',
+      status: 'paid',
+      description: `Bônus ${mes}/${bonus.year} — ${staffMember?.name || 'Colaborador'}`,
+      category: 'Bônus Equipe',
+      payment_method: bonusPayMethod,
+      created_at: new Date().toISOString(),
+    });
+    showToast('Bônus confirmado e lançado como despesa!');
+    setShowBonusModal(null);
+    setBonusPayMethod('pix');
+    setBonusPayNote('');
+    fetchAll();
+    // Recarregar bonificacões
+    const { data } = await supabase.from('staff_bonuses').select('*, staff(name, role, base_salary)').order('created_at', { ascending: false });
+    setStaffBonuses((data || []) as StaffBonus[]);
+    setSaving(false);
+  };
+
+
 
   const handleCreateSupplier = async () => {
     if (!newSupplier.company_name) return;
     setSaving(true);
     const { error } = await supabase.from('suppliers').insert([newSupplier]);
-    if (!error) { showToast('Fornecedor cadastrado!'); setShowSupplierModal(false); setNewSupplier({ company_name: '', cnpj: '', category: 'Manutenção' }); fetchAll(); }
+    if (!error) { showToast('Fornecedor cadastrado!'); setShowSupplierModal(false); setNewSupplier({ company_name: '', cnpj: '', category: 'Manutenção', phone: '', email: '', products_provided: '' }); fetchAll(); }
     else showToast('Erro ao cadastrar fornecedor.', 'error');
     setSaving(false);
   };
@@ -867,6 +1173,22 @@ export default function FinancialPage() {
       showToast('Execute o supabase_financial_v2.sql no Supabase para habilitar esta função.', 'error');
     } else {
       showToast('Erro ao salvar: ' + error.message, 'error');
+    }
+    setSaving(false);
+  };
+
+  const handleSaveFeeRates = async () => {
+    setSaving(true);
+    const { error } = await supabase.from('settings').upsert(
+      { key: 'payment_fee_rates', value: JSON.stringify(feeRatesInput) },
+      { onConflict: 'key' }
+    );
+    if (!error) {
+      setFeeRates({ ...feeRatesInput });
+      showToast('Taxas de pagamento salvas com sucesso!');
+      setShowFeeSettingsModal(false);
+    } else {
+      showToast('Erro ao salvar taxas: ' + error.message, 'error');
     }
     setSaving(false);
   };
@@ -1231,11 +1553,9 @@ export default function FinancialPage() {
                               onClick={() => {
                                 setConfirmingPayment(p);
                                 setConfirmMethod(p.payment_method || 'pix');
-                                setConfirmFeeRate(
-                                  p.payment_method === 'credit_card' ? '3.5' :
-                                  p.payment_method === 'debit_card' ? '1.5' :
-                                  String(p.card_fee_rate || '0')
-                                );
+                                setConfirmInstallments(1);
+                                const autoRate = getFeeRate(p.payment_method || 'pix', 1, feeRates);
+                                setConfirmFeeRate(String(p.card_fee_rate ?? (autoRate > 0 ? autoRate : 0)));
                               }}
                               disabled={saving}
                               className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-50"
@@ -1288,20 +1608,31 @@ export default function FinancialPage() {
             <table className="w-full text-left">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Empresa</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Empresa / Contato</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">CNPJ</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Categoria</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Produtos Fornecidos</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {suppliers.map(s => (
                   <tr key={s.id} className="hover:bg-slate-50/50">
-                    <td className="px-8 py-5 font-bold text-slate-900">{s.company_name}</td>
+                    <td className="px-8 py-5">
+                      <p className="font-bold text-slate-900">{s.company_name}</p>
+                      {(s.phone || s.email) && (
+                        <p className="text-xs text-slate-500 mt-1 font-medium">
+                          {s.phone && <span>{s.phone}</span>}
+                          {s.phone && s.email && <span className="mx-2 text-slate-300">•</span>}
+                          {s.email && <span>{s.email}</span>}
+                        </p>
+                      )}
+                    </td>
                     <td className="px-8 py-5 text-slate-500 font-mono text-sm">{s.cnpj || '—'}</td>
                     <td className="px-8 py-5"><span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] font-black uppercase">{s.category}</span></td>
+                    <td className="px-8 py-5 text-slate-500 text-sm">{s.products_provided || '—'}</td>
                   </tr>
                 ))}
-                {suppliers.length === 0 && <tr><td colSpan={3} className="py-16 text-center text-slate-400">Nenhum fornecedor cadastrado.</td></tr>}
+                {suppliers.length === 0 && <tr><td colSpan={4} className="py-16 text-center text-slate-400">Nenhum fornecedor cadastrado.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1312,40 +1643,149 @@ export default function FinancialPage() {
       {/* EQUIPE ADMINISTRATIVA                                                    */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'staff' && (
-        <div className="bg-white border border-slate-100 rounded-[3rem] shadow-sm overflow-hidden">
-          <div className="p-8 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2"><Users className="w-6 h-6 text-indigo-600" /> Equipe Administrativa</h3>
-            <button onClick={() => setShowStaffModal(true)} className="px-5 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center gap-2 text-sm">
-              <Plus className="w-4 h-4" /> Novo Colaborador
-            </button>
+        <div className="space-y-8">
+          {/* ── Cabeçalho ───────────────────────────────────────────────── */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Users className="w-6 h-6 text-indigo-600" /> Equipe Administrativa</h3>
+              <p className="text-sm text-slate-500 mt-1">Bônus calculado sobre a receita líquida da clínica após repasses dos terapeutas.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={staffBonusMonth}
+                onChange={e => setStaffBonusMonth(Number(e.target.value))}
+                className="px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none font-bold text-slate-700 text-sm appearance-none"
+              >
+                {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m} {filterYear}</option>)}
+              </select>
+              <button onClick={() => { setEditingStaffId(null); setNewStaff({ name: '', role: '', commission_rate: '0', base_salary: '0' }); setShowStaffModal(true); }}
+                className="px-5 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center gap-2 text-sm">
+                <Plus className="w-4 h-4" /> Novo Colaborador
+              </button>
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Colaborador</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cargo</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Salário Base</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">% Comissão</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {staff.map(s => (
-                  <tr key={s.id} className="hover:bg-slate-50/50">
-                    <td className="px-8 py-5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold">{s.name.charAt(0)}</div>
-                        <p className="font-bold text-slate-900">{s.name}</p>
-                      </div>
-                    </td>
-                    <td className="px-8 py-5 text-slate-500 font-medium">{s.role}</td>
-                    <td className="px-8 py-5 font-bold text-slate-900">R$ {fmt(s.base_salary || 0)}</td>
-                    <td className="px-8 py-5 font-black text-indigo-600">{s.commission_rate || 0}%</td>
+
+          {/* ── Painel de Receita e Bônus do Mês ────────────────────────── */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-6 bg-white border border-slate-100 rounded-3xl shadow-sm">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Receita Bruta ({MONTH_NAMES[staffBonusMonth]})</p>
+              <p className="text-2xl font-black text-slate-900">R$ {fmt(staffBonusClinicNet.grossIncome)}</p>
+              <p className="text-xs text-slate-400 mt-1">Total recebido pela clínica</p>
+            </div>
+            <div className="p-6 bg-red-50 border border-red-100 rounded-3xl">
+              <p className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-2">Repasses Terapeutas</p>
+              <p className="text-2xl font-black text-red-600">− R$ {fmt(staffBonusClinicNet.totalTherapistNet)}</p>
+              <p className="text-xs text-red-400 mt-1">Valor repassado aos terapeutas</p>
+            </div>
+            <div className="p-6 bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-3xl shadow-lg">
+              <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest mb-2">Receita Líquida Clínica</p>
+              <p className="text-2xl font-black">R$ {fmt(staffBonusClinicNet.clinicNet)}</p>
+              <p className="text-xs text-indigo-200 mt-1">Base de cálculo dos bônus</p>
+            </div>
+          </div>
+
+          {/* ── Tabela de Colaboradores com Bônus ────────────────────────── */}
+          <div className="bg-white border border-slate-100 rounded-[3rem] shadow-sm overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <h4 className="font-black text-slate-900 flex items-center gap-2">
+                <Award className="w-5 h-5 text-amber-500" /> Bônus de {MONTH_NAMES[staffBonusMonth]}/{filterYear}
+              </h4>
+              {staffBonusProjections.some(s => !s.existing) && (
+                <button onClick={handleGenerateStaffBonuses} disabled={saving || staffBonusClinicNet.clinicNet <= 0}
+                  className="px-5 py-2.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all flex items-center gap-2 text-sm disabled:opacity-50">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
+                  Gerar Bônus do Mês
+                </button>
+              )}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Colaborador</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cargo</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Salário Base</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">% Bônus</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Bônus Calculado</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Total a Pagar</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+                    <th className="px-8 py-5"></th>
                   </tr>
-                ))}
-                {staff.length === 0 && <tr><td colSpan={4} className="py-16 text-center text-slate-400">Nenhum colaborador administrativo cadastrado.</td></tr>}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {staff.map(s => {
+                    const proj = staffBonusProjections.find(p => p.id === s.id);
+                    const bonusAmt = proj?.bonusAmount ?? 0;
+                    const totalPay = (s.base_salary || 0) + bonusAmt;
+                    const existing = proj?.existing;
+                    return (
+                      <tr key={s.id} className="hover:bg-slate-50/50">
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold">{s.name.charAt(0)}</div>
+                            <p className="font-bold text-slate-900">{s.name}</p>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5 text-slate-500 font-medium">{s.role}</td>
+                        <td className="px-8 py-5 font-bold text-slate-900">R$ {fmt(s.base_salary || 0)}</td>
+                        <td className="px-8 py-5 font-black text-indigo-600">{s.commission_rate || 0}%</td>
+                        <td className="px-8 py-5">
+                          {bonusAmt > 0
+                            ? <span className="font-black text-amber-600">R$ {fmt(bonusAmt)}</span>
+                            : <span className="text-slate-300 text-sm">sem bônus</span>}
+                        </td>
+                        <td className="px-8 py-5 font-black text-slate-900">
+                          {bonusAmt > 0 ? `R$ ${fmt(totalPay)}` : `R$ ${fmt(s.base_salary || 0)}`}
+                        </td>
+                        <td className="px-8 py-5">
+                          {!existing && bonusAmt > 0 && (
+                            <span className="px-3 py-1 bg-slate-100 text-slate-500 rounded-full text-xs font-bold">Não gerado</span>
+                          )}
+                          {existing?.status === 'pending' && (
+                            <span className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">Pendente</span>
+                          )}
+                          {existing?.status === 'paid' && (
+                            <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">✓ Pago</span>
+                          )}
+                          {bonusAmt === 0 && <span className="text-slate-300 text-xs">N/A</span>}
+                        </td>
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-2">
+                            {existing?.status === 'pending' && (
+                              <button
+                                onClick={() => { setShowBonusModal(existing); setBonusPayMethod('pix'); setBonusPayNote(''); }}
+                                className="px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold hover:bg-green-700 transition-all"
+                              >
+                                Confirmar Pagamento
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                setEditingStaffId(s.id);
+                                setNewStaff({
+                                  name: s.name,
+                                  role: s.role,
+                                  commission_rate: String(s.commission_rate || 0),
+                                  base_salary: String(s.base_salary || 0)
+                                });
+                                setShowStaffModal(true);
+                              }}
+                              className="p-2 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                              title="Editar Colaborador"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {staff.length === 0 && (
+                    <tr><td colSpan={8} className="py-16 text-center text-slate-400">Nenhum colaborador administrativo cadastrado.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -1361,13 +1801,22 @@ export default function FinancialPage() {
               <h3 className="text-2xl font-bold text-slate-900 flex items-center gap-2"><Percent className="w-6 h-6 text-indigo-600" /> Repasses por Terapeuta</h3>
               <p className="text-sm text-slate-500 mt-1">Percentuais configuráveis individualmente por terapeuta.</p>
             </div>
-            <select
-              value={commissionMonth}
-              onChange={e => setCommissionMonth(Number(e.target.value))}
-              className="px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none font-bold text-slate-700 text-sm appearance-none"
-            >
-              {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m} {filterYear}</option>)}
-            </select>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setFeeRatesInput({ ...feeRates }); setShowFeeSettingsModal(true); }}
+                className="px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all flex items-center gap-2 text-sm"
+                title="Configurar taxas de pagamento"
+              >
+                <Settings className="w-4 h-4" /> Taxas
+              </button>
+              <select
+                value={commissionMonth}
+                onChange={e => setCommissionMonth(Number(e.target.value))}
+                className="px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none font-bold text-slate-700 text-sm appearance-none"
+              >
+                {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m} {filterYear}</option>)}
+              </select>
+            </div>
           </div>
 
           {/* Legend */}
@@ -1763,6 +2212,17 @@ export default function FinancialPage() {
                     className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700" />
                 </div>
               </div>
+              
+              {newEntry.type === 'expense' && (
+                <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
+                  <input type="checkbox" id="is_fixed" checked={newEntry.is_fixed} onChange={e => setNewEntry({ ...newEntry, is_fixed: e.target.checked })}
+                    className="w-5 h-5 rounded border-rose-300 text-rose-600 focus:ring-rose-500 cursor-pointer" />
+                  <label htmlFor="is_fixed" className="text-sm font-bold text-rose-700 cursor-pointer select-none">
+                    Marcar como Despesa Fixa (Recorrente)
+                  </label>
+                </div>
+              )}
+
               <button onClick={handleCreateEntry} disabled={saving}
                 className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
                 {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Salvar Lançamento
@@ -1911,18 +2371,33 @@ export default function FinancialPage() {
                 </div>
               </div>
 
-              {/* Taxa da Maquininha (apenas se for cartão) */}
+              {/* ── Taxa de Pagamento / Parcelamento ──────────────────────── */}
               {(sellData.payment_method === 'credit_card' || sellData.payment_method === 'debit_card') && (
                 <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                  {sellData.payment_method === 'credit_card' && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Parcelamento</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {INSTALLMENT_OPTIONS.map(n => (
+                          <button key={n} type="button"
+                            onClick={() => { setInstallments(n); setCardFeeRateInput(String(getFeeRate('credit_card', n, feeRates))); }}
+                            className={cn('px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all',
+                              installments === n
+                                ? 'bg-indigo-600 text-white border-indigo-600'
+                                : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'
+                            )}>
+                            {n}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Taxa da Maquininha (%)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="100"
-                      value={cardFeeRateInput}
-                      onChange={e => setCardFeeRateInput(e.target.value)}
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                      Taxa {sellData.payment_method === 'credit_card' ? `Crédito ${installments}x` : 'Débito'} (%)
+                    </label>
+                    <input type="number" step="0.01" min="0" max="100"
+                      value={cardFeeRateInput} onChange={e => setCardFeeRateInput(e.target.value)}
                       className="w-24 px-3 py-1.5 bg-white border border-slate-200 rounded-xl font-black text-slate-700 text-right outline-none focus:border-indigo-500"
                     />
                   </div>
@@ -1939,6 +2414,20 @@ export default function FinancialPage() {
                       </div>
                     );
                   })()}
+                </div>
+              )}
+              {(sellData.payment_method === 'asaas_pix' || sellData.payment_method === 'asaas_credit') && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl flex items-start gap-3">
+                  <span className="text-xl mt-0.5">🔗</span>
+                  <div className="text-xs text-blue-800 space-y-0.5">
+                    <p className="font-black text-sm">Taxa Asaas (automática)</p>
+                    <p className="font-semibold">
+                      {sellData.payment_method === 'asaas_pix'
+                        ? `PIX: ~${feeRates.asaas_pix}% por transação`
+                        : `Cartão Online: ~${feeRates.asaas_credit}% por transação`}
+                    </p>
+                    <p className="text-blue-600">Valor líquido real atualizado automaticamente após confirmação Asaas.</p>
+                  </div>
                 </div>
               )}
 
@@ -1998,6 +2487,68 @@ export default function FinancialPage() {
                 className="w-full py-5 bg-emerald-500 text-white rounded-2xl font-bold shadow-xl shadow-emerald-100 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
                 {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />} Confirmar Venda
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* MODAL: PIX QR CODE                                                         */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {createdPixQrCode && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-600 text-white rounded-2xl"><DollarSign className="w-6 h-6" /></div>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900">Pagamento PIX</h3>
+                  <p className="text-sm text-slate-500 font-medium">Escaneie o QR Code abaixo</p>
+                </div>
+              </div>
+              <button onClick={() => setCreatedPixQrCode(null)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 cursor-pointer"><X className="w-6 h-6" /></button>
+            </div>
+            
+            <div className="p-8 space-y-6">
+              <div className="text-center space-y-1">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Paciente</p>
+                <p className="text-lg font-black text-slate-800">{createdPixQrCode.patientName}</p>
+                <p className="text-3xl font-black text-indigo-600 mt-2">R$ {fmt(createdPixQrCode.amount)}</p>
+              </div>
+
+              <div className="flex justify-center p-4 bg-white rounded-3xl border-2 border-slate-100 shadow-sm">
+                <img src={`data:image/png;base64,${createdPixQrCode.encodedImage}`} alt="QR Code PIX" className="w-64 h-64 object-contain" />
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">PIX Copia e Cola</p>
+                  <textarea 
+                    readOnly 
+                    value={createdPixQrCode.payload}
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-mono text-slate-600 h-24 resize-none focus:outline-none"
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(createdPixQrCode.payload);
+                      showToast("Código PIX copiado com sucesso!");
+                    } catch (err) {
+                      showToast("Erro ao copiar o código.", "error");
+                    }
+                  }}
+                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+                >
+                  <Save className="w-5 h-5" /> Copiar Código PIX
+                </button>
+                <button 
+                  onClick={() => setCreatedPixQrCode(null)}
+                  className="w-full py-3 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all cursor-pointer text-sm"
+                >
+                  Fechar Janela
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2113,11 +2664,11 @@ export default function FinancialPage() {
                     value={confirmMethod}
                     onChange={e => {
                       const method = e.target.value;
-                      let defaultRate = '0';
-                      if (method === 'credit_card') defaultRate = '3.5';
-                      else if (method === 'debit_card') defaultRate = '1.5';
+                      const inst = method === 'credit_card' ? confirmInstallments : 1;
+                      const autoRate = getFeeRate(method, inst, feeRates);
                       setConfirmMethod(method);
-                      setConfirmFeeRate(defaultRate);
+                      setConfirmFeeRate(String(autoRate));
+                      setConfirmInstallments(1);
                     }}
                     className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none"
                   >
@@ -2138,18 +2689,33 @@ export default function FinancialPage() {
                   {uploadingFile && <p className="text-xs text-indigo-600 font-semibold animate-pulse">Fazendo upload...</p>}
                 </div>
 
-                {/* Taxa da maquininha se for cartão */}
+                {/* ── Taxa de Pagamento / Parcelamento ──────────────────── */}
                 {(confirmMethod === 'credit_card' || confirmMethod === 'debit_card') && (
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                    {confirmMethod === 'credit_card' && (
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Parcelamento</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {INSTALLMENT_OPTIONS.map(n => (
+                            <button key={n} type="button"
+                              onClick={() => { setConfirmInstallments(n); setConfirmFeeRate(String(getFeeRate('credit_card', n, feeRates))); }}
+                              className={cn('px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all',
+                                confirmInstallments === n
+                                  ? 'bg-indigo-600 text-white border-indigo-600'
+                                  : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'
+                              )}>
+                              {n}x
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Taxa da Maquininha (%)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max="100"
-                        value={confirmFeeRate}
-                        onChange={e => setConfirmFeeRate(e.target.value)}
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                        Taxa {confirmMethod === 'credit_card' ? `Crédito ${confirmInstallments}x` : 'Débito'} (%)
+                      </label>
+                      <input type="number" step="0.01" min="0" max="100"
+                        value={confirmFeeRate} onChange={e => setConfirmFeeRate(e.target.value)}
                         className="w-20 px-2.5 py-1 bg-white border border-slate-200 rounded-xl font-black text-slate-700 text-right outline-none focus:border-indigo-500"
                       />
                     </div>
@@ -2162,6 +2728,31 @@ export default function FinancialPage() {
                         <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 font-medium pt-2 border-t border-slate-200/60">
                           <div>Taxa Cobrada: <strong className="text-slate-800">R$ {fmt(feeVal)}</strong></div>
                           <div className="text-right">Líquido Recebido: <strong className="text-indigo-600">R$ {fmt(netVal)}</strong></div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+                {(confirmMethod === 'asaas' || confirmMethod === 'asaas_pix' || confirmMethod === 'asaas_credit') && (
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest ml-1">
+                        Taxa Asaas (%) — {confirmMethod === 'asaas_pix' ? 'PIX' : 'Cartão Online'}
+                      </label>
+                      <input type="number" step="0.01" min="0" max="100"
+                        value={confirmFeeRate} onChange={e => setConfirmFeeRate(e.target.value)}
+                        className="w-20 px-2.5 py-1 bg-white border border-blue-200 rounded-xl font-black text-blue-700 text-right outline-none focus:border-blue-400"
+                      />
+                    </div>
+                    {(() => {
+                      const price = Math.abs(confirmingPayment.amount);
+                      const rate = parseFloat(confirmFeeRate) || 0;
+                      const feeVal = price * (rate / 100);
+                      const netVal = price - feeVal;
+                      return (
+                        <div className="grid grid-cols-2 gap-2 text-xs font-medium pt-2 border-t border-blue-200/60">
+                          <div className="text-blue-700">Taxa Asaas: <strong>R$ {fmt(feeVal)}</strong></div>
+                          <div className="text-right text-indigo-600">Líquido: <strong>R$ {fmt(netVal)}</strong></div>
                         </div>
                       );
                     })()}
@@ -2304,13 +2895,160 @@ export default function FinancialPage() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* MODAL: CONFIGURAR TAXAS DE PAGAMENTO                                    */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {showFeeSettingsModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-600 text-white rounded-2xl"><Settings className="w-6 h-6" /></div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900">Taxas de Pagamento</h3>
+                  <p className="text-sm text-slate-500">Taxas padrão aplicadas automaticamente nos cálculos</p>
+                </div>
+              </div>
+              <button onClick={() => setShowFeeSettingsModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X className="w-6 h-6" /></button>
+            </div>
+            <div className="p-8 space-y-6 overflow-y-auto max-h-[70vh]">
+              {/* Débito */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <span className="w-2 h-2 bg-amber-400 rounded-full inline-block" /> Cartão de Débito (Maquininha)
+                </h4>
+                <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                  <span className="text-sm font-bold text-slate-700">Taxa Débito (%)</span>
+                  <input type="number" step="0.01" min="0" max="100" value={feeRatesInput.debit}
+                    onChange={e => setFeeRatesInput(r => ({ ...r, debit: parseFloat(e.target.value) || 0 }))}
+                    className="w-24 px-3 py-1.5 bg-white border border-slate-200 rounded-xl font-black text-slate-700 text-right outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+              {/* Crédito */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <span className="w-2 h-2 bg-indigo-400 rounded-full inline-block" /> Cartão de Crédito (Maquininha)
+                </h4>
+                <div className="space-y-2">
+                  {([
+                    { key: 'credit_1x' as keyof FeeRates, label: 'À Vista (1x)' },
+                    { key: 'credit_2_6x' as keyof FeeRates, label: 'Parcelado 2x – 6x' },
+                    { key: 'credit_7_12x' as keyof FeeRates, label: 'Parcelado 7x – 12x' },
+                  ] as const).map(({ key, label }) => (
+                    <div key={key} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                      <span className="text-sm font-bold text-slate-700">{label} (%)</span>
+                      <input type="number" step="0.01" min="0" max="100" value={feeRatesInput[key]}
+                        onChange={e => setFeeRatesInput(r => ({ ...r, [key]: parseFloat(e.target.value) || 0 }))}
+                        className="w-24 px-3 py-1.5 bg-white border border-slate-200 rounded-xl font-black text-slate-700 text-right outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Asaas */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <span className="w-2 h-2 bg-blue-400 rounded-full inline-block" /> Asaas (Pagamentos Online)
+                </h4>
+                <div className="space-y-2">
+                  {([
+                    { key: 'asaas_pix' as keyof FeeRates, label: 'PIX via Asaas (%)' },
+                    { key: 'asaas_credit' as keyof FeeRates, label: 'Cartão Online via Asaas (%)' },
+                  ] as const).map(({ key, label }) => (
+                    <div key={key} className="flex items-center justify-between p-4 bg-blue-50 border border-blue-200 rounded-2xl">
+                      <span className="text-sm font-bold text-blue-800">{label}</span>
+                      <input type="number" step="0.01" min="0" max="100" value={feeRatesInput[key]}
+                        onChange={e => setFeeRatesInput(r => ({ ...r, [key]: parseFloat(e.target.value) || 0 }))}
+                        className="w-24 px-3 py-1.5 bg-white border border-blue-200 rounded-xl font-black text-blue-700 text-right outline-none focus:border-blue-400"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-400 font-medium px-1">As taxas do Asaas são estimativas. O valor líquido real é confirmado pelo webhook após o pagamento.</p>
+              </div>
+              <button onClick={handleSaveFeeRates} disabled={saving}
+                className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Salvar Taxas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* MODAL: CONFIRMAR PAGAMENTO DE BÔNUS                                     */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {showBonusModal && (() => {
+        const bonus = showBonusModal;
+        const staffMember = staff.find(s => s.id === bonus.staff_id);
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+            <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden">
+              <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-amber-50/50">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-amber-500 text-white rounded-2xl"><Award className="w-6 h-6" /></div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900">Confirmar Bônus</h3>
+                    <p className="text-sm text-slate-500">{staffMember?.name} — {MONTH_NAMES[bonus.month - 1]}/{bonus.year}</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowBonusModal(null)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X className="w-6 h-6" /></button>
+              </div>
+              <div className="p-8 space-y-5">
+                {/* Resumo */}
+                <div className="p-5 bg-amber-50 border border-amber-200 rounded-2xl space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-semibold">Base (Receita Líquida)</span>
+                    <span className="font-black text-slate-900">R$ {fmt(bonus.clinic_net_base)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-semibold">% Bônus</span>
+                    <span className="font-black text-slate-900">{bonus.commission_rate}%</span>
+                  </div>
+                  <div className="flex justify-between border-t border-amber-200 pt-2 mt-2">
+                    <span className="font-black text-amber-700">Valor do Bônus</span>
+                    <span className="font-black text-2xl text-amber-600">R$ {fmt(bonus.bonus_amount)}</span>
+                  </div>
+                </div>
+                {/* Método de pagamento */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Método de Pagamento</label>
+                  <select value={bonusPayMethod} onChange={e => setBonusPayMethod(e.target.value)}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none">
+                    {PAYMENT_METHODS.filter(m => !m.value.startsWith('asaas')).map(m => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {/* Observação */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Observação (opcional)</label>
+                  <textarea value={bonusPayNote} onChange={e => setBonusPayNote(e.target.value)} rows={2}
+                    placeholder="Ex: Pago junto com salário via PIX..."
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-slate-700 font-medium resize-none" />
+                </div>
+                <p className="text-[11px] text-slate-400 font-medium px-1">
+                  O pagamento será registrado automaticamente como despesa no fluxo de caixa.
+                </p>
+                <button onClick={handleConfirmStaffBonus} disabled={saving}
+                  className="w-full py-5 bg-amber-500 text-white rounded-2xl font-bold shadow-xl shadow-amber-100 hover:bg-amber-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                  {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
+                  Confirmar Pagamento de R$ {fmt(bonus.bonus_amount)}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* MODAL: NOVO COLABORADOR                                                  */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {showStaffModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
           <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden">
             <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center gap-4"><div className="p-3 bg-indigo-600 text-white rounded-2xl"><Users className="w-6 h-6" /></div><h3 className="text-xl font-black text-slate-900">Novo Administrativo</h3></div>
+              <div className="flex items-center gap-4"><div className="p-3 bg-indigo-600 text-white rounded-2xl"><Users className="w-6 h-6" /></div><h3 className="text-xl font-black text-slate-900">{editingStaffId ? 'Editar Administrativo' : 'Novo Administrativo'}</h3></div>
               <button onClick={() => setShowStaffModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X className="w-6 h-6" /></button>
             </div>
             <div className="p-8 space-y-5">
@@ -2325,7 +3063,7 @@ export default function FinancialPage() {
                   <input type="number" value={newStaff.base_salary} onChange={e => setNewStaff({ ...newStaff, base_salary: e.target.value })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700" /></div>
               </div>
               <button onClick={handleCreateStaff} disabled={saving} className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Cadastrar
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} {editingStaffId ? 'Salvar Alterações' : 'Cadastrar'}
               </button>
             </div>
           </div>
@@ -2351,6 +3089,14 @@ export default function FinancialPage() {
                 <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Categoria</label>
                   <input value={newSupplier.category} onChange={e => setNewSupplier({ ...newSupplier, category: e.target.value })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700" placeholder="Ex: Manutenção" /></div>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone / WhatsApp</label>
+                  <input value={newSupplier.phone} onChange={e => setNewSupplier({ ...newSupplier, phone: e.target.value })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700" placeholder="(00) 00000-0000" /></div>
+                <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">E-mail</label>
+                  <input value={newSupplier.email} onChange={e => setNewSupplier({ ...newSupplier, email: e.target.value })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700" placeholder="contato@empresa.com" /></div>
+              </div>
+              <div className="space-y-2"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Produtos / Serviços Fornecidos</label>
+                <input value={newSupplier.products_provided} onChange={e => setNewSupplier({ ...newSupplier, products_provided: e.target.value })} className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700" placeholder="Ex: Óleos essenciais, papel toalha, etc..." /></div>
               <button onClick={handleCreateSupplier} disabled={saving} className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
                 {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Salvar Fornecedor
               </button>

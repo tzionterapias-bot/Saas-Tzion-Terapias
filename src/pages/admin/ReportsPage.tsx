@@ -47,7 +47,7 @@ export default function ReportsPage() {
       // 1. Fetch Payments (Mês atual para KPI e Ano todo para gráfico)
       const { data: paymentsData } = await supabase
         .from('payments')
-        .select('amount, type, status, created_at, date')
+        .select('amount, type, status, created_at')
         .gte('created_at', startOfYear)
         .lte('created_at', endOfYear);
 

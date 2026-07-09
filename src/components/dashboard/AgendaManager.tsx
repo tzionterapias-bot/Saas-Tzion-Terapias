@@ -332,7 +332,7 @@ export default function AgendaManager() {
             
             if (webhookRes.ok) {
                 const responseData = await webhookRes.json().catch(() => null);
-                console.log("RESPOSTA DO N8N:", responseData);
+                // RESPOSTA DO N8N
                 
                 const findMeetLink = (obj: any): string => {
                     if (!obj) return '';

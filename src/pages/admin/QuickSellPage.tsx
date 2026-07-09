@@ -41,11 +41,12 @@ export default function QuickSellPage() {
 
   const emptySell = { patient_id: '', service_id: '', payment_method: 'asaas_pix', therapist_id: '', referral_source: 'therapist' as const };
   const [sellData, setSellData] = useState(emptySell);
+  const [recentPayments, setRecentPayments] = useState<any[]>([]);
   const [cardFeeRateInput, setCardFeeRateInput] = useState('0');
   const [multimodalItems, setMultimodalItems] = useState<{ service_id: string; sessions: number }[]>([]);
   
-  const [createdAsaasPayment, setCreatedAsaasPayment] = useState<{ url: string; amount: number; patientName: string; phone: string | null } | null>(null);
-  const [createdPixQrCode, setCreatedPixQrCode] = useState<{ encodedImage: string; payload: string; amount: number; patientName: string } | null>(null);
+  const [createdAsaasPayment, setCreatedAsaasPayment] = useState<{ url: string; amount: number; patientName: string; phone: string | null; paymentId: string } | null>(null);
+  const [createdPixQrCode, setCreatedPixQrCode] = useState<{ encodedImage: string; payload: string; amount: number; patientName: string; paymentId: string } | null>(null);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -55,13 +56,15 @@ export default function QuickSellPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [servicesRes, patientsRes] = await Promise.all([
+      const [servicesRes, patientsRes, paymentsRes] = await Promise.all([
         supabase.from('services').select('*').order('name'),
-        supabase.from('patients').select('id, name, phone, cpf').eq('status', 'Ativo').order('name')
+        supabase.from('patients').select('id, name, phone, cpf').eq('status', 'Ativo').order('name'),
+        supabase.from('payments').select('id, amount, status, created_at, description, payment_method').order('created_at', { ascending: false }).limit(5)
       ]);
 
       setServices(servicesRes.data || []);
       setPatients(patientsRes.data || []);
+      setRecentPayments(paymentsRes.data || []);
 
       const therapistsRes = await supabase
         .from('therapists')
@@ -88,7 +91,49 @@ export default function QuickSellPage() {
 
   useEffect(() => {
     fetchData();
+
+    // Tentar usar Realtime (mas temos o polling de segurança abaixo)
+    const channel = supabase
+      .channel('public:payments')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'payments' },
+        (payload) => {
+          // REALTIME EVENT RECEIVED
+          if (payload.new.status === 'paid') {
+            setCreatedPixQrCode(null);
+            setCreatedAsaasPayment(null);
+            setSellData(emptySell); // Limpa o formulário
+            fetchData(); // Atualiza a lista de últimas vendas
+            showToast('✅ Pagamento reconhecido com sucesso!', 'success');
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
+
+  // POLLING DE SEGURANÇA: Se o Realtime falhar por bloqueio de rede ou RLS
+  useEffect(() => {
+    const activePaymentId = createdPixQrCode?.paymentId || createdAsaasPayment?.paymentId;
+    if (!activePaymentId) return;
+
+    const interval = setInterval(async () => {
+      const { data } = await supabase.from('payments').select('status').eq('id', activePaymentId).single();
+      if (data?.status === 'paid') {
+        setCreatedPixQrCode(null);
+        setCreatedAsaasPayment(null);
+        setSellData(emptySell); // Limpa o formulário
+        fetchData(); // Atualiza a lista
+        showToast('✅ Pagamento reconhecido com sucesso!', 'success');
+      }
+    }, 3000); // Poll a cada 3 segundos
+
+    return () => clearInterval(interval);
+  }, [createdPixQrCode?.paymentId, createdAsaasPayment?.paymentId]);
 
   const selectedSvc = services.find(s => s.id === sellData.service_id);
 
@@ -127,22 +172,18 @@ export default function QuickSellPage() {
 
     if (isAsaas) {
       try {
-        const response = await fetch('/api/financeiro/criar-cobranca', {
+        const { data: result, error: fnError } = await supabase.functions.invoke('asaas-integration/checkout', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
+          body: {
             valor: service.price,
             pacienteId: sellData.patient_id,
             description: `${service.name} — Tzion Terapias`,
             billingType: isAsaasPix ? 'PIX' : 'CREDIT_CARD'
-          })
+          }
         });
 
-        const result = await response.json();
-        if (!response.ok) {
-          showToast(result.error || 'Erro ao gerar cobrança no Asaas.', 'error');
+        if (fnError || result?.error) {
+          showToast(result?.error || 'Erro ao gerar cobrança no Asaas.', 'error');
           setSaving(false);
           return;
         }
@@ -163,7 +204,7 @@ export default function QuickSellPage() {
     const feeVal = service.price * (rate / 100);
     const netVal = service.price - feeVal;
 
-    const { error: payErr } = await supabase.from('payments').insert([{
+    const { data: payData, error: payErr } = await supabase.from('payments').insert([{
       amount: service.price,
       type: 'income',
       status: 'pending',
@@ -179,9 +220,9 @@ export default function QuickSellPage() {
       card_fee_rate: rate,
       card_fee_val: feeVal,
       net_amount: netVal
-    }]);
+    }]).select().single();
 
-    if (payErr) { 
+    if (payErr || !payData) { 
       showToast('Erro ao registrar pagamento.', 'error'); 
       setSaving(false); 
       return; 
@@ -219,22 +260,22 @@ export default function QuickSellPage() {
 
     if (isAsaasPix && asaasId) {
       try {
-        const qrRes = await fetch(`/api/financeiro/obter-pix-qrcode/${asaasId}`);
-        if (qrRes.ok) {
-          const qrData = await qrRes.json();
-          if (qrData.success || qrData.encodedImage) {
-            setCreatedPixQrCode({
-              encodedImage: qrData.encodedImage,
-              payload: qrData.payload,
-              amount: service.price,
-              patientName: patient.name
-            });
-            showToast('QR Code do PIX gerado com sucesso!');
-          } else {
-            showToast('Cobrança PIX criada, mas erro ao gerar QR Code.', 'error');
-          }
+        const { data: qrData, error: fnError } = await supabase.functions.invoke(`asaas-integration/pix`, {
+          method: 'POST',
+          body: { paymentId: asaasId }
+        });
+        
+        if (!fnError && qrData && (qrData.success || qrData.encodedImage)) {
+          setCreatedPixQrCode({
+            encodedImage: qrData.encodedImage,
+            payload: qrData.payload,
+            amount: service.price,
+            patientName: patient.name,
+            paymentId: payData.id
+          });
+          showToast('QR Code do PIX gerado com sucesso!');
         } else {
-          showToast('Erro de API ao buscar QR Code do PIX.', 'error');
+          showToast(qrData?.error || 'Erro ao gerar QR Code do PIX.', 'error');
         }
       } catch (err) {
         console.error('Erro ao buscar QR Code:', err);
@@ -245,14 +286,15 @@ export default function QuickSellPage() {
         url: asaasLink,
         amount: service.price,
         patientName: patient.name,
-        phone: patient.phone
+        phone: patient.phone,
+        paymentId: payData.id
       });
 
       // Enviar cobrança automaticamente se tiver telefone
       if (patient.phone) {
         try {
           const firstName = patient.name.split(' ')[0];
-          const msg = `Olá, *${firstName}*! ✨\n\nSegue o link para pagamento do seu pacote *${service.name}* na Tzion Terapias:\n\n🔗 ${asaasLink}\n\nVocê pode pagar via PIX, Cartão de Crédito ou Boleto. Qualquer dúvida, estamos à disposição! 💙`;
+          const msg = `Olá, *${firstName}*! ✨\n\nSegue o link para pagamento do seu pacote/serviço *${service.name}* na Tzion Terapias:\n\n🔗 ${asaasLink}\n\n💳 Você pode parcelar no Cartão de Crédito em até 12x, ou pagar via PIX/Boleto.\n\nQualquer dúvida, estamos à disposição! 💙`;
           await sendWhatsAppMessage(patient.id, patient.phone, msg, 'payment_link_sent');
           showToast('Cobrança gerada e enviada via WhatsApp!');
         } catch (err) {
@@ -272,7 +314,7 @@ export default function QuickSellPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto pb-10 animate-in fade-in duration-500 relative">
+    <>
       {toast && (
         <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[300] animate-in slide-in-from-top-4 fade-in duration-300">
           <div className={cn(
@@ -287,8 +329,12 @@ export default function QuickSellPage() {
         </div>
       )}
 
-      {/* Header card */}
-      <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex items-center gap-4">
+      <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500 relative grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* Lado Esquerdo: Formulário */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* Header card */}
+          <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex items-center gap-4">
         <div className="p-4 bg-emerald-500 text-white rounded-3xl shadow-lg shadow-emerald-100 shrink-0">
           <Briefcase className="w-8 h-8" />
         </div>
@@ -544,6 +590,63 @@ export default function QuickSellPage() {
             </button>
           </>
         )}
+        </div>
+        </div>
+
+        {/* Lado Direito: Últimas Vendas */}
+        <div className="lg:col-span-5 sticky top-6">
+          {/* ÚLTIMAS VENDAS (ACOMPANHAMENTO PARA A RECEPÇÃO) */}
+          <div className="bg-white rounded-[3rem] p-8 shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-4">
+              <div className="p-4 bg-slate-50 text-slate-400 rounded-3xl">
+                <DollarSign className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-800">Últimas Vendas</h3>
+                <p className="text-sm text-slate-500 font-medium">Acompanhe o status das vendas recentes</p>
+              </div>
+            </div>
+            <button onClick={fetchData} className="p-3 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-2xl transition-colors">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {recentPayments.length === 0 ? (
+              <p className="text-center text-slate-400 py-4 font-medium">Nenhuma venda recente.</p>
+            ) : (
+              recentPayments.map(payment => (
+                <div key={payment.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "w-12 h-12 rounded-xl flex items-center justify-center",
+                      payment.status === 'paid' ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
+                    )}>
+                      {payment.status === 'paid' ? <CheckCircle2 className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">{payment.description}</p>
+                      <p className="text-xs text-slate-500">{new Date(payment.created_at).toLocaleString('pt-BR')}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-black text-slate-900">R$ {fmt(payment.amount)}</p>
+                    <p className={cn(
+                      "text-[10px] font-black uppercase tracking-widest",
+                      payment.status === 'paid' ? "text-emerald-500" : "text-amber-500"
+                    )}>
+                      {payment.status === 'paid' ? 'Pago' : 'Pendente'}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+      </div>
+
       </div>
 
       {/* Modal: PIX QR Code */}
@@ -679,6 +782,6 @@ export default function QuickSellPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

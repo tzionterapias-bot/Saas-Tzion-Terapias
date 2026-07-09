@@ -93,7 +93,7 @@ export default function TherapistPage() {
       if (user?.role === 'terapeuta') {
         const { data: myTherapist } = await supabase
           .from('therapists')
-          .select('id, name, user_id, commission_rate_clinic, commission_rate_self, avatar_url, professional_registration, bio, specialties, attendance_modes')
+          .select('id, name, user_id, commission_rate_clinic, commission_rate_self, photo_url, professional_registration, bio, specialties, attendance_modes')
           .eq('user_id', user.id)
           .maybeSingle();
 
@@ -114,7 +114,7 @@ export default function TherapistPage() {
         if (loadStatic || allTherapists.length === 0) {
           const { data: allActive } = await supabase
             .from('therapists')
-            .select('id, name, user_id, commission_rate_clinic, commission_rate_self, avatar_url, professional_registration, bio, specialties, attendance_modes')
+            .select('id, name, user_id, commission_rate_clinic, commission_rate_self, photo_url, professional_registration, bio, specialties, attendance_modes')
             .eq('active', true)
             .order('name');
           
@@ -134,7 +134,7 @@ export default function TherapistPage() {
       if (therapistId && (!therapistInfo || !therapistInfo.bio)) {
         const { data: tFull } = await supabase
           .from('therapists')
-          .select('id, name, user_id, commission_rate_clinic, commission_rate_self, avatar_url, professional_registration, bio, specialties, attendance_modes')
+          .select('id, name, user_id, commission_rate_clinic, commission_rate_self, photo_url, professional_registration, bio, specialties, attendance_modes')
           .eq('id', therapistId)
           .maybeSingle();
         if (tFull) {
@@ -161,10 +161,7 @@ export default function TherapistPage() {
           .gte('start_time', cutoffStart.toISOString())
           .lte('start_time', cutoffEnd.toISOString())
           .order('start_time')),
-        Promise.resolve(supabase.from('commissions')
-          .select('*')
-          .eq('therapist_id', therapistId)
-          .order('calculated_at', { ascending: false })),
+        Promise.resolve({ data: [] }), // Removed failing supabase.from('commissions') query
         Promise.resolve(supabase.from('commission_payouts')
           .select('*')
           .eq('therapist_id', therapistId)
@@ -180,7 +177,7 @@ export default function TherapistPage() {
 
       if (loadStatic) {
         promises.push(Promise.resolve(supabase.from('patients').select('*').order('name')));
-        promises.push(Promise.resolve(supabase.from('therapist_profiles').select('*').eq('id', therapistId).maybeSingle()));
+        promises.push(Promise.resolve(supabase.from('therapists').select('*').eq('id', therapistId).maybeSingle()));
         promises.push(Promise.resolve(supabase.from('rooms').select('id, name, color').eq('status', 'active')));
       }
 
@@ -202,13 +199,29 @@ export default function TherapistPage() {
         if (therapistInfo) {
           if (!pData.id) pData.id = therapistId;
           if (!pData.name) pData.name = therapistInfo.name || '';
-          if (!pData.photo_url) pData.photo_url = therapistInfo.avatar_url || '';
-          if (!pData.registration_number) pData.registration_number = therapistInfo.professional_registration || '';
-          if (!pData.bio) pData.bio = therapistInfo.bio || '';
-          if (!pData.specialties) pData.specialties = therapistInfo.specialties || [];
-          if (!pData.role) pData.role = (therapistInfo.specialties && therapistInfo.specialties[0]) || '';
+          if (!pData.photo_url) pData.photo_url = therapistInfo.photo_url || therapistInfo.avatar_url || '';
+          if (!pData.registration_number) pData.registration_number = pData.professional_registration || therapistInfo.professional_registration || '';
+          if (!pData.bio) pData.bio = pData.bio || therapistInfo.bio || '';
+          if (!pData.specialties) pData.specialties = pData.specialties || therapistInfo.specialties || [];
+          if (!pData.role) pData.role = (pData.specialties && pData.specialties[0]) || (therapistInfo.specialties && therapistInfo.specialties[0]) || pData.specialty || '';
+          if (!pData.modality) pData.modality = (pData.attendance_modes && pData.attendance_modes[0]) || (therapistInfo.attendance_modes && therapistInfo.attendance_modes[0]) || 'ambos';
         }
-        if (!pData.working_hours) {
+        let wh = pData.working_hours;
+        if (wh && typeof wh === 'object' && !Array.isArray(wh)) {
+          if (wh.monday && typeof wh.monday === 'object' && !Array.isArray(wh.monday)) {
+            const normalized: Record<string, string[]> = {
+              "Segunda": [], "Terça": [], "Quarta": [], "Quinta": [], "Sexta": []
+            };
+            if (wh.monday?.active) normalized["Segunda"].push(`${wh.monday.start} às ${wh.monday.end}`);
+            if (wh.tuesday?.active) normalized["Terça"].push(`${wh.tuesday.start} às ${wh.tuesday.end}`);
+            if (wh.wednesday?.active) normalized["Quarta"].push(`${wh.wednesday.start} às ${wh.wednesday.end}`);
+            if (wh.thursday?.active) normalized["Quinta"].push(`${wh.thursday.start} às ${wh.thursday.end}`);
+            if (wh.friday?.active) normalized["Sexta"].push(`${wh.friday.start} às ${wh.friday.end}`);
+            pData.working_hours = normalized;
+          }
+        }
+        
+        if (!pData.working_hours || typeof pData.working_hours !== 'object' || Array.isArray(pData.working_hours) || (!pData.working_hours['Segunda'] && !pData.working_hours['monday'])) {
           pData.working_hours = {
             "Segunda": ["08:00 às 12:00", "13:00 às 18:00"],
             "Terça": ["08:00 às 12:00", "13:00 às 18:00"],
@@ -766,7 +779,7 @@ export default function TherapistPage() {
             
             if (webhookRes.ok) {
                 const responseData = await webhookRes.json().catch(() => null);
-                console.log("RESPOSTA DO N8N:", responseData);
+                // RESPOSTA DO N8N
                 
                 const findMeetLink = (obj: any): string => {
                     if (!obj) return '';
@@ -899,21 +912,21 @@ export default function TherapistPage() {
     if (!profile) return;
     setLoading(true);
     
+    // Convert single values back to arrays for the database
     const payload: any = { 
         bio: profile.bio,
-        specialties: profile.specialties,
+        specialties: profile.role ? [profile.role] : profile.specialties,
         working_hours: profile.working_hours,
-        registration_number: profile.registration_number,
+        professional_registration: profile.registration_number,
         photo_url: profile.photo_url,
-        modality: profile.modality,
-        name: profile.name,
-        role: profile.role
+        attendance_modes: profile.modality ? [profile.modality] : ['ambos'],
+        name: profile.name
     };
     
     if (profile.id) payload.id = profile.id;
 
     const { error } = await supabase
-      .from('therapist_profiles')
+      .from('therapists')
       .upsert(payload);
       
     if (!error) {
@@ -1842,13 +1855,73 @@ export default function TherapistPage() {
                     </div>
                     
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left block w-full">URL da Foto de Perfil (Link da web)</label>
-                        <input 
-                            value={profile?.photo_url || ''} 
-                            onChange={(e) => setProfile({...profile, photo_url: e.target.value})}
-                            placeholder="https://suafoto.com/imagem.jpg"
-                            className="text-sm font-medium text-slate-500 w-full bg-slate-50 px-6 py-4 outline-none focus:ring-2 focus:ring-indigo-500/20 rounded-2xl border border-slate-100"
-                        />
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left block w-full">Foto de Perfil</label>
+                        <div className="flex gap-4 items-center">
+                            <input 
+                                type="file"
+                                accept="image/*"
+                                onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    setLoading(true);
+                                    
+                                    try {
+                                        // 1. Resize to 500x500
+                                        const img = new Image();
+                                        img.src = URL.createObjectURL(file);
+                                        await new Promise((resolve) => (img.onload = resolve));
+                                        
+                                        const canvas = document.createElement('canvas');
+                                        canvas.width = 500;
+                                        canvas.height = 500;
+                                        const ctx = canvas.getContext('2d');
+                                        if (ctx) {
+                                            // Crop to square and resize
+                                            const size = Math.min(img.width, img.height);
+                                            const sx = (img.width - size) / 2;
+                                            const sy = (img.height - size) / 2;
+                                            ctx.drawImage(img, sx, sy, size, size, 0, 0, 500, 500);
+                                        }
+                                        
+                                        const blob = await new Promise<Blob | null>((resolve) => 
+                                            canvas.toBlob(resolve, 'image/jpeg', 0.9)
+                                        );
+                                        
+                                        if (!blob) throw new Error("Erro ao processar imagem");
+                                        
+                                        // 2. Upload to supabase
+                                        const therapistName = profile?.name ? profile.name.replace(/\s+/g, '_').toLowerCase() : 'terapeuta';
+                                        const fileName = `${therapistName}-${Date.now()}.jpg`;
+                                        
+                                        const { data: uploadData, error: uploadError } = await supabase.storage
+                                            .from('avatars')
+                                            .upload(fileName, blob, { contentType: 'image/jpeg' });
+                                            
+                                        if (uploadError) throw uploadError;
+                                        
+                                        // 3. Get URL
+                                        const { data: urlData } = supabase.storage
+                                            .from('avatars')
+                                            .getPublicUrl(fileName);
+                                            
+                                        setProfile({...profile, photo_url: urlData.publicUrl});
+                                        setToastMessage('Foto atualizada com sucesso!');
+                                        setTimeout(() => setToastMessage(null), 3500);
+                                    } catch (err: any) {
+                                        console.error(err);
+                                        setToastMessage('Erro ao fazer upload da foto: ' + (err.message || ''));
+                                        setTimeout(() => setToastMessage(null), 3500);
+                                    } finally {
+                                        setLoading(false);
+                                    }
+                                }}
+                                className="hidden"
+                                id="avatar-upload"
+                            />
+                            <label htmlFor="avatar-upload" className="cursor-pointer bg-indigo-50 text-indigo-600 px-6 py-4 rounded-2xl border border-indigo-100 font-bold hover:bg-indigo-100 transition-colors flex items-center justify-center text-sm w-full">
+                                <ImageIcon className="w-5 h-5 mr-2" /> Fazer Upload da Foto (500x500)
+                            </label>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">

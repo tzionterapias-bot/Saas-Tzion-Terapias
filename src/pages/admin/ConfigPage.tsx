@@ -215,7 +215,7 @@ export default function ConfigPage() {
           { id: 'alta', name: 'Alta Terapêutica', color: '#f59e0b', description: 'Encerramento do processo' },
         ]);
       }
-    } catch(e) { console.log('Tabela settings pode não existir ainda'); }
+    } catch(e) { /* Tabela settings pode não existir ainda */ }
     
     setLoading(false);
   };
@@ -562,11 +562,11 @@ export default function ConfigPage() {
                           
                           <div className="p-4 bg-slate-900 rounded-2xl flex items-center justify-between gap-4 mb-4 shadow-inner">
                             <code className="text-xs font-mono text-emerald-400 truncate flex-1 select-all">
-                              {window.location.origin}/api/webhooks/asaas
+                              {import.meta.env.VITE_SUPABASE_URL}/functions/v1/asaas-integration/webhook
                             </code>
                             <button 
                               onClick={() => {
-                                navigator.clipboard.writeText(`${window.location.origin}/api/webhooks/asaas`);
+                                navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/asaas-integration/webhook`);
                                 alert('URL copiada!');
                               }}
                               className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold transition-colors shrink-0"
