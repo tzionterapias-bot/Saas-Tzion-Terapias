@@ -7,6 +7,7 @@ import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
 import { getSystemBaseUrl } from '@/src/utils/systemUrl';
+import { fillContractTemplate, DEFAULT_CONTRACT_TEMPLATE } from '@/src/lib/contract';
 
 interface PatientProfileModalProps {
   patient: any;
@@ -137,15 +138,16 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
       setGeneratingContractId(pkg.id);
       
       const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').single();
-      let template = setts?.value || 'Este é o contrato padrão. Paciente: {{nome_paciente}}, CPF: {{cpf_paciente}}, Data: {{data_atual}}.';
+      let rawTemplate = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
       
-      template = template.replace(/\{\{nome_paciente\}\}/g, patient.name || '');
-      template = template.replace(/\{\{cpf_paciente\}\}/g, patient.cpf || '');
-      template = template.replace(/\{\{data_atual\}\}/g, new Date().toLocaleDateString('pt-BR'));
+      const filledContent = fillContractTemplate(rawTemplate, {
+        patient,
+        package: pkg
+      });
 
       const { data: contract, error } = await supabase.from('patient_contracts').insert({
         patient_id: patient.id,
-        content: template,
+        content: filledContent,
         status: 'pending',
       }).select().single();
 

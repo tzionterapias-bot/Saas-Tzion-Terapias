@@ -26,6 +26,7 @@ interface Therapist {
   bio?: string;
   professional_registration?: string;
   avatar_url?: string;
+  photo_url?: string;
   attendance_modes?: string[];
   rooms?: { id: string; name: string; color: string } | null;
   profile_status?: string;
@@ -118,6 +119,65 @@ export default function TherapistsManagementPage() {
   const showToast = (type: 'success' | 'error', msg: string) => {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3500);
+  };
+
+  const handleUploadPhotoForTherapist = async (therapistId: string, therapistName: string, file: File) => {
+    if (!file) return;
+    try {
+      // 1. Resize to 500x500 square canvas
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      await new Promise((resolve) => (img.onload = resolve));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 500;
+      canvas.height = 500;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const size = Math.min(img.width, img.height);
+        const sx = (img.width - size) / 2;
+        const sy = (img.height - size) / 2;
+        ctx.drawImage(img, sx, sy, size, size, 0, 0, 500, 500);
+      }
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, 'image/jpeg', 0.9)
+      );
+
+      if (!blob) throw new Error("Erro ao processar imagem.");
+
+      // 2. Upload to storage bucket 'avatars'
+      const sanitizedName = therapistName.replace(/\s+/g, '_').toLowerCase();
+      const fileName = `${sanitizedName}-${Date.now()}.jpg`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // 3. Get Public URL
+      const { data: urlData } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      const publicUrl = urlData.publicUrl;
+
+      // 4. Update Supabase therapists table
+      const { error: dbError } = await supabase
+        .from('therapists')
+        .update({ photo_url: publicUrl })
+        .eq('id', therapistId);
+
+      if (dbError) throw dbError;
+
+      // Update state
+      setTherapists(prev => prev.map(t => t.id === therapistId ? { ...t, photo_url: publicUrl, avatar_url: publicUrl } : t));
+      showToast('success', `Foto de ${therapistName} atualizada!`);
+    } catch (err: any) {
+      console.error(err);
+      showToast('error', 'Erro ao enviar foto: ' + (err.message || ''));
+    }
   };
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
@@ -540,20 +600,35 @@ export default function TherapistsManagementPage() {
               >
                 {/* Card Header */}
                 <div className="p-6 flex items-center gap-4">
-                  {/* Avatar */}
-                  <div className="relative shrink-0">
-                    {t.avatar_url ? (
-                      <img src={t.avatar_url} alt={t.name} className="w-14 h-14 rounded-2xl object-cover" />
-                    ) : (
-                      <div className={cn(
-                        "w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl",
-                        isPending ? "bg-amber-100 text-amber-600" : "bg-indigo-100 text-indigo-600"
-                      )}>
-                        {t.name.charAt(0)}
+                  {/* Avatar com Upload */}
+                  <div className="relative shrink-0 group cursor-pointer" title="Clique para alterar a foto do terapeuta">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      id={`upload-photo-${t.id}`}
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleUploadPhotoForTherapist(t.id, t.name, file);
+                      }}
+                    />
+                    <label htmlFor={`upload-photo-${t.id}`} className="cursor-pointer block relative">
+                      {t.photo_url || t.avatar_url ? (
+                        <img src={t.photo_url || t.avatar_url} alt={t.name} className="w-14 h-14 rounded-2xl object-cover border border-slate-100" />
+                      ) : (
+                        <div className={cn(
+                          "w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl",
+                          isPending ? "bg-amber-100 text-amber-600" : "bg-indigo-100 text-indigo-600"
+                        )}>
+                          {t.name.charAt(0)}
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-slate-900/60 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                        <Camera className="w-5 h-5 text-white" />
                       </div>
-                    )}
+                    </label>
                     {isPending && (
-                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full border-2 border-white" />
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full border-2 border-white pointer-events-none" />
                     )}
                   </div>
 

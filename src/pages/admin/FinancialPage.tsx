@@ -16,6 +16,7 @@ import { supabase } from '@/src/lib/supabase';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { getSystemBaseUrl } from '@/src/utils/systemUrl';
+import { fillContractTemplate, DEFAULT_CONTRACT_TEMPLATE } from '@/src/lib/contract';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -866,14 +867,14 @@ export default function FinancialPage() {
 
               if (patient) {
                 const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').single();
-                let tpl = setts?.value || 'Contrato Tzion — Paciente: {{nome_paciente}}, Data: {{data_atual}}.';
-                tpl = tpl
-                  .replace(/\{\{nome_paciente\}\}/g, patient.name || '')
-                  .replace(/\{\{cpf_paciente\}\}/g, patient.cpf || '')
-                  .replace(/\{\{data_atual\}\}/g, new Date().toLocaleDateString('pt-BR'));
+                let rawTpl = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
+                const filledTpl = fillContractTemplate(rawTpl, {
+                  patient,
+                  package: confirmingPayment
+                });
 
                 const { data: contract } = await supabase.from('patient_contracts').insert({
-                  patient_id: patient.id, content: tpl, status: 'pending',
+                  patient_id: patient.id, content: filledTpl, status: 'pending',
                 }).select().single();
 
                 if (contract && patient.phone) {

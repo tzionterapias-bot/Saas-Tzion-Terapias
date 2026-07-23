@@ -277,8 +277,8 @@ export default function ReportsPage() {
             <TrendingUp className="w-6 h-6 text-emerald-500" /> Evolução Financeira ({filterYear})
          </h3>
          </div>
-         <div className="h-[300px] w-full">
-         <ResponsiveContainer width="100%" height="100%">
+         <div className="h-[300px] w-full min-w-0">
+         <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <AreaChart data={financialYearData}>
                <defs>
                <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
@@ -314,9 +314,9 @@ export default function ReportsPage() {
             </h3>
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-700 px-3 py-1 rounded-full border border-slate-100 dark:border-slate-600">Mês Atual</span>
           </div>
-          <div className="h-[300px] w-full">
+          <div className="h-[300px] w-full min-w-0">
             {therapistProductivity.length > 0 ? (
-               <ResponsiveContainer width="100%" height="100%">
+               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                <BarChart data={therapistProductivity} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-700" />
                   <XAxis type="number" hide />
@@ -341,8 +341,8 @@ export default function ReportsPage() {
             </h3>
           </div>
           <div className="flex flex-col md:flex-row items-center gap-8">
-             <div className="w-[200px] h-[200px]">
-               <ResponsiveContainer width="100%" height="100%">
+             <div className="w-[200px] h-[200px] min-w-0">
+               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                  <PieChart>
                    <Pie
                      data={patientsSource}
@@ -385,9 +385,9 @@ export default function ReportsPage() {
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
-           <div className="lg:col-span-5 h-[300px] flex flex-col justify-center">
+           <div className="lg:col-span-5 h-[300px] flex flex-col justify-center min-w-0">
               {npsDistribution.reduce((a, b) => a + b.value, 0) > 0 ? (
-                 <ResponsiveContainer width="100%" height="100%">
+                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <PieChart>
                        <Pie
                          data={npsDistribution}

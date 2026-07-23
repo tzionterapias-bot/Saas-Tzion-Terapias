@@ -3,6 +3,7 @@ import { Settings, Shield, Bell, Database, Globe, User, Users, Palette, CreditCa
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import { DEFAULT_CONTRACT_TEMPLATE, fillContractTemplate } from '@/src/lib/contract';
 
 // ============================================================
 // MODELO PADRãO DE ANAMNESE — inserido automaticamente no primeiro uso
@@ -95,7 +96,7 @@ export default function ConfigPage() {
     birthdayMessage: 'Olá, {{nome}}! 🎂✨\nA equipe da Tzion Terapias deseja um feliz aniversário! Que este novo ano seja repleto de evolução, paz e conquistas. Parabéns!' 
   });
   const [npsSettings, setNpsSettings] = useState({ delay_minutes: 30, message: 'Olá! Gostaríamos de saber como foi sua sessão de hoje na Clínica Tzion Terapias. De 0 a 10, o quanto você recomendaria nossos serviços?' });
-  const [contractTemplate, setContractTemplate] = useState('Este é o contrato padrão. Paciente: {{nome_paciente}}, CPF: {{cpf_paciente}}, Data: {{data_atual}}.');
+  const [contractTemplate, setContractTemplate] = useState(DEFAULT_CONTRACT_TEMPLATE);
   const [contractPreview, setContractPreview] = useState(false);
   const [ticketSettings, setTicketSettings] = useState({ autoCloseHours: 24, closeMessage: 'Seu atendimento foi encerrado devido à falta de interação nas últimas 24 horas. Caso precise de ajuda, envie uma nova mensagem!' });
 
@@ -1148,10 +1149,18 @@ export default function ConfigPage() {
                     {editingItem.item === 'Termos de Consentimento' && (
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
-                          <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-800 font-medium flex-1 mr-4">
-                            <strong>Tags dinâmicas disponíveis:</strong>{' '}
-                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px] mr-1">{`{{nome_paciente}}`}</code>
-                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px] mr-1">{`{{cpf_paciente}}`}</code>
+                          <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-800 font-medium flex-1 mr-4 flex flex-wrap gap-1 items-center">
+                            <strong className="mr-1">Tags dinâmicas disponíveis:</strong>
+                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{nome_paciente}}`}</code>
+                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{rg_paciente}}`}</code>
+                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{orgao_emissor_rg}}`}</code>
+                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{data_emissao_rg}}`}</code>
+                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{cpf_paciente}}`}</code>
+                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{responsavel_nome}}`}</code>
+                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{nome_terapeuta}}`}</code>
+                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{nome_terapia}}`}</code>
+                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{quantidade_sessoes}}`}</code>
+                            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{valor_total}}`}</code>
                             <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-[10px]">{`{{data_atual}}`}</code>
                           </div>
                           <button
@@ -1172,10 +1181,29 @@ export default function ConfigPage() {
                               <div className="px-3 py-1.5 bg-amber-50 text-amber-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-amber-100">Aguardando Assinatura</div>
                             </div>
                             <div className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
-                              {contractTemplate
-                                .replace(/\{\{nome_paciente\}\}/g, 'Maria da Silva')
-                                .replace(/\{\{cpf_paciente\}\}/g, '123.456.789-00')
-                                .replace(/\{\{data_atual\}\}/g, new Date().toLocaleDateString('pt-BR'))}
+                              {fillContractTemplate(contractTemplate, {
+                                patient: {
+                                  name: 'Maria da Silva',
+                                  cpf: '123.456.789-00',
+                                  rg: '1.234.567',
+                                  rg_issuer: 'SSP/TO',
+                                  rg_issue_date: '2018-05-15',
+                                  address: 'Rua Princesa Isabel',
+                                  address_number: '100',
+                                  neighborhood: 'Santa Helena',
+                                  city: 'Araguaína',
+                                  state: 'TO',
+                                  guardian_name: '',
+                                },
+                                package: {
+                                  total_sessions: 10,
+                                  price: 1500,
+                                  service_name: 'Psicanálise Clínica',
+                                },
+                                therapist: {
+                                  name: 'Marcos Dany Teixeira Magalhães',
+                                }
+                              })}
                             </div>
                             <div className="pt-6 border-t border-slate-100">
                               <div className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-xl font-bold text-sm cursor-not-allowed opacity-60">

@@ -25,17 +25,19 @@ BEGIN
     v_email := 'paciente_' || NEW.id || '@tzion.temp';
   END IF;
 
-  -- Validação de Segurança: Bloquear e-mails duplicados em outras contas
-  IF EXISTS (
-    SELECT 1 FROM auth.users WHERE email = LOWER(v_email) AND id <> NEW.id
-  ) THEN
-    RAISE EXCEPTION 'O e-mail % já está cadastrado para outro usuário no sistema.', v_email;
-  END IF;
+  -- Validação de Segurança: Bloquear e-mails duplicados apenas se o e-mail for alterado ou novo
+  IF (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND LOWER(COALESCE(OLD.email, '')) <> LOWER(NEW.email))) THEN
+    IF EXISTS (
+      SELECT 1 FROM auth.users WHERE email = LOWER(v_email) AND id <> NEW.id
+    ) THEN
+      RAISE EXCEPTION 'O e-mail % já está cadastrado para outro usuário no sistema.', v_email;
+    END IF;
 
-  IF EXISTS (
-    SELECT 1 FROM public.profiles WHERE email = LOWER(v_email) AND id <> NEW.id
-  ) THEN
-    RAISE EXCEPTION 'O e-mail % já está em uso em outro perfil.', v_email;
+    IF EXISTS (
+      SELECT 1 FROM public.profiles WHERE email = LOWER(v_email) AND id <> NEW.id
+    ) THEN
+      RAISE EXCEPTION 'O e-mail % já está em uso em outro perfil.', v_email;
+    END IF;
   END IF;
 
   -- A. Verificar se o usuário já existe na auth.users (por ID ou e-mail)
@@ -102,40 +104,46 @@ BEGIN
     END IF;
   END IF;
 
-  -- B. Verificar se o perfil correspondente existe na public.profiles
-  SELECT EXISTS (
-    SELECT 1 FROM public.profiles WHERE id = NEW.id
-  ) INTO v_profile_exists;
+  -- B. Criar / Atualizar perfil na public.profiles (apenas se o id existir na auth.users)
+  IF EXISTS (SELECT 1 FROM auth.users WHERE id = NEW.id) THEN
+    SELECT EXISTS (
+      SELECT 1 FROM public.profiles WHERE id = NEW.id
+    ) INTO v_profile_exists;
 
-  -- Se o perfil não existir, criamos
-  IF NOT v_profile_exists THEN
-    INSERT INTO public.profiles (
-      id,
-      name,
-      email,
-      role,
-      phone,
-      status,
-      updated_at
-    ) VALUES (
-      NEW.id,
-      NEW.name,
-      LOWER(v_email),
-      'paciente',
-      NEW.phone,
-      'temp_password',
-      NOW()
-    );
-  ELSE
-    -- Se o perfil já existe e houve atualização nos dados básicos, mantemos sincronizado
-    IF TG_OP = 'UPDATE' THEN
-      IF (OLD.email IS DISTINCT FROM NEW.email OR OLD.name IS DISTINCT FROM NEW.name OR OLD.phone IS DISTINCT FROM NEW.phone) THEN
-        UPDATE public.profiles
-        SET email = LOWER(v_email),
-            name = NEW.name,
-            phone = NEW.phone,
-            updated_at = NOW()
-        WHERE id = NEW.id;
+    -- Se o perfil não existir, criamos com tratamento de exceção
+    IF NOT v_profile_exists THEN
+      BEGIN
+        INSERT INTO public.profiles (
+          id,
+          name,
+          email,
+          role,
+          phone,
+          status,
+          updated_at
+        ) VALUES (
+          NEW.id,
+          NEW.name,
+          LOWER(v_email),
+          'paciente',
+          NEW.phone,
+          'temp_password',
+          NOW()
+        );
+      EXCEPTION WHEN OTHERS THEN
+        NULL; -- Ignora conflito de FK se porventura o usuário auth não for persistido
+      END;
+    ELSE
+      -- Se o perfil já existe e houve atualização nos dados básicos, mantemos sincronizado
+      IF TG_OP = 'UPDATE' THEN
+        IF (OLD.email IS DISTINCT FROM NEW.email OR OLD.name IS DISTINCT FROM NEW.name OR OLD.phone IS DISTINCT FROM NEW.phone) THEN
+          UPDATE public.profiles
+          SET email = LOWER(v_email),
+              name = NEW.name,
+              phone = NEW.phone,
+              updated_at = NOW()
+          WHERE id = NEW.id;
+        END IF;
       END IF;
     END IF;
   END IF;

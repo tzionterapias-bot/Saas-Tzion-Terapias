@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Plus, Filter, MoreVertical, Phone, Mail, Calendar, X, Save, User, MapPin, FileText, History, AlertCircle, Heart, Clock, Download, Loader2, Activity, Award, DollarSign, ClipboardList, Send, CheckCircle2, Shield, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Plus, Filter, MoreVertical, Phone, Mail, Calendar, X, Save, User, MapPin, FileText, History, AlertCircle, Heart, Clock, Download, Loader2, Activity, Award, DollarSign, ClipboardList, Send, CheckCircle2, Shield, TrendingUp, MessageCircle, File, Trash2 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -25,10 +25,23 @@ export default function PatientList() {
   const [loadingTimeline, setLoadingTimeline] = useState(false);
   const [loadingTab, setLoadingTab] = useState<Record<string, boolean>>({});
 
+  // Documents
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // New Data State
-  const [newPatient, setNewPatient] = useState({ name: '', email: '', phone: '', cpf: '', cep: '', address: '', address_number: '', neighborhood: '', city: '', state: '', gender: '', birth_date: '' });
+  const [newPatient, setNewPatient] = useState({
+    name: '', email: '', phone: '', cpf: '', rg: '', rg_issuer: '', rg_issue_date: '',
+    cep: '', address: '', address_number: '', neighborhood: '', city: '', state: '',
+    gender: '', birth_date: '', profession: '', marital_status: '', guardian_name: '', guardian_cpf: ''
+  });
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editPatient, setEditPatient] = useState({ id: '', name: '', email: '', phone: '', cpf: '', cep: '', address: '', address_number: '', neighborhood: '', city: '', state: '', gender: '', birth_date: '', status: 'Ativo' });
+  const [editPatient, setEditPatient] = useState({
+    id: '', name: '', email: '', phone: '', cpf: '', rg: '', rg_issuer: '', rg_issue_date: '',
+    cep: '', address: '', address_number: '', neighborhood: '', city: '', state: '',
+    gender: '', birth_date: '', profession: '', marital_status: '', guardian_name: '', guardian_cpf: '', status: 'Ativo'
+  });
   const [anamnesis, setAnamnesis] = useState({ complaint: '', family_history: '', lifestyle: '' });
   const [evolutions, setEvolutions] = useState<any[]>([]);
   const [newEvolution, setNewEvolution] = useState('');
@@ -63,7 +76,11 @@ export default function PatientList() {
 
   const fetchPatients = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('patients').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('patients').select(`
+      *,
+      patient_anamnesis ( id ),
+      patient_contracts ( status )
+    `).order('created_at', { ascending: false });
     if (!error && data) setPatients(data);
     setLoading(false);
   };
@@ -258,6 +275,32 @@ export default function PatientList() {
         setTimelineEvents(events);
         setLoadingTimeline(false);
       }
+      else if (tab === 'docs') {
+        const [docsRes, contractsRes] = await Promise.all([
+          supabase.from('patient_documents').select('*').eq('patient_id', patientId).order('created_at', { ascending: false }),
+          supabase.from('patient_contracts').select('*').eq('patient_id', patientId).order('created_at', { ascending: false })
+        ]);
+
+        let combinedDocs: any[] = [];
+        if (docsRes.data) {
+          combinedDocs = [...docsRes.data.map((d: any) => ({ ...d, source: 'upload' }))];
+        }
+        if (contractsRes.data) {
+          const baseUrlForContracts = await getSystemBaseUrl();
+          const mappedContracts = contractsRes.data.map((c: any) => ({
+            id: `contract-${c.id}`,
+            original_id: c.id,
+            title: `Contrato de Serviço Terapêutico (${c.status === 'signed' ? 'Assinado' : 'Pendente'})`,
+            file_url: `${baseUrlForContracts}/contrato/${c.id}`,
+            created_at: c.created_at,
+            source: 'contract'
+          }));
+          combinedDocs = [...combinedDocs, ...mappedContracts];
+        }
+
+        combinedDocs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setDocuments(combinedDocs);
+      }
     } catch (err) {
       console.error(`Erro ao carregar dados da aba ${tab}:`, err);
     } finally {
@@ -352,12 +395,20 @@ export default function PatientList() {
       }
 
       // 6. Criar paciente oficial na tabela patients
-      const { error: patientError } = await supabase.from('patients').insert([{
+      const cleanDate = (d: any) => (!d || typeof d !== 'string' || !d.trim()) ? null : d.trim();
+      const patientPayload: Record<string, any> = {
         id: userId, // ID idêntico ao do Auth
         name: newPatient.name,
         email: newPatient.email,
         phone: newPatient.phone,
         cpf: newPatient.cpf,
+        rg: newPatient.rg?.trim() || null,
+        rg_issuer: newPatient.rg_issuer?.trim() || null,
+        rg_issue_date: cleanDate(newPatient.rg_issue_date),
+        profession: newPatient.profession?.trim() || null,
+        marital_status: newPatient.marital_status?.trim() || null,
+        guardian_name: newPatient.guardian_name?.trim() || null,
+        guardian_cpf: newPatient.guardian_cpf?.trim() || null,
         cep: newPatient.cep,
         address: newPatient.address,
         address_number: newPatient.address_number,
@@ -365,9 +416,25 @@ export default function PatientList() {
         city: newPatient.city,
         state: newPatient.state,
         gender: newPatient.gender,
-        birth_date: newPatient.birth_date || null,
+        birth_date: cleanDate(newPatient.birth_date),
         status: 'Ativo'
-      }]);
+      };
+
+      let { error: patientError } = await supabase.from('patients').insert([patientPayload]);
+
+      if (patientError && (patientError.message?.includes('column') || patientError.code === '42703' || (patientError as any).status === 400)) {
+        console.warn("Retrying patient insert without optional contract columns:", patientError);
+        delete patientPayload.rg;
+        delete patientPayload.rg_issuer;
+        delete patientPayload.rg_issue_date;
+        delete patientPayload.profession;
+        delete patientPayload.marital_status;
+        delete patientPayload.guardian_name;
+        delete patientPayload.guardian_cpf;
+
+        const retry = await supabase.from('patients').insert([patientPayload]);
+        if (!retry.error) patientError = null;
+      }
 
       if (patientError) {
         setToastMessage(`Erro ao criar paciente: ${patientError.message}`);
@@ -383,7 +450,11 @@ export default function PatientList() {
       await sendWhatsAppMessage(userId, newPatient.phone, msgText, 'patient_welcome');
 
       setShowModal(false);
-      setNewPatient({ name: '', email: '', phone: '', cpf: '', cep: '', address: '', address_number: '', neighborhood: '', city: '', state: '', gender: '', birth_date: '' });
+      setNewPatient({
+        name: '', email: '', phone: '', cpf: '', rg: '', rg_issuer: '', rg_issue_date: '',
+        cep: '', address: '', address_number: '', neighborhood: '', city: '', state: '',
+        gender: '', birth_date: '', profession: '', marital_status: '', guardian_name: '', guardian_cpf: ''
+      });
       fetchPatients();
       setToastMessage("Paciente cadastrado e notificado com sucesso!");
     } catch (e: any) {
@@ -398,24 +469,73 @@ export default function PatientList() {
     e.preventDefault();
     setSaving(true);
     try {
-      const { error: patientError } = await supabase
+      const cleanDate = (d: any) => (!d || typeof d !== 'string' || !d.trim()) ? null : d.trim();
+      const updatePayload: Record<string, any> = {
+        name: editPatient.name,
+        email: editPatient.email,
+        phone: editPatient.phone,
+        cpf: editPatient.cpf,
+        rg: editPatient.rg?.trim() || null,
+        rg_issuer: editPatient.rg_issuer?.trim() || null,
+        rg_issue_date: cleanDate(editPatient.rg_issue_date),
+        profession: editPatient.profession?.trim() || null,
+        marital_status: editPatient.marital_status?.trim() || null,
+        guardian_name: editPatient.guardian_name?.trim() || null,
+        guardian_cpf: editPatient.guardian_cpf?.trim() || null,
+        cep: editPatient.cep,
+        address: editPatient.address,
+        address_number: editPatient.address_number,
+        neighborhood: editPatient.neighborhood,
+        city: editPatient.city,
+        state: editPatient.state,
+        gender: editPatient.gender,
+        birth_date: cleanDate(editPatient.birth_date),
+        status: editPatient.status
+      };
+
+      let { error: patientError } = await supabase
         .from('patients')
-        .update({
-          name: editPatient.name,
-          email: editPatient.email,
-          phone: editPatient.phone,
-          cpf: editPatient.cpf,
-          cep: editPatient.cep,
-          address: editPatient.address,
-          address_number: editPatient.address_number,
-          neighborhood: editPatient.neighborhood,
-          city: editPatient.city,
-          state: editPatient.state,
-          gender: editPatient.gender,
-          birth_date: editPatient.birth_date || null,
-          status: editPatient.status
-        })
+        .update(updatePayload)
         .eq('id', editPatient.id);
+
+      // Se falhar por e-mail já existente ou erro de chave de perfil/trigger, remove 'email' do update e salva os dados do paciente
+      if (patientError && (
+        patientError.message?.includes('e-mail') || 
+        patientError.message?.includes('cadastrado') || 
+        patientError.message?.includes('perfil') || 
+        patientError.message?.includes('profiles') || 
+        patientError.message?.includes('foreign key') ||
+        patientError.code === '23503'
+      )) {
+        console.warn("E-mail ou perfil conflitante. Atualizando os dados do paciente sem alterar e-mail:", patientError.message);
+        delete updatePayload.email;
+        const retryEmail = await supabase.from('patients').update(updatePayload).eq('id', editPatient.id);
+        if (!retryEmail.error) {
+          patientError = null;
+        } else {
+          patientError = retryEmail.error;
+        }
+      }
+
+      // Se falhar por colunas de contrato ainda inexistentes no banco, remove-as e tenta atualizar os dados padrão
+      if (patientError && (patientError.message?.includes('column') || patientError.code === '42703' || (patientError as any).status === 400)) {
+        console.warn("Retrying patient update without contract columns:", patientError);
+        delete updatePayload.rg;
+        delete updatePayload.rg_issuer;
+        delete updatePayload.rg_issue_date;
+        delete updatePayload.profession;
+        delete updatePayload.marital_status;
+        delete updatePayload.guardian_name;
+        delete updatePayload.guardian_cpf;
+
+        const retryCols = await supabase.from('patients').update(updatePayload).eq('id', editPatient.id);
+        if (!retryCols.error) {
+          patientError = null;
+          setToastMessage("Dados salvos! (Para salvar RG/Contrato, execute o SQL 'supabase_contract_patient_fields.sql' no Supabase).");
+        } else {
+          patientError = retryCols.error;
+        }
+      }
 
       if (patientError) {
         setToastMessage(`Erro ao atualizar paciente: ${patientError.message}`);
@@ -423,14 +543,16 @@ export default function PatientList() {
         return;
       }
 
+      const profilePayload: Record<string, any> = {
+        name: editPatient.name,
+        phone: editPatient.phone,
+        updated_at: new Date().toISOString()
+      };
+      if (updatePayload.email) profilePayload.email = updatePayload.email;
+
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({
-          name: editPatient.name,
-          email: editPatient.email,
-          phone: editPatient.phone,
-          updated_at: new Date().toISOString()
-        })
+        .update(profilePayload)
         .eq('id', editPatient.id);
 
       if (profileError) {
@@ -443,6 +565,13 @@ export default function PatientList() {
         email: editPatient.email,
         phone: editPatient.phone,
         cpf: editPatient.cpf,
+        rg: editPatient.rg,
+        rg_issuer: editPatient.rg_issuer,
+        rg_issue_date: editPatient.rg_issue_date,
+        profession: editPatient.profession,
+        marital_status: editPatient.marital_status,
+        guardian_name: editPatient.guardian_name,
+        guardian_cpf: editPatient.guardian_cpf,
         cep: editPatient.cep,
         address: editPatient.address,
         address_number: editPatient.address_number,
@@ -456,7 +585,7 @@ export default function PatientList() {
       setSelectedPatient(updated);
       setShowEditModal(false);
       fetchPatients();
-      setToastMessage("Cadastro do paciente atualizado com sucesso!");
+      if (!toastMessage) setToastMessage("Cadastro do paciente atualizado com sucesso!");
     } catch (err: any) {
       console.error(err);
       setToastMessage(`Erro ao salvar: ${err.message}`);
@@ -713,6 +842,68 @@ export default function PatientList() {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !selectedPatient) return;
+    
+    const file = e.target.files[0];
+    setUploadingDoc(true);
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${selectedPatient.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('patient-documents')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('patient-documents')
+        .getPublicUrl(fileName);
+
+      const { data: docData, error: docError } = await supabase.from('patient_documents').insert([{
+        patient_id: selectedPatient.id,
+        title: file.name,
+        file_url: publicUrl,
+        file_type: file.type,
+        file_path: fileName,
+        created_by: user?.id
+      }]).select().single();
+
+      if (docError) throw docError;
+
+      const newDoc = {
+        ...docData,
+        source: 'upload'
+      };
+      setDocuments(prev => [newDoc, ...prev]);
+      setToastMessage('Documento anexado com sucesso!');
+    } catch (err: any) {
+      console.error('Erro ao enviar documento:', err);
+      setToastMessage(`Erro ao anexar documento: ${err.message}`);
+    } finally {
+      setUploadingDoc(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDeleteDocument = async (doc: any) => {
+    if (!window.confirm(`Tem certeza que deseja excluir o documento "${doc.title}"?`)) return;
+    
+    try {
+      await supabase.storage.from('patient-documents').remove([doc.file_path]);
+      const { error } = await supabase.from('patient_documents').delete().eq('id', doc.id);
+      if (error) throw error;
+      
+      setDocuments(prev => prev.filter(d => d.id !== doc.id));
+      setToastMessage('Documento excluído com sucesso!');
+    } catch (err: any) {
+      console.error(err);
+      setToastMessage(`Erro ao excluir documento: ${err.message}`);
+    }
+  };
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -790,7 +981,7 @@ export default function PatientList() {
                     <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Paciente</th>
                     <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contato</th>
                     <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Cadastrado Em</th>
-                    <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                    <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status & Info</th>
                     <th className="px-8 py-5 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">Ação</th>
                   </tr>
                 </thead>
@@ -860,17 +1051,43 @@ export default function PatientList() {
                         </div>
                       </td>
                       <td className="px-8 py-5">
-                        <span className={cn(
-                          "inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                          patient.status === 'Ativo' ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"
-                        )}>
-                          {patient.status}
-                        </span>
+                        <div className="flex flex-col gap-2">
+                          <span className={cn(
+                            "inline-flex items-center w-fit px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                            patient.status === 'Ativo' ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"
+                          )}>
+                            {patient.status}
+                          </span>
+                          <span className={cn(
+                            "inline-flex items-center w-fit px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                            (Array.isArray(patient.patient_anamnesis) ? patient.patient_anamnesis.length > 0 : !!patient.patient_anamnesis) ? "bg-indigo-50 text-indigo-600" : "bg-rose-50 text-rose-600"
+                          )}>
+                            Anamnese: {(Array.isArray(patient.patient_anamnesis) ? patient.patient_anamnesis.length > 0 : !!patient.patient_anamnesis) ? 'Preenchida' : 'Pendente'}
+                          </span>
+                          <span className={cn(
+                            "inline-flex items-center w-fit px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                            (Array.isArray(patient.patient_contracts) ? patient.patient_contracts.some((c: any) => c.status === 'signed') : patient.patient_contracts?.status === 'signed') ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                          )}>
+                            Contrato: {(Array.isArray(patient.patient_contracts) ? patient.patient_contracts.some((c: any) => c.status === 'signed') : patient.patient_contracts?.status === 'signed') ? 'Assinado' : 'Pendente'}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-8 py-5 text-right">
-                        <button className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400 hover:text-indigo-600">
-                          <MoreVertical className="w-5 h-5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <a 
+                            href={`https://wa.me/55${patient.phone?.replace(/\D/g, '')}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="p-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl transition-colors shadow-sm"
+                            title="Enviar Mensagem (WhatsApp)"
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                          </a>
+                          <button className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-400 hover:text-indigo-600">
+                            <MoreVertical className="w-5 h-5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -954,6 +1171,13 @@ export default function PatientList() {
                       email: selectedPatient.email || '',
                       phone: selectedPatient.phone || '',
                       cpf: selectedPatient.cpf || '',
+                      rg: selectedPatient.rg || '',
+                      rg_issuer: selectedPatient.rg_issuer || '',
+                      rg_issue_date: selectedPatient.rg_issue_date || '',
+                      profession: selectedPatient.profession || '',
+                      marital_status: selectedPatient.marital_status || '',
+                      guardian_name: selectedPatient.guardian_name || '',
+                      guardian_cpf: selectedPatient.guardian_cpf || '',
                       cep: selectedPatient.cep || '',
                       address: selectedPatient.address || '',
                       address_number: selectedPatient.address_number || '',
@@ -1707,14 +1931,69 @@ export default function PatientList() {
 
               {activeTab === 'docs' && (
                 <div className="space-y-8 animate-in fade-in duration-500">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <button className="col-span-full py-12 border-2 border-dashed border-slate-200 rounded-[2.5rem] text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all flex flex-col items-center justify-center gap-3">
+                  <div className="flex flex-col gap-6">
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      className="hidden" 
+                      onChange={handleFileUpload} 
+                    />
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingDoc}
+                      className="w-full py-12 border-2 border-dashed border-slate-200 rounded-[2.5rem] text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all flex flex-col items-center justify-center gap-3 disabled:opacity-50"
+                    >
                        <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center">
-                          <Plus className="w-8 h-8" />
+                          {uploadingDoc ? <Loader2 className="w-8 h-8 animate-spin" /> : <Plus className="w-8 h-8" />}
                        </div>
-                       Anexar Novo Documento (Ex: Contrato, Laudo ou Receita)
+                       {uploadingDoc ? 'Enviando documento...' : 'Anexar Novo Documento (Ex: Contrato, Laudo ou Receita)'}
                     </button>
                   </div>
+
+                  {documents.length > 0 && (
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest flex items-center gap-2 mb-4">
+                        <FileText className="w-4 h-4" /> Documentos Anexados
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {documents.map(doc => (
+                          <div key={doc.id} className="p-5 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between group">
+                            <div className="flex items-center gap-4 overflow-hidden">
+                              <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm shrink-0">
+                                <File className="w-5 h-5" />
+                              </div>
+                              <div className="truncate">
+                                <h5 className="font-bold text-slate-900 text-sm truncate" title={doc.title}>{doc.title}</h5>
+                                <p className="text-xs text-slate-400 font-bold mt-1">
+                                  {new Date(doc.created_at).toLocaleDateString('pt-BR')} às {new Date(doc.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <a 
+                                href={doc.file_url} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="w-10 h-10 flex items-center justify-center bg-white rounded-xl text-slate-400 hover:text-indigo-600 hover:shadow-sm border border-slate-200 transition-all"
+                                title={doc.source === 'contract' ? 'Visualizar Contrato' : 'Visualizar / Baixar'}
+                              >
+                                <FileText className="w-4 h-4" />
+                              </a>
+                              {doc.source === 'upload' && (
+                                <button 
+                                  onClick={() => handleDeleteDocument(doc)}
+                                  className="w-10 h-10 flex items-center justify-center bg-white rounded-xl text-slate-400 hover:text-rose-600 hover:shadow-sm border border-slate-200 transition-all"
+                                  title="Excluir"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1800,6 +2079,42 @@ export default function PatientList() {
                     </div>
                  </div>
               </div>
+
+               <div className="pt-4 border-t border-slate-100">
+                  <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-indigo-500" /> Documentação & Contrato
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                     <div className="space-y-2 md:col-span-2">
+                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">RG / Identidade</label>
+                       <input value={newPatient.rg} onChange={e => setNewPatient({...newPatient, rg: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="00.000.000-0" />
+                     </div>
+                     <div className="space-y-2 md:col-span-2">
+                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Órgão Expedidor</label>
+                       <input value={newPatient.rg_issuer} onChange={e => setNewPatient({...newPatient, rg_issuer: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="SSP-TO" />
+                     </div>
+                     <div className="space-y-2 md:col-span-2">
+                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Data Expedição RG</label>
+                       <input type="date" value={newPatient.rg_issue_date} onChange={e => setNewPatient({...newPatient, rg_issue_date: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" />
+                     </div>
+                     <div className="space-y-2 md:col-span-3">
+                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Profissão / Ocupação</label>
+                       <input value={newPatient.profession} onChange={e => setNewPatient({...newPatient, profession: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Ex: Professor(a)" />
+                     </div>
+                     <div className="space-y-2 md:col-span-3">
+                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Estado Civil</label>
+                       <input value={newPatient.marital_status} onChange={e => setNewPatient({...newPatient, marital_status: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Solteiro(a), Casado(a)..." />
+                     </div>
+                     <div className="space-y-2 md:col-span-3">
+                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nome do Responsável (se menor)</label>
+                       <input value={newPatient.guardian_name} onChange={e => setNewPatient({...newPatient, guardian_name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Nome do pai/mãe/responsável" />
+                     </div>
+                     <div className="space-y-2 md:col-span-3">
+                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">CPF do Responsável</label>
+                       <input value={newPatient.guardian_cpf} onChange={e => setNewPatient({...newPatient, guardian_cpf: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="000.000.000-00" />
+                     </div>
+                  </div>
+               </div>
 
               <div className="pt-6 flex gap-4">
                 <button 
@@ -1905,6 +2220,42 @@ export default function PatientList() {
                     <div className="space-y-2 md:col-span-1">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">UF *</label>
                       <input required value={editPatient.state} onChange={e => setEditPatient({...editPatient, state: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700 text-center uppercase" placeholder="UF" maxLength={2} />
+                    </div>
+                 </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-100">
+                 <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                   <Shield className="w-4 h-4 text-indigo-500" /> Documentação & Contrato
+                 </h4>
+                 <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">RG / Identidade</label>
+                      <input value={editPatient.rg} onChange={e => setEditPatient({...editPatient, rg: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="00.000.000-0" />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Órgão Expedidor</label>
+                      <input value={editPatient.rg_issuer} onChange={e => setEditPatient({...editPatient, rg_issuer: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="SSP-TO" />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Data Expedição RG</label>
+                      <input type="date" value={editPatient.rg_issue_date} onChange={e => setEditPatient({...editPatient, rg_issue_date: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" />
+                    </div>
+                    <div className="space-y-2 md:col-span-3">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Profissão / Ocupação</label>
+                      <input value={editPatient.profession} onChange={e => setEditPatient({...editPatient, profession: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Ex: Professor(a)" />
+                    </div>
+                    <div className="space-y-2 md:col-span-3">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Estado Civil</label>
+                      <input value={editPatient.marital_status} onChange={e => setEditPatient({...editPatient, marital_status: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Solteiro(a), Casado(a)..." />
+                    </div>
+                    <div className="space-y-2 md:col-span-3">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nome do Responsável (se menor)</label>
+                      <input value={editPatient.guardian_name} onChange={e => setEditPatient({...editPatient, guardian_name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Nome do pai/mãe/responsável" />
+                    </div>
+                    <div className="space-y-2 md:col-span-3">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">CPF do Responsável</label>
+                      <input value={editPatient.guardian_cpf} onChange={e => setEditPatient({...editPatient, guardian_cpf: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="000.000.000-00" />
                     </div>
                  </div>
               </div>

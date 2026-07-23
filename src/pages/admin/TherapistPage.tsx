@@ -5,11 +5,12 @@ import {
   Clock, CheckCircle2, ChevronRight, Plus, Search,
   TrendingUp, Star, Award, Settings, Bell, MessageSquare, X, Save, FileText as FileIcon,
   Image as ImageIcon, MapPin, Video, MonitorSmartphone, Filter, History, Trash2, AlertCircle,
-  Receipt, Percent, Loader2
+  Receipt, Percent, Loader2, Camera, PlayCircle
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import PatientProfileModal from '@/src/components/patient/PatientProfileModal';
+import SessionLogger from '@/src/components/dashboard/SessionLogger';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useActiveSession } from '@/src/contexts/ActiveSessionContext';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
@@ -39,6 +40,7 @@ export default function TherapistPage() {
   const [editResponses, setEditResponses] = useState<Record<string, any>>({});
   const [activeTemplate, setActiveTemplate] = useState<any>(null);
   const [isResponsible, setIsResponsible] = useState<boolean>(false);
+  const [showSessionLoggerModal, setShowSessionLoggerModal] = useState<boolean>(false);
   
   // Filter State
   const [periodFilter, setPeriodFilter] = useState('mes'); // 'mes', 'trimestre', 'ano'
@@ -89,20 +91,18 @@ export default function TherapistPage() {
       let therapistId = defaultTherapistId;
       let therapistInfo = currentTherapist;
 
-      // 1. Se for terapeuta logado, forçamos o ID a ser SEMPRE o seu próprio cadastro
-      if (user?.role === 'terapeuta') {
-        const { data: myTherapist } = await supabase
+      // 1. Tentar buscar primeiro o cadastro de terapeuta vinculado ao usuário logado
+      let myTherapist = null;
+      if (user?.id) {
+        const { data } = await supabase
           .from('therapists')
           .select('id, name, user_id, commission_rate_clinic, commission_rate_self, photo_url, professional_registration, bio, specialties, attendance_modes')
           .eq('user_id', user.id)
           .maybeSingle();
+        myTherapist = data;
+      }
 
-        if (!myTherapist) {
-          console.error("Nenhum terapeuta ativo encontrado para o seu usuário.");
-          setLoading(false);
-          return;
-        }
-
+      if (myTherapist) {
         therapistId = myTherapist.id;
         therapistInfo = myTherapist;
         if (defaultTherapistId !== myTherapist.id) {
@@ -110,7 +110,7 @@ export default function TherapistPage() {
           setCurrentTherapist(myTherapist);
         }
       } else {
-        // 2. Se for admin, carregamos a lista de todos os terapeutas ativos para o dropdown.
+        // Se o usuário não possui perfil próprio de terapeuta (ex: admin puro), carrega o primeiro ativo
         if (loadStatic || allTherapists.length === 0) {
           const { data: allActive } = await supabase
             .from('therapists')
@@ -908,6 +908,75 @@ export default function TherapistPage() {
     }
   };
 
+  const handleUploadPhoto = async (file: File) => {
+    if (!file) return;
+    setLoading(true);
+    try {
+      // 1. Resize to 500x500 square canvas
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      await new Promise((resolve) => (img.onload = resolve));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 500;
+      canvas.height = 500;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const size = Math.min(img.width, img.height);
+        const sx = (img.width - size) / 2;
+        const sy = (img.height - size) / 2;
+        ctx.drawImage(img, sx, sy, size, size, 0, 0, 500, 500);
+      }
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, 'image/jpeg', 0.9)
+      );
+
+      if (!blob) throw new Error("Erro ao processar imagem");
+
+      // 2. Upload to Supabase Storage bucket 'avatars'
+      const targetTherapist = currentTherapist || profile;
+      const therapistName = targetTherapist?.name ? targetTherapist.name.replace(/\s+/g, '_').toLowerCase() : 'terapeuta';
+      const fileName = `${therapistName}-${Date.now()}.jpg`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // 3. Get Public URL
+      const { data: urlData } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      const publicUrl = urlData.publicUrl;
+
+      // 4. Update local states
+      if (profile) setProfile({ ...profile, photo_url: publicUrl });
+      if (currentTherapist) setCurrentTherapist({ ...currentTherapist, photo_url: publicUrl });
+      setAllTherapists(prev => prev.map(t => t.id === targetTherapist?.id ? { ...t, photo_url: publicUrl } : t));
+
+      // 5. Persist immediately to Supabase database
+      const tid = targetTherapist?.id || defaultTherapistId;
+      if (tid) {
+        await supabase.from('therapists').update({ photo_url: publicUrl }).eq('id', tid);
+        if (targetTherapist?.user_id) {
+          await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', targetTherapist.user_id);
+        }
+      }
+
+      setToastMessage('Foto de perfil atualizada com sucesso!');
+      setTimeout(() => setToastMessage(null), 3500);
+    } catch (err: any) {
+      console.error(err);
+      setToastMessage('Erro ao fazer upload da foto: ' + (err.message || ''));
+      setTimeout(() => setToastMessage(null), 3500);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSaveProfile = async () => {
     if (!profile) return;
     setLoading(true);
@@ -1108,8 +1177,8 @@ export default function TherapistPage() {
              therapist: currentTherapist?.name || 'Terapeuta'
          });
 
-         // Redireciona diretamente para o registro das sessões
-         navigate('/admin/sessoes');
+         // Abre o painel de atendimento e registro de sessão diretamente no Portal do Terapeuta
+         setShowSessionLoggerModal(true);
          
      } catch(e) {
          console.error(e);
@@ -1120,51 +1189,79 @@ export default function TherapistPage() {
   return (
     <div className="space-y-10 animate-in fade-in duration-500 pb-20">
       {/* Modals */}
+      {showSessionLoggerModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 overflow-y-auto animate-in fade-in">
+          <div className="bg-slate-50 w-full max-w-7xl h-[92vh] rounded-[2.5rem] border border-slate-200 shadow-2xl flex flex-col overflow-hidden relative">
+            <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600 font-bold">
+                  <PlayCircle className="w-6 h-6 text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-lg">Atendimento & Prontuário Clínico</h3>
+                  <p className="text-xs text-slate-500 font-medium">Portal do Terapeuta — Registro em tempo real</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSessionLoggerModal(false);
+                  fetchData();
+                }}
+                className="px-4 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 rounded-2xl text-slate-600 font-bold transition-all border border-slate-200 flex items-center gap-2"
+                title="Fechar Painel"
+              >
+                <X className="w-5 h-5" />
+                <span className="text-xs">Fechar Painel</span>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 sm:p-6">
+              <SessionLogger />
+            </div>
+          </div>
+        </div>
+      )}
       {showProfileModal && profilePatient && (
           <PatientProfileModal patient={profilePatient} onClose={() => setShowProfileModal(false)} />
       )}
       {/* Welcome Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6 bg-white p-6 sm:p-10 rounded-[2rem] sm:rounded-[3rem] border border-slate-100 shadow-sm">
         <div className="flex items-center gap-4 sm:gap-6 min-w-0 flex-1">
-          {profile?.photo_url ? (
-            <img src={profile.photo_url} alt="Profile" className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl object-cover shadow-xl shadow-indigo-100 border-2 border-white shrink-0" />
-          ) : (
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-indigo-600 rounded-3xl flex items-center justify-center text-white text-2xl sm:text-3xl font-bold shadow-xl shadow-indigo-100 shrink-0">
-              {currentTherapist?.name?.charAt(0) || 'T'}
-            </div>
-          )}
+          {/* Avatar com Upload Direto */}
+          <div className="relative group shrink-0" title="Clique para alterar a foto do terapeuta">
+            <input
+              type="file"
+              accept="image/*"
+              id="header-therapist-photo-input"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleUploadPhoto(file);
+              }}
+            />
+            <label htmlFor="header-therapist-photo-input" className="cursor-pointer block relative">
+              {profile?.photo_url || currentTherapist?.photo_url ? (
+                <img
+                  src={profile?.photo_url || currentTherapist?.photo_url}
+                  alt="Foto do perfil"
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl object-cover shadow-xl shadow-indigo-100 border-2 border-white"
+                />
+              ) : (
+                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-indigo-600 rounded-3xl flex items-center justify-center text-white text-2xl sm:text-3xl font-bold shadow-xl shadow-indigo-100">
+                  {currentTherapist?.name?.charAt(0) || 'T'}
+                </div>
+              )}
+              <div className="absolute inset-0 bg-slate-900/60 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold gap-1">
+                <Camera className="w-5 h-5 text-white" />
+                <span>Foto</span>
+              </div>
+            </label>
+          </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight truncate">Olá, {currentTherapist?.name?.split(' ')[0] || 'Terapeuta'}</h2>
-              {user?.role === 'admin' && allTherapists.length > 0 && (
-                <select
-                  value={defaultTherapistId}
-                  onChange={(e) => {
-                    const selectedId = e.target.value;
-                    const selectedT = allTherapists.find(t => t.id === selectedId);
-                    if (selectedT) {
-                      setDefaultTherapistId(selectedId);
-                      setCurrentTherapist(selectedT);
-                      // Force local reload after updating state
-                      setTimeout(() => {
-                        fetchData(true);
-                      }, 50);
-                    }
-                  }}
-                  className="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold rounded-xl text-xs outline-none cursor-pointer hover:bg-indigo-100 transition-all shrink-0"
-                >
-                  {allTherapists.map(t => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              )}
             </div>
             <p className="text-xs sm:text-sm text-slate-500 font-medium leading-relaxed mt-1">
-              {user?.role === 'admin' ? (
-                <span>Visualizando agenda do terapeuta <strong className="text-indigo-600 font-bold">{currentTherapist?.name}</strong>.</span>
-              ) : (
-                <span>Você tem {appointments.length} atendimentos agendados para hoje.</span>
-              )}
+              <span>Você tem {appointments.length} atendimentos agendados para hoje.</span>
             </p>
           </div>
         </div>
@@ -1227,26 +1324,26 @@ export default function TherapistPage() {
                 </div>
                 <div className="flex items-center gap-3 w-full sm:w-auto justify-end border-t border-slate-100 sm:border-0 pt-4 sm:pt-0 mt-2 sm:mt-0">
                   {app.status === 'arrived' ? (
-                     <button onClick={() => handleCallPatient(app.id)} className="flex-1 sm:flex-none px-4 py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg flex items-center justify-center animate-bounce">
-                        Liberar Sala
-                     </button>
-                  ) : (app.status === 'calling' || app.status === 'scheduled') ? (
-                     <button onClick={() => handleStartSession(app)} className="flex-1 sm:flex-none px-4 py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-all shadow-lg flex items-center justify-center group gap-2">
-                        <span>Iniciar Sessão</span>
-                        <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                     <button onClick={() => handleCallPatient(app.id)} className="flex-1 sm:flex-none px-4 py-3 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600 transition-all shadow-lg flex items-center justify-center animate-bounce gap-2">
+                        <span>Liberar Sala</span>
                      </button>
                   ) : app.status === 'in_progress' ? (
-                     <div className="flex-1 sm:flex-none px-4 py-3 bg-blue-100 text-blue-700 rounded-xl font-bold flex items-center justify-center animate-pulse">
-                        Em Atendimento...
-                     </div>
+                     <button onClick={() => handleStartSession(app)} className="flex-1 sm:flex-none px-5 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center group gap-2">
+                        <PlayCircle className="w-5 h-5 text-white" />
+                        <span>Continuar Atendimento</span>
+                        <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                     </button>
                   ) : app.status === 'completed' ? (
-                    <div className="flex-1 sm:flex-none p-3 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center" title="Sessão Finalizada">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </div>
+                     <div className="flex-1 sm:flex-none px-4 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-bold flex items-center justify-center gap-2" title="Sessão Finalizada">
+                       <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                       <span>Concluído</span>
+                     </div>
                   ) : (
-                    <button onClick={() => handleFinishSession(app)} className="flex-1 sm:flex-none p-3 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all shadow-sm flex items-center justify-center" title="Finalizar Sessão (NPS)">
-                      <CheckCircle2 className="w-5 h-5" />
-                    </button>
+                     <button onClick={() => handleStartSession(app)} className="flex-1 sm:flex-none px-5 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 flex items-center justify-center group gap-2">
+                        <PlayCircle className="w-5 h-5 text-white" />
+                        <span>Iniciar Atendimento</span>
+                        <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                     </button>
                   )}
                   {app.status !== 'completed' && app.status !== 'cancelled' && (
                      <div className="flex gap-1">
@@ -1266,16 +1363,20 @@ export default function TherapistPage() {
                       </button>
                      </div>
                   )}
-                  <button onClick={() => navigate('/admin/sessoes')} title="Ir para Prontuário" className="flex-1 sm:flex-none p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-indigo-600 hover:text-white transition-all border border-slate-100 shadow-sm flex items-center justify-center">
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
                 </div>
               </div>
             ))}
             </div>
             {appointments.length === 0 && (
-              <div className="p-20 text-center bg-white rounded-[3rem] border border-dashed border-slate-200 text-slate-400 font-medium">
-                Nenhum agendamento para hoje. Aproveite o tempo para atualizar os prontuários!
+              <div className="p-12 text-center bg-white rounded-[3rem] border border-dashed border-slate-200 text-slate-500 font-medium space-y-4">
+                <p className="text-base text-slate-700 font-bold">Nenhum agendamento para hoje. Aproveite o tempo para atualizar os prontuários!</p>
+                <button 
+                  onClick={() => setShowSessionLoggerModal(true)} 
+                  className="px-6 py-3.5 bg-indigo-600 text-white font-bold text-sm rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 inline-flex items-center gap-2"
+                >
+                  <PlayCircle className="w-5 h-5 text-white" />
+                  <span>Iniciar Atendimento / Abrir Prontuários</span>
+                </button>
               </div>
             )}
           </div>
@@ -1315,20 +1416,20 @@ export default function TherapistPage() {
                 })}
               </div>
             </div>
-            <div className="bg-indigo-50 p-8 rounded-[2.5rem] border border-indigo-100">
-                <h4 className="text-indigo-900 font-bold mb-2">Resumo</h4>
-                <p className="text-indigo-700 text-sm leading-relaxed">Você tem {appointments.length} atendimentos presenciais hoje e 2 prontuários pendentes de assinatura.</p>
+            <div className="bg-slate-50 p-6 rounded-[2.5rem] border border-slate-200/80 space-y-4">
+              <h4 className="font-bold text-slate-900 text-sm">Resumo</h4>
+              <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                Você tem {appointments.filter(a => a.type === 'Presencial').length} atendimentos presenciais hoje.
+              </p>
             </div>
           </div>
         </div>
       )}
 
       {activeTab === 'history' && (
-        <div className="bg-white border border-slate-100 rounded-[3rem] shadow-sm overflow-hidden">
-            <div className="p-10 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <h3 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-                   <History className="w-6 h-6 text-indigo-600" /> Histórico de Sessões
-                </h3>
+        <div className="bg-white rounded-[3rem] border border-slate-100 shadow-sm overflow-hidden p-10 space-y-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <h3 className="text-2xl font-bold text-slate-900">Histórico de Atendimentos</h3>
                 <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-fit">
                     {['mes', 'trimestre', 'ano'].map(p => (
                         <button 
@@ -1435,10 +1536,29 @@ export default function TherapistPage() {
                             <p className="text-sm text-slate-500 mt-1 font-medium">{p.phone || 'Sem telefone'}</p>
                             <div className="mt-6 pt-6 border-t border-slate-100 flex gap-2">
                                 <button 
-                                    onClick={() => { setSelectedPatient(p); setShowRecordModal(true); }}
-                                    className="flex-1 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all flex items-center justify-center gap-2"
+                                    onClick={() => {
+                                      startActiveSession({
+                                        id: `adhoc-${p.id}`,
+                                        patientId: p.id,
+                                        patient: p.name,
+                                        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                                        type: 'Presencial',
+                                        therapy: 'Terapia Integrativa',
+                                        therapistId: currentTherapist?.id || '',
+                                        therapist: currentTherapist?.name || 'Terapeuta'
+                                      });
+                                      setShowSessionLoggerModal(true);
+                                    }}
+                                    className="flex-1 py-3 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-1.5 shadow-md shadow-indigo-100"
                                 >
-                                    <ClipboardList className="w-4 h-4" /> Prontuário
+                                    <PlayCircle className="w-4 h-4 text-white" /> Iniciar Atendimento
+                                </button>
+                                <button 
+                                    onClick={() => { setSelectedPatient(p); setShowRecordModal(true); }}
+                                    className="p-3 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-100 transition-all"
+                                    title="Prontuário Rápido"
+                                >
+                                    <ClipboardList className="w-4 h-4" />
                                 </button>
                                 <button 
                                     onClick={() => { setProfilePatient(p); setShowProfileModal(true); }}
@@ -1446,9 +1566,6 @@ export default function TherapistPage() {
                                     title="Visão 360º"
                                 >
                                     <History className="w-4 h-4" />
-                                </button>
-                                <button className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-indigo-600 transition-all">
-                                    <MessageSquare className="w-4 h-4" />
                                 </button>
                             </div>
                         </div>
@@ -1833,16 +1950,19 @@ export default function TherapistPage() {
         <div className="max-w-4xl mx-auto space-y-10">
             {/* Foto e Informações Básicas */}
             <div className="bg-white p-12 rounded-[3rem] border border-slate-100 shadow-sm flex flex-col items-center text-center">
-                <div className="w-32 h-32 rounded-[2.5rem] flex items-center justify-center text-white text-5xl font-black mb-8 shadow-2xl shadow-indigo-100 relative group bg-indigo-600 overflow-hidden">
-                    {profile?.photo_url ? (
-                        <img src={profile.photo_url} alt="Foto do Terapeuta" className="w-full h-full object-cover" />
-                    ) : (
-                        profile?.name?.charAt(0) || 'T'
-                    )}
-                    <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <ImageIcon className="w-8 h-8 text-white" />
-                    </div>
-                </div>
+                <label htmlFor="avatar-upload" className="cursor-pointer block">
+                  <div className="w-32 h-32 rounded-[2.5rem] flex items-center justify-center text-white text-5xl font-black mb-8 shadow-2xl shadow-indigo-100 relative group bg-indigo-600 overflow-hidden">
+                      {profile?.photo_url ? (
+                          <img src={profile.photo_url} alt="Foto do Terapeuta" className="w-full h-full object-cover" />
+                      ) : (
+                          profile?.name?.charAt(0) || 'T'
+                      )}
+                      <div className="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-xs font-bold gap-1">
+                          <Camera className="w-8 h-8 text-white" />
+                          <span>Alterar Foto</span>
+                      </div>
+                  </div>
+                </label>
                 
                 <div className="w-full max-w-lg mx-auto space-y-6">
                     <div className="space-y-2">
@@ -1860,60 +1980,9 @@ export default function TherapistPage() {
                             <input 
                                 type="file"
                                 accept="image/*"
-                                onChange={async (e) => {
+                                onChange={(e) => {
                                     const file = e.target.files?.[0];
-                                    if (!file) return;
-                                    setLoading(true);
-                                    
-                                    try {
-                                        // 1. Resize to 500x500
-                                        const img = new Image();
-                                        img.src = URL.createObjectURL(file);
-                                        await new Promise((resolve) => (img.onload = resolve));
-                                        
-                                        const canvas = document.createElement('canvas');
-                                        canvas.width = 500;
-                                        canvas.height = 500;
-                                        const ctx = canvas.getContext('2d');
-                                        if (ctx) {
-                                            // Crop to square and resize
-                                            const size = Math.min(img.width, img.height);
-                                            const sx = (img.width - size) / 2;
-                                            const sy = (img.height - size) / 2;
-                                            ctx.drawImage(img, sx, sy, size, size, 0, 0, 500, 500);
-                                        }
-                                        
-                                        const blob = await new Promise<Blob | null>((resolve) => 
-                                            canvas.toBlob(resolve, 'image/jpeg', 0.9)
-                                        );
-                                        
-                                        if (!blob) throw new Error("Erro ao processar imagem");
-                                        
-                                        // 2. Upload to supabase
-                                        const therapistName = profile?.name ? profile.name.replace(/\s+/g, '_').toLowerCase() : 'terapeuta';
-                                        const fileName = `${therapistName}-${Date.now()}.jpg`;
-                                        
-                                        const { data: uploadData, error: uploadError } = await supabase.storage
-                                            .from('avatars')
-                                            .upload(fileName, blob, { contentType: 'image/jpeg' });
-                                            
-                                        if (uploadError) throw uploadError;
-                                        
-                                        // 3. Get URL
-                                        const { data: urlData } = supabase.storage
-                                            .from('avatars')
-                                            .getPublicUrl(fileName);
-                                            
-                                        setProfile({...profile, photo_url: urlData.publicUrl});
-                                        setToastMessage('Foto atualizada com sucesso!');
-                                        setTimeout(() => setToastMessage(null), 3500);
-                                    } catch (err: any) {
-                                        console.error(err);
-                                        setToastMessage('Erro ao fazer upload da foto: ' + (err.message || ''));
-                                        setTimeout(() => setToastMessage(null), 3500);
-                                    } finally {
-                                        setLoading(false);
-                                    }
+                                    if (file) handleUploadPhoto(file);
                                 }}
                                 className="hidden"
                                 id="avatar-upload"
