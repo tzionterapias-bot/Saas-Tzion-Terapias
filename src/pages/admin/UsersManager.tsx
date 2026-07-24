@@ -37,11 +37,16 @@ export default function UsersManager() {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .neq('role', 'paciente')
         .order('name');
         
+      if (error) {
+        console.error("Erro ao buscar perfis de usuários:", error);
+      }
+
       if (data) {
-        setUsers(data as UserProfile[]);
+        // Exibir membros da equipe (role !== paciente) OU qualquer usuário pendente de aprovação (status === pending)
+        const teamAndPending = data.filter((u: any) => u.role !== 'paciente' || u.status === 'pending');
+        setUsers(teamAndPending as UserProfile[]);
       }
     } catch (e) {
       console.error("Erro ao buscar usuários", e);
@@ -53,10 +58,25 @@ export default function UsersManager() {
     fetchUsers();
   }, []);
 
+  const loadRecentProfiles = async () => {
+    setSearching(true);
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(15);
+      if (data) setSearchResults(data as UserProfile[]);
+    } catch (e) {
+      console.error("Erro ao carregar perfis recentes:", e);
+    }
+    setSearching(false);
+  };
+
   const handleSearchProfiles = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) {
-      setSearchResults([]);
+      loadRecentProfiles();
       return;
     }
     setSearching(true);
@@ -65,7 +85,7 @@ export default function UsersManager() {
         .from('profiles')
         .select('*')
         .or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%`)
-        .limit(10);
+        .limit(15);
         
       if (data) {
         setSearchResults(data as UserProfile[]);
@@ -319,7 +339,7 @@ export default function UsersManager() {
         </div>
         
         <button 
-          onClick={() => setShowPromoteModal(true)}
+          onClick={() => { setShowPromoteModal(true); loadRecentProfiles(); }}
           className="px-6 py-3.5 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2 active:scale-95 animate-in fade-in"
         >
           <UserPlus className="w-5 h-5" /> Promover Usuário

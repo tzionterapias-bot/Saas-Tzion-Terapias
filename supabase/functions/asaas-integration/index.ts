@@ -30,14 +30,21 @@ serve(async (req) => {
     
     // Fetch Asaas Key from DB if not present in Env
     if (!asaasApiKey || asaasApiKey === "your-asaas-key") {
-      const { data: settings } = await supabase
-        .from('settings')
-        .select('value')
-        .eq('key', 'integrations')
-        .maybeSingle();
-      
-      if (settings?.value?.asaas_token) {
-        asaasApiKey = settings.value.asaas_token;
+      try {
+        const { data: dbKey } = await supabase.rpc('get_asaas_key');
+        if (dbKey) asaasApiKey = dbKey;
+      } catch (err) {}
+
+      if (!asaasApiKey || asaasApiKey === "your-asaas-key") {
+        const { data: settings } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('key', 'integrations')
+          .maybeSingle();
+        
+        if (settings?.value?.asaas_token) {
+          asaasApiKey = settings.value.asaas_token;
+        }
       }
     }
 

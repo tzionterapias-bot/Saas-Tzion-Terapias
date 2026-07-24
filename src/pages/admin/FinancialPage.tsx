@@ -346,7 +346,7 @@ export default function FinancialPage() {
       .from('settings')
       .select('value')
       .eq('key', 'payment_fee_rates')
-      .single();
+      .maybeSingle();
     if (feeSettingsData?.value) {
       try {
         const saved = JSON.parse(feeSettingsData.value) as Partial<FeeRates>;
@@ -866,7 +866,7 @@ export default function FinancialPage() {
                 .single();
 
               if (patient) {
-                const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').single();
+                const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').maybeSingle();
                 let rawTpl = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
                 const filledTpl = fillContractTemplate(rawTpl, {
                   patient,

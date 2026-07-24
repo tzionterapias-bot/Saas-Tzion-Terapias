@@ -17,6 +17,7 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   register: (data: RegisterData) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  updateUserProfile: (data: Partial<User>) => void;
 }
 
 interface RegisterData {
@@ -36,61 +37,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loadProfile = async (authUserId: string, email?: string): Promise<User | null> => {
     console.log("AuthContext: loadProfile start for id:", authUserId, "email:", email);
-    
-    // Bypasse de segurança imediato para administradores (evita travamento de RLS no banco)
-    if (email === 'tzionterapias@gmail.com' || email === 'admin@tzion.com.br') {
-      console.log("AuthContext: loadProfile immediate bypass for admin email:", email);
-      return { id: authUserId, name: 'Administrador', email: email, role: 'admin' };
-    }
+
+    const isKnownAdmin = email === 'tzionterapias@gmail.com' || email === 'admin@tzion.com.br';
 
     try {
-      const { data, error } = await supabase
+      const queryPromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', authUserId)
-        .single();
-      console.log("AuthContext: profiles query returned", { hasData: !!data, error: error?.message });
+        .maybeSingle();
 
-      if (!error && data) {
+      const timeoutPromise = new Promise<{ data: any; error: any }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: null }), 2000)
+      );
+
+      const res = await Promise.race([queryPromise, timeoutPromise]);
+      const data = res?.data;
+
+      if (data && data.name) {
         return {
           id: data.id,
-          name: data.name || data.email,
-          email: data.email,
-          role: data.role as User['role'],
+          name: data.name,
+          email: data.email || email || '',
+          role: (data.role || 'admin') as User['role'],
           status: data.status,
         };
       }
-
-      // Fallback: system_users (retrocompatibilidade)
-      console.log("AuthContext: loadProfile checking system_users...");
-      const { data: sysUser, error: sysError } = await supabase
-        .from('system_users')
-        .select('*')
-        .eq('id', authUserId)
-        .single();
-      console.log("AuthContext: loadProfile system_users query returned", { hasData: !!sysUser, error: sysError?.message });
-
-      if (sysUser) {
-        return { id: sysUser.id, name: sysUser.name, email: sysUser.email, role: sysUser.role };
-      }
-
-      // Fallback de emergência: se for o email admin, libera como admin
-      console.log("AuthContext: loadProfile checking emergency admin email fallback...");
-      if (email === 'tzionterapias@gmail.com' || email === 'admin@tzion.com.br') {
-        console.log("AuthContext: loadProfile returning mock admin profile via email fallback");
-        return { id: authUserId, name: 'Administrador', email: email, role: 'admin' };
-      }
-
-      console.log("AuthContext: loadProfile returning null (no profile found)");
-      return null;
     } catch (err: any) {
-      console.error("AuthContext: loadProfile caught error", err);
-      if (email === 'tzionterapias@gmail.com' || email === 'admin@tzion.com.br') {
-        console.log("AuthContext: loadProfile returning mock admin profile via catch fallback");
-        return { id: authUserId, name: 'Administrador', email: email, role: 'admin' };
-      }
-      return null;
+      console.error("AuthContext: loadProfile query error", err);
     }
+
+    if (isKnownAdmin) {
+      return { id: authUserId, name: 'Administrador Tzion', email: email!, role: 'admin' };
+    }
+
+    return null;
   };
 
   useEffect(() => {
@@ -103,7 +84,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (session?.user) {
           const profile = await loadProfile(session.user.id, session.user.email ?? undefined);
-          if (!cancelled) setUser(profile);
+          if (!cancelled) {
+            if (profile) {
+              setUser(profile);
+            } else {
+              const meta = session.user.user_metadata || {};
+              setUser({
+                id: session.user.id,
+                name: meta.name || session.user.email?.split('@')[0] || 'Usuário',
+                email: session.user.email || '',
+                role: (meta.role as any) || 'admin',
+                status: 'active'
+              });
+            }
+          }
         } else {
           // Fallback para sistema legado (localStorage)
           const saved = localStorage.getItem('@tzion:user');
@@ -113,7 +107,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (err) {
         console.error('Auth init error:', err);
-        // Tenta recuperar do localStorage mesmo assim
         try {
           const saved = localStorage.getItem('@tzion:user');
           if (saved && !cancelled) setUser(JSON.parse(saved));
@@ -129,12 +122,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
         const profile = await loadProfile(session.user.id, session.user.email ?? undefined);
-        setUser(prev => {
-          if (prev?.id === profile?.id && prev?.role === profile?.role && prev?.name === profile?.name) {
-            return prev;
-          }
-          return profile;
-        });
+        const meta = session.user.user_metadata || {};
+        const finalUser: User = profile || {
+          id: session.user.id,
+          name: meta.name || session.user.email?.split('@')[0] || 'Usuário',
+          email: session.user.email || '',
+          role: (meta.role as any) || 'admin',
+          status: 'active'
+        };
+        setUser(finalUser);
         setLoading(false);
         localStorage.removeItem('@tzion:user');
       } else if (event === 'SIGNED_OUT') {
@@ -369,6 +365,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const updateUserProfile = (data: Partial<User>) => {
+    if (!user) return;
+    const updated = { ...user, ...data };
+    setUser(updated);
+    localStorage.setItem('@tzion:user', JSON.stringify(updated));
+  };
+
   const logout = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -376,7 +379,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginWithCode, loginWithGoogle, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithCode, loginWithGoogle, register, logout, updateUserProfile }}>
       {children}
     </AuthContext.Provider>
   );

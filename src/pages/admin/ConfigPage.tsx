@@ -91,7 +91,9 @@ export default function ConfigPage() {
   });
   const [notifications, setNotifications] = useState({ 
     sessionReminders: true, 
+    sessionReminderMessage: 'Olá, {{nome}}! 🌟 Passando para lembrar do seu agendamento AMANHÃ às {{horario}} com {{terapeuta}}. Modalidade: {{modalidade}}. Confirma sua presença?',
     paymentConfirm: true, 
+    paymentConfirmMessage: 'Olá, {{nome}}! ✨ Confirmamos o recebimento do seu pagamento no valor de R$ {{valor}} referente a {{descricao}}. Obrigado por confiar na Tzion Terapias! 💙',
     birthdayReminder: true, 
     birthdayMessage: 'Olá, {{nome}}! 🎂✨\nA equipe da Tzion Terapias deseja um feliz aniversário! Que este novo ano seja repleto de evolução, paz e conquistas. Parabéns!' 
   });
@@ -387,9 +389,38 @@ export default function ConfigPage() {
 
   const executeDelete = async (table: string, id: string) => {
     setLoading(true);
-    await supabase.from(table).delete().eq('id', id);
-    setDeletingId(null);
-    fetchData();
+    try {
+      if (table === 'services') {
+        // Desvincular agendamentos antigos para permitir exclusão do serviço sem violar a FK
+        await supabase.from('appointments').update({ service_id: null }).eq('service_id', id);
+        try {
+          await supabase.from('patient_packages').update({ service_id: null }).eq('service_id', id);
+        } catch (e) {}
+      } else if (table === 'rooms') {
+        await supabase.from('appointments').update({ room_id: null }).eq('room_id', id);
+      }
+
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) {
+        console.error(`Erro ao excluir de ${table}:`, error);
+        alert(`Não foi possível excluir o item: ${error.message}`);
+      } else {
+        if (table === 'services') {
+          setServices(prev => prev.filter(s => s.id !== id));
+        } else if (table === 'rooms') {
+          setRooms(prev => prev.filter(r => r.id !== id));
+        } else if (table === 'clinical_templates') {
+          setClinicalTemplates(prev => prev.filter(t => t.id !== id));
+        }
+        await fetchData();
+      }
+    } catch (err: any) {
+      console.error(`Erro inesperado ao excluir de ${table}:`, err);
+      alert(`Erro ao excluir: ${err.message || 'Falha na requisição'}`);
+    } finally {
+      setDeletingId(null);
+      setLoading(false);
+    }
   };
 
   const handleAddRole = () => {
@@ -412,11 +443,17 @@ export default function ConfigPage() {
     try {
       let safeIntegrations = { ...integrations };
       if (integrations.asaas_token && integrations.asaas_token !== '••••••••••••••••') {
-        const { error } = await supabase.rpc('set_asaas_key', { secret_key: integrations.asaas_token });
-        if (!error) {
-          const { asaas_token, ...rest } = safeIntegrations as any;
-          safeIntegrations = rest as any;
-          setIntegrations(prev => ({...prev, asaas_token: '••••••••••••••••'}));
+        try {
+          const { error } = await supabase.rpc('set_asaas_key', { secret_key: integrations.asaas_token });
+          if (!error) {
+            const { asaas_token, ...rest } = safeIntegrations as any;
+            safeIntegrations = rest as any;
+            setIntegrations(prev => ({...prev, asaas_token: '••••••••••••••••'}));
+          } else {
+            console.warn("RPC set_asaas_key não configurada no Supabase. Salvando chave na tabela settings como fallback:", error.message);
+          }
+        } catch (rpcErr) {
+          console.warn("Erro ao chamar RPC set_asaas_key, usando fallback settings:", rpcErr);
         }
       } else if (integrations.asaas_token === '••••••••••••••••') {
          const { asaas_token, ...rest } = safeIntegrations as any;
@@ -1232,24 +1269,54 @@ export default function ConfigPage() {
 
                 {editingItem.section === 'Notificações & Alertas' && (
                   <div className="space-y-6">
-                    <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-200">
-                      <div>
-                        <p className="font-bold text-slate-900">Lembretes de Sessão</p>
-                        <p className="text-xs text-slate-500 mt-1">Enviar WhatsApp automático 24h antes da sessão</p>
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-900">Lembretes de Sessão</p>
+                          <p className="text-xs text-slate-500 mt-1">Enviar WhatsApp automático 24h antes da sessão</p>
+                        </div>
+                        <button onClick={() => setNotifications({...notifications, sessionReminders: !notifications.sessionReminders})} className={cn("relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer", notifications.sessionReminders ? "bg-indigo-600" : "bg-slate-300")}>
+                          <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white transition-transform", notifications.sessionReminders ? "translate-x-6" : "translate-x-1")} />
+                        </button>
                       </div>
-                      <button onClick={() => setNotifications({...notifications, sessionReminders: !notifications.sessionReminders})} className={cn("relative inline-flex h-7 w-12 items-center rounded-full transition-colors", notifications.sessionReminders ? "bg-indigo-600" : "bg-slate-300")}>
-                        <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white transition-transform", notifications.sessionReminders ? "translate-x-6" : "translate-x-1")} />
-                      </button>
+                      {notifications.sessionReminders && (
+                        <div className="space-y-1.5 pt-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                            Mensagem de Lembrete (Use a tecla Enter para pular linha. Variáveis: {"{{nome}}"}, {"{{horario}}"}, {"{{terapeuta}}"}, {"{{modalidade}}"})
+                          </label>
+                          <textarea 
+                            rows={4} 
+                            value={notifications.sessionReminderMessage || "Olá, {{nome}}! 🌟\n\nPassando para lembrar do seu agendamento AMANHÃ às {{horario}} com {{terapeuta}}.\n\nModalidade: {{modalidade}}\nConfirma sua presença?"} 
+                            onChange={e => setNotifications({...notifications, sessionReminderMessage: e.target.value})} 
+                            className="w-full bg-white p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700 text-sm leading-relaxed" 
+                          />
+                        </div>
+                      )}
                     </div>
                     
-                    <div className="flex items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-200">
-                      <div>
-                        <p className="font-bold text-slate-900">Confirmação de Pagamento</p>
-                        <p className="text-xs text-slate-500 mt-1">Recibo via WhatsApp após pagamento do Pix/Cartão</p>
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-900">Confirmação de Pagamento</p>
+                          <p className="text-xs text-slate-500 mt-1">Recibo via WhatsApp após pagamento do Pix/Cartão</p>
+                        </div>
+                        <button onClick={() => setNotifications({...notifications, paymentConfirm: !notifications.paymentConfirm})} className={cn("relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer", notifications.paymentConfirm ? "bg-indigo-600" : "bg-slate-300")}>
+                          <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white transition-transform", notifications.paymentConfirm ? "translate-x-6" : "translate-x-1")} />
+                        </button>
                       </div>
-                      <button onClick={() => setNotifications({...notifications, paymentConfirm: !notifications.paymentConfirm})} className={cn("relative inline-flex h-7 w-12 items-center rounded-full transition-colors", notifications.paymentConfirm ? "bg-indigo-600" : "bg-slate-300")}>
-                        <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white transition-transform", notifications.paymentConfirm ? "translate-x-6" : "translate-x-1")} />
-                      </button>
+                      {notifications.paymentConfirm && (
+                        <div className="space-y-1.5 pt-2">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                            Mensagem de Recibo (Use a tecla Enter para pular linha. Variáveis: {"{{nome}}"}, {"{{valor}}"}, {"{{descricao}}"})
+                          </label>
+                          <textarea 
+                            rows={4} 
+                            value={notifications.paymentConfirmMessage || "Olá, {{nome}}! ✨\n\nConfirmamos o recebimento do seu pagamento no valor de R$ {{valor}} referente a {{descricao}}.\n\nObrigado por confiar na Tzion Terapias! 💙"} 
+                            onChange={e => setNotifications({...notifications, paymentConfirmMessage: e.target.value})} 
+                            className="w-full bg-white p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700 text-sm leading-relaxed" 
+                          />
+                        </div>
+                      )}
                     </div>
 
                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
@@ -1258,14 +1325,16 @@ export default function ConfigPage() {
                           <p className="font-bold text-slate-900">Mensagem de Aniversário (WhatsApp)</p>
                           <p className="text-xs text-slate-500 mt-1">Enviar mensagem automatizada no dia do aniversário do paciente</p>
                         </div>
-                        <button onClick={() => setNotifications({...notifications, birthdayReminder: !notifications.birthdayReminder})} className={cn("relative inline-flex h-7 w-12 items-center rounded-full transition-colors", notifications.birthdayReminder ? "bg-indigo-600" : "bg-slate-300")}>
+                        <button onClick={() => setNotifications({...notifications, birthdayReminder: !notifications.birthdayReminder})} className={cn("relative inline-flex h-7 w-12 items-center rounded-full transition-colors cursor-pointer", notifications.birthdayReminder ? "bg-indigo-600" : "bg-slate-300")}>
                           <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white transition-transform", notifications.birthdayReminder ? "translate-x-6" : "translate-x-1")} />
                         </button>
                       </div>
                       {notifications.birthdayReminder && (
                         <div className="space-y-1.5 pt-2">
-                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Mensagem de Aniversário (Use {"{{nome}}"} para o nome do paciente)</label>
-                          <textarea rows={3} value={notifications.birthdayMessage} onChange={e => setNotifications({...notifications, birthdayMessage: e.target.value})} className="w-full bg-white p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700 text-sm" />
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+                            Mensagem de Aniversário (Use a tecla Enter para pular linha. Variável: {"{{nome}}"})
+                          </label>
+                          <textarea rows={4} value={notifications.birthdayMessage} onChange={e => setNotifications({...notifications, birthdayMessage: e.target.value})} className="w-full bg-white p-4 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-slate-700 text-sm leading-relaxed" />
                         </div>
                       )}
                     </div>

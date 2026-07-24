@@ -1510,8 +1510,17 @@ async function executeFinancialSync() {
     try {
       const { data: dbKey } = await supabase.rpc('get_asaas_key');
       if (dbKey) apiKey = dbKey;
-    } catch (err) {
-      console.error("Erro ao obter Asaas Key para sincronização:", err);
+    } catch (err) {}
+
+    if (!apiKey || apiKey === "your-asaas-key") {
+      const { data: setts } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'integrations')
+        .maybeSingle();
+      if (setts?.value?.asaas_token) {
+        apiKey = setts.value.asaas_token;
+      }
     }
   }
   const isMock = !apiKey || apiKey === "your-asaas-key";

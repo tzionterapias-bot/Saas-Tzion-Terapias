@@ -43,13 +43,28 @@ export async function processDailyReminders() {
       return;
     }
 
+    const { data: setts } = await supabase.from('settings').select('value').eq('key', 'notifications').maybeSingle();
+    const config = setts?.value || {};
+    
+    if (config.sessionReminders === false) {
+      localStorage.setItem('last_reminder_run', today);
+      return;
+    }
+
+    const reminderTpl = config.sessionReminderMessage || 'Olá, {{nome}}! 🌟 Passando para lembrar do seu agendamento AMANHÃ às {{horario}} com {{terapeuta}}. Modalidade: {{modalidade}}. Confirma sua presença?';
+
     if (appointments && appointments.length > 0) {
       for (const app of appointments) {
         const time = new Date(app.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
         // Lembrete para o Paciente
         if (app.patients?.phone) {
-          const msgPatient = `Olá, ${app.patients.name}! 🌟 Passando para lembrar do seu agendamento AMANHÃ às ${time} com ${app.therapists?.name || 'seu terapeuta'}. Modalidade: ${app.type || 'Presencial'}. Confirma sua presença? Responda com SIM ou NÃO.`;
+          const msgPatient = reminderTpl
+            .replace(/\{\{nome\}\}/g, app.patients.name || 'Paciente')
+            .replace(/\{\{horario\}\}/g, time)
+            .replace(/\{\{terapeuta\}\}/g, app.therapists?.name || 'seu terapeuta')
+            .replace(/\{\{modalidade\}\}/g, app.type || 'Presencial');
+            
           await sendWhatsAppMessage(app.patient_id, app.patients.phone, msgPatient, 'appointment_reminder');
         }
 

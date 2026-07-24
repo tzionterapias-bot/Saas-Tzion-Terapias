@@ -137,7 +137,7 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
     try {
       setGeneratingContractId(pkg.id);
       
-      const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').single();
+      const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').maybeSingle();
       let rawTemplate = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
       
       const filledContent = fillContractTemplate(rawTemplate, {

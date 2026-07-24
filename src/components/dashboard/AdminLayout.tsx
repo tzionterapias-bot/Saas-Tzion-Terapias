@@ -3,7 +3,8 @@ import { supabase } from '@/src/lib/supabase';
 import { 
   LayoutDashboard, Users, Calendar, Banknote, MessageSquare, 
   BookOpen, Settings, LogOut, Heart, Headset, Menu, X, Bell, Search, User, Award,
-  Sun, Moon, Shield, Megaphone, PieChart, Globe, Monitor, UserCog, Briefcase
+  Sun, Moon, Shield, Megaphone, PieChart, Globe, Monitor, UserCog, Briefcase, Package,
+  Lock, Phone, Save, Loader2
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
@@ -33,6 +34,7 @@ const menuCategories = [
     items: [
       { icon: Banknote, label: 'Financeiro', path: '/admin/financeiro', roles: ['admin', 'financeiro', 'atendimento'] },
       { icon: Briefcase, label: 'Venda Rápida', path: '/admin/vendas', roles: ['admin', 'financeiro', 'atendimento'] },
+      { icon: Package, label: 'Insumos & Estoque', path: '/admin/insumos', roles: ['admin', 'atendimento', 'financeiro'] },
       { icon: Headset, label: 'Central de Atendimento', path: '/admin/atendimento', roles: ['admin', 'atendimento'] },
       { icon: MessageSquare, label: 'CRM & Marketing', path: '/admin/crm', roles: ['admin', 'atendimento'] },
       { icon: Megaphone, label: 'Campanhas', path: '/admin/campanhas', roles: ['admin', 'atendimento'] },
@@ -55,7 +57,7 @@ import { useActiveSession } from '@/src/contexts/ActiveSessionContext';
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUserProfile } = useAuth();
   const { activeSession, setShowBlockModal } = useActiveSession();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [whiteLabel, setWhiteLabel] = useState<any>(() => {
@@ -261,7 +263,152 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       processDailyBirthdays();
       loadDynamicNotifications();
     }
+
+    const handleNewChatMessage = (e: Event) => {
+      const { title, description } = (e as CustomEvent).detail;
+      setNotifications(prev => [
+        {
+          id: `chat-${Date.now()}`,
+          title: title || '💬 Nova Mensagem Interna',
+          description: description || 'Você recebeu uma nova mensagem no chat da equipe.'
+        },
+        ...prev
+      ]);
+    };
+
+    window.addEventListener('new-chat-message', handleNewChatMessage);
+    return () => window.removeEventListener('new-chat-message', handleNewChatMessage);
   }, [user, navigate]);
+
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: '', phone: '', password: '' });
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileToast, setProfileToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const handleOpenProfileModal = async () => {
+    setIsProfileOpen(false);
+    setShowProfileModal(true);
+    setProfileToast(null);
+    if (!user) return;
+
+    let foundName = user.name && user.name !== 'Administrador' && user.name !== 'Administrador Tzion' ? user.name : '';
+    let foundPhone = (user as any).phone || '';
+
+    try {
+      // 1. Tentar buscar em public.profiles por ID ou email
+      const { data: profData } = await supabase
+        .from('profiles')
+        .select('name, phone')
+        .or(`id.eq.${user.id},email.eq.${user.email}`)
+        .maybeSingle();
+
+      if (profData) {
+        if (profData.name && profData.name !== 'Administrador' && profData.name !== 'Administrador Tzion') {
+          foundName = profData.name;
+        }
+        if (profData.phone) {
+          foundPhone = profData.phone;
+        }
+      }
+
+      // 2. Se for terapeuta ou membro da equipe, tentar em public.therapists
+      const { data: therData } = await supabase
+        .from('therapists')
+        .select('name, phone')
+        .or(`user_id.eq.${user.id},email.eq.${user.email}`)
+        .maybeSingle();
+
+      if (therData) {
+        if (therData.name && therData.name !== 'Administrador' && therData.name !== 'Administrador Tzion') {
+          foundName = therData.name;
+        }
+        if (therData.phone) {
+          foundPhone = therData.phone;
+        }
+      }
+
+      // 3. Tentar pegar das metadatas do Supabase Auth
+      const { data: authUserData } = await supabase.auth.getUser();
+      if (authUserData?.user?.user_metadata) {
+        const meta = authUserData.user.user_metadata;
+        if (!foundName && (meta.full_name || meta.name)) {
+          foundName = meta.full_name || meta.name;
+        }
+        if (!foundPhone && meta.phone) {
+          foundPhone = meta.phone;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao carregar dados do perfil:', err);
+    }
+
+    setProfileForm({
+      name: foundName || user.name || '',
+      phone: foundPhone,
+      password: ''
+    });
+  };
+
+  const handleSaveUserProfile = async () => {
+    if (!user) return;
+    setSavingProfile(true);
+    setProfileToast(null);
+    try {
+      // 1. Atualizar em public.profiles
+      const { error: profileErr } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id,
+          name: profileForm.name,
+          email: user.email,
+          phone: profileForm.phone,
+          role: user.role
+        });
+
+      if (profileErr) {
+        setProfileToast({ message: 'Erro ao atualizar perfil: ' + profileErr.message, type: 'error' });
+        setSavingProfile(false);
+        return;
+      }
+
+      // 2. Se for terapeuta, atualizar em public.therapists tambem
+      await supabase
+        .from('therapists')
+        .update({ name: profileForm.name, phone: profileForm.phone })
+        .or(`user_id.eq.${user.id},email.eq.${user.email}`);
+
+      // 3. Atualizar metadata no Supabase Auth e senha se informada
+      const updateData: any = { data: { name: profileForm.name, phone: profileForm.phone } };
+      if (profileForm.password) {
+        if (profileForm.password.length < 6) {
+          setProfileToast({ message: 'A senha deve ter pelo menos 6 caracteres.', type: 'error' });
+          setSavingProfile(false);
+          return;
+        }
+        updateData.password = profileForm.password;
+      }
+
+      const { error: authErr } = await supabase.auth.updateUser(updateData);
+      if (authErr) {
+        console.warn('Erro ao atualizar dados do auth user:', authErr);
+      }
+
+      // 4. Atualizar o estado do React
+      if (updateUserProfile && profileForm.name) {
+        updateUserProfile({ name: profileForm.name });
+      }
+
+      setProfileToast({ message: '✅ Perfil atualizado com sucesso!', type: 'success' });
+      setTimeout(() => {
+        setShowProfileModal(false);
+      }, 1500);
+    } catch (err: any) {
+      console.error('Erro ao salvar perfil:', err);
+      setProfileToast({ message: 'Erro ao salvar perfil.', type: 'error' });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const handleLogout = () => {
     if (activeSession) {
@@ -505,16 +652,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             <p className="font-bold text-slate-900">{user?.name}</p>
                             <p className="text-xs text-slate-500">{user?.role}</p>
                         </div>
-                        <button className="w-full text-left px-4 py-3 text-sm font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors flex items-center gap-2">
+                        <button 
+                            onClick={handleOpenProfileModal}
+                            className="w-full text-left px-4 py-3 text-sm font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+                        >
                             <User className="w-4 h-4" /> Meu Perfil
                         </button>
-                        <button className="w-full text-left px-4 py-3 text-sm font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors flex items-center gap-2">
+                        <button 
+                            onClick={() => {
+                              setIsProfileOpen(false);
+                              navigate('/admin/config');
+                            }}
+                            className="w-full text-left px-4 py-3 text-sm font-bold text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
+                        >
                             <Settings className="w-4 h-4" /> Configurações
                         </button>
                         <div className="h-px bg-slate-100 my-2" />
                         <button 
-                            onClick={handleLogout}
-                            className="w-full text-left px-4 py-3 text-sm font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors flex items-center gap-2"
+                            onClick={() => {
+                              setIsProfileOpen(false);
+                              handleLogout();
+                            }}
+                            className="w-full text-left px-4 py-3 text-sm font-bold text-rose-600 hover:bg-rose-50 rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
                         >
                             <LogOut className="w-4 h-4" /> Sair do Sistema
                         </button>
@@ -593,6 +752,94 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* Global Internal Chat */}
       <InternalChat />
+
+      {/* MODAL: MEU PERFIL */}
+      {showProfileModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-md"><User className="w-5 h-5" /></div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 leading-tight">Meu Perfil</h3>
+                  <p className="text-xs text-slate-500 font-medium">Dados cadastrais e senha de acesso</p>
+                </div>
+              </div>
+              <button onClick={() => setShowProfileModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {profileToast && (
+                <div className={cn(
+                  "p-3 rounded-2xl text-xs font-bold flex items-center gap-2 animate-in fade-in duration-200",
+                  profileToast.type === 'success' ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
+                )}>
+                  {profileToast.message}
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome Completo</label>
+                <div className="relative flex items-center">
+                  <User className="w-4 h-4 text-slate-400 absolute left-4" />
+                  <input
+                    type="text"
+                    value={profileForm.name}
+                    onChange={e => setProfileForm({ ...profileForm, name: e.target.value })}
+                    className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 text-sm focus:bg-white focus:border-indigo-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">E-mail (Login)</label>
+                <input
+                  type="email"
+                  disabled
+                  value={user?.email || ''}
+                  className="w-full px-4 py-3.5 bg-slate-100 border border-slate-200 rounded-2xl outline-none font-bold text-slate-400 text-sm cursor-not-allowed"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone / WhatsApp</label>
+                <div className="relative flex items-center">
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-4" />
+                  <input
+                    type="text"
+                    value={profileForm.phone}
+                    onChange={e => setProfileForm({ ...profileForm, phone: e.target.value })}
+                    placeholder="(00) 00000-0000"
+                    className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 text-sm focus:bg-white focus:border-indigo-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nova Senha (Opcional)</label>
+                <div className="relative flex items-center">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-4" />
+                  <input
+                    type="password"
+                    value={profileForm.password}
+                    onChange={e => setProfileForm({ ...profileForm, password: e.target.value })}
+                    placeholder="Mínimo de 6 caracteres..."
+                    className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 text-sm focus:bg-white focus:border-indigo-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={handleSaveUserProfile}
+                disabled={savingProfile}
+                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2 disabled:opacity-50 text-sm"
+              >
+                {savingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salvar Alterações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

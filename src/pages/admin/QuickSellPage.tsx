@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   CreditCard, DollarSign, CheckCircle2, AlertCircle, Loader2, X, Save, 
-  Users, Briefcase, Percent
+  Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -30,6 +30,9 @@ const PAYMENT_METHODS = [
   { value: 'pix', label: 'PIX Manual (Chave da Clínica)' },
 ];
 
+const CATEGORIES_INCOME = ['Sessão', 'Consulta', 'Pacote', 'Avaliação', 'Outros'];
+const CATEGORIES_EXPENSE = ['Aluguel', 'Insumos', 'Marketing', 'Comissão', 'Impostos', 'Outros'];
+
 export default function QuickSellPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -45,6 +48,60 @@ export default function QuickSellPage() {
   const [cardFeeRateInput, setCardFeeRateInput] = useState('0');
   const [multimodalItems, setMultimodalItems] = useState<{ service_id: string; sessions: number }[]>([]);
   
+  const [isCustomEntry, setIsCustomEntry] = useState(false);
+  const [customTitle, setCustomTitle] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+  const [customSessions, setCustomSessions] = useState('1');
+
+  // Modal Novo Lançamento (Identico ao Financeiro)
+  const [showEntryModal, setShowEntryModal] = useState(false);
+  const emptyEntry = {
+    type: 'income' as 'income' | 'expense',
+    amount: '',
+    description: '',
+    category: 'Sessão',
+    status: 'paid' as 'paid' | 'pending',
+    payment_method: 'pix',
+    due_date: new Date().toISOString().split('T')[0],
+    is_fixed: false
+  };
+  const [newEntry, setNewEntry] = useState(emptyEntry);
+
+  const handleCreateEntry = async () => {
+    if (!newEntry.amount || Number(newEntry.amount) <= 0) {
+      showToast('Informe o valor do lançamento.', 'error');
+      return;
+    }
+    if (!newEntry.description) {
+      showToast('Informe a descrição.', 'error');
+      return;
+    }
+
+    setSaving(true);
+    const { error } = await supabase.from('payments').insert([{
+      amount: Number(newEntry.amount),
+      type: newEntry.type,
+      status: newEntry.status,
+      description: newEntry.description,
+      category: newEntry.category,
+      payment_method: newEntry.payment_method,
+      due_date: newEntry.due_date || null,
+      is_fixed: newEntry.is_fixed,
+      created_at: new Date().toISOString(),
+    }]);
+
+    if (error) {
+      console.error(error);
+      showToast('Erro ao salvar lançamento.', 'error');
+    } else {
+      showToast('Lançamento salvo com sucesso!');
+      setShowEntryModal(false);
+      setNewEntry(emptyEntry);
+      fetchData();
+    }
+    setSaving(false);
+  };
+
   const [createdAsaasPayment, setCreatedAsaasPayment] = useState<{ url: string; amount: number; patientName: string; phone: string | null; paymentId: string } | null>(null);
   const [createdPixQrCode, setCreatedPixQrCode] = useState<{ encodedImage: string; payload: string; amount: number; patientName: string; paymentId: string } | null>(null);
 
@@ -92,19 +149,17 @@ export default function QuickSellPage() {
   useEffect(() => {
     fetchData();
 
-    // Tentar usar Realtime (mas temos o polling de segurança abaixo)
     const channel = supabase
       .channel('public:payments')
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'payments' },
         (payload) => {
-          // REALTIME EVENT RECEIVED
           if (payload.new.status === 'paid') {
             setCreatedPixQrCode(null);
             setCreatedAsaasPayment(null);
-            setSellData(emptySell); // Limpa o formulário
-            fetchData(); // Atualiza a lista de últimas vendas
+            setSellData(emptySell);
+            fetchData();
             showToast('✅ Pagamento reconhecido com sucesso!', 'success');
           }
         }
@@ -116,7 +171,6 @@ export default function QuickSellPage() {
     };
   }, []);
 
-  // POLLING DE SEGURANÇA: Se o Realtime falhar por bloqueio de rede ou RLS
   useEffect(() => {
     const activePaymentId = createdPixQrCode?.paymentId || createdAsaasPayment?.paymentId;
     if (!activePaymentId) return;
@@ -126,11 +180,11 @@ export default function QuickSellPage() {
       if (data?.status === 'paid') {
         setCreatedPixQrCode(null);
         setCreatedAsaasPayment(null);
-        setSellData(emptySell); // Limpa o formulário
-        fetchData(); // Atualiza a lista
+        setSellData(emptySell);
+        fetchData();
         showToast('✅ Pagamento reconhecido com sucesso!', 'success');
       }
-    }, 3000); // Poll a cada 3 segundos
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [createdPixQrCode?.paymentId, createdAsaasPayment?.paymentId]);
@@ -138,19 +192,40 @@ export default function QuickSellPage() {
   const selectedSvc = services.find(s => s.id === sellData.service_id);
 
   const handleSellService = async () => {
-    if (!sellData.patient_id || !sellData.service_id) {
-      showToast('Selecione o paciente e o serviço.', 'error');
+    if (!sellData.patient_id) {
+      showToast('Selecione o paciente.', 'error');
       return;
     }
+
+    if (isCustomEntry) {
+      if (!customTitle.trim()) {
+        showToast('Digite a descrição do lançamento avulso.', 'error');
+        return;
+      }
+      if (!customPrice || parseFloat(customPrice) <= 0) {
+        showToast('Digite o valor do lançamento avulso.', 'error');
+        return;
+      }
+    } else {
+      if (!sellData.service_id) {
+        showToast('Selecione o serviço do catálogo.', 'error');
+        return;
+      }
+    }
+
     setSaving(true);
 
-    const service = services.find(s => s.id === sellData.service_id);
     const patient = patients.find(p => p.id === sellData.patient_id);
     const therapist = therapists.find(t => t.id === sellData.therapist_id);
-    if (!service || !patient) { setSaving(false); return; }
+    const service = !isCustomEntry ? services.find(s => s.id === sellData.service_id) : null;
 
-    // Validação de pacote multimodal se for do tipo 'pacote'
-    if (service.type === 'pacote') {
+    if (!patient) { setSaving(false); return; }
+
+    const price = isCustomEntry ? (parseFloat(customPrice) || 0) : (service?.price || 0);
+    const description = isCustomEntry ? customTitle.trim() : (service?.name || 'Serviço');
+    const totalSessions = isCustomEntry ? (parseInt(customSessions) || 1) : (service?.sessions_count || 1);
+
+    if (!isCustomEntry && service?.type === 'pacote') {
       const totalAssigned = multimodalItems.reduce((acc, curr) => acc + (curr.sessions || 0), 0);
       if (totalAssigned !== service.sessions_count) {
         showToast(`A soma das sessões distribuídas (${totalAssigned}) deve ser exatamente igual ao total do pacote (${service.sessions_count}).`, 'error');
@@ -175,9 +250,9 @@ export default function QuickSellPage() {
         const { data: result, error: fnError } = await supabase.functions.invoke('asaas-integration/checkout', {
           method: 'POST',
           body: {
-            valor: service.price,
+            valor: price,
             pacienteId: sellData.patient_id,
-            description: `${service.name} — Tzion Terapias`,
+            description: `${description} — Tzion Terapias`,
             billingType: isAsaasPix ? 'PIX' : 'CREDIT_CARD'
           }
         });
@@ -201,14 +276,14 @@ export default function QuickSellPage() {
     const rate = (sellData.payment_method === 'credit_card' || sellData.payment_method === 'debit_card')
       ? (parseFloat(cardFeeRateInput) || 0)
       : 0;
-    const feeVal = service.price * (rate / 100);
-    const netVal = service.price - feeVal;
+    const feeVal = price * (rate / 100);
+    const netVal = price - feeVal;
 
     const { data: payData, error: payErr } = await supabase.from('payments').insert([{
-      amount: service.price,
+      amount: price,
       type: 'income',
       status: 'pending',
-      description: `${service.name} — ${patient.name}${therapist ? ` (${therapist.name})` : ''}`,
+      description: `${description} — ${patient.name}${therapist ? ` (${therapist.name})` : ''}`,
       category: 'Serviço',
       payment_method: isAsaas ? 'asaas' : sellData.payment_method,
       patient_id: sellData.patient_id,
@@ -228,11 +303,11 @@ export default function QuickSellPage() {
       return; 
     }
 
-    // Criar pacote de sessões como 'pending' (será ativado quando o pagamento for confirmado)
+    // Criar pacote de sessões como 'pending'
     const { data: pkgData, error: pkgErr } = await supabase.from('patient_packages').insert([{
       patient_id: sellData.patient_id,
-      service_id: sellData.service_id,
-      total_sessions: service.sessions_count || 1,
+      service_id: !isCustomEntry ? sellData.service_id : null,
+      total_sessions: totalSessions,
       used_sessions: 0,
       status: 'pending',
     }]).select().single();
@@ -244,18 +319,14 @@ export default function QuickSellPage() {
       return;
     }
 
-    if (service.type === 'pacote' && pkgData && multimodalItems.length > 0) {
+    if (!isCustomEntry && service?.type === 'pacote' && pkgData && multimodalItems.length > 0) {
       const itemsToInsert = multimodalItems.map(item => ({
         package_id: pkgData.id,
         service_id: item.service_id,
         total_sessions: item.sessions,
         used_sessions: 0
       }));
-      const { error: itemsErr } = await supabase.from('patient_package_items').insert(itemsToInsert);
-      if (itemsErr) {
-        console.error('Erro ao salvar itens do pacote:', itemsErr);
-        showToast('Aviso: Pacote criado, mas erro ao salvar a distribuição de sessões.', 'error');
-      }
+      await supabase.from('patient_package_items').insert(itemsToInsert);
     }
 
     if (isAsaasPix && asaasId) {
@@ -334,59 +405,121 @@ export default function QuickSellPage() {
         {/* Lado Esquerdo: Formulário */}
         <div className="lg:col-span-7 space-y-6">
           {/* Header card */}
-          <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex items-center gap-4">
-        <div className="p-4 bg-emerald-500 text-white rounded-3xl shadow-lg shadow-emerald-100 shrink-0">
-          <Briefcase className="w-8 h-8" />
-        </div>
-        <div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-tight">Venda Rápida de Serviços</h2>
-          <p className="text-slate-500 text-sm mt-1 font-medium">Cadastre vendas e gere links de pagamento sem precisar abrir o financeiro.</p>
-        </div>
-      </div>
+          <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-4 bg-emerald-500 text-white rounded-3xl shadow-lg shadow-emerald-100 shrink-0">
+                <Briefcase className="w-8 h-8" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-slate-800 tracking-tight leading-tight">Venda Rápida de Serviços</h2>
+                <p className="text-slate-500 text-sm mt-1 font-medium">Cadastre vendas e gere links de pagamento sem precisar abrir o financeiro.</p>
+              </div>
+            </div>
 
-      {/* Form card */}
-      <div className="bg-white border border-slate-200 rounded-[2.5rem] shadow-sm overflow-hidden p-6 sm:p-8 space-y-6">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 space-y-4">
-            <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
-            <p className="text-slate-400 font-bold text-sm">Carregando dados...</p>
+            <button
+              type="button"
+              onClick={() => setShowEntryModal(true)}
+              className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-md shadow-indigo-200 transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+            >
+              + Lançamento Avulso
+            </button>
           </div>
-        ) : (
-          <>
-            {/* Paciente */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Paciente *</label>
-              <select 
-                value={sellData.patient_id} 
-                onChange={e => setSellData({ ...sellData, patient_id: e.target.value })}
-                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
-              >
-                <option value="">Selecione o paciente...</option>
-                {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
 
-            {/* Serviço */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Serviço ou Pacote *</label>
-              <select 
-                value={sellData.service_id} 
-                onChange={e => {
-                  const svcId = e.target.value;
-                  setSellData({ ...sellData, service_id: svcId });
-                  const svc = services.find(s => s.id === svcId);
-                  if (svc && svc.type === 'pacote') {
-                    setMultimodalItems([{ service_id: '', sessions: svc.sessions_count }]);
-                  } else {
-                    setMultimodalItems([]);
-                  }
-                }}
-                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
-              >
-                <option value="">Selecione o serviço...</option>
-                {services.map(s => <option key={s.id} value={s.id}>{s.name} — R$ {fmt(s.price)} ({s.type === 'pacote' ? `${s.sessions_count} sessões` : 'Avulso'})</option>)}
-              </select>
-            </div>
+          {/* Form card */}
+          <div className="bg-white border border-slate-200 rounded-[2.5rem] shadow-sm overflow-hidden p-6 sm:p-8 space-y-6">
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+                <p className="text-slate-400 font-bold text-sm">Carregando dados...</p>
+              </div>
+            ) : (
+              <>
+                {/* Paciente */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Paciente *</label>
+                  <select 
+                    value={sellData.patient_id} 
+                    onChange={e => setSellData({ ...sellData, patient_id: e.target.value })}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
+                  >
+                    <option value="">Selecione o paciente...</option>
+                    {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+
+                {/* Modo Lançamento Avulso vs Serviço do Catálogo */}
+                {isCustomEntry ? (
+                  <div className="p-6 bg-indigo-50/50 border border-indigo-100 rounded-[2rem] space-y-4 animate-in fade-in duration-300">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">
+                        ✨ Lançamento Avulso Personalizado
+                      </span>
+                      <span className="px-3 py-1 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full uppercase">
+                        Valor Customizado
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Descrição do Serviço / Produto *</label>
+                      <input
+                        type="text"
+                        value={customTitle}
+                        onChange={e => setCustomTitle(e.target.value)}
+                        placeholder="Ex: Sessão Especial de Hipnose, Produto, Avaliação..."
+                        className="w-full px-5 py-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 text-sm shadow-sm"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Valor do Lançamento (R$) *</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={customPrice}
+                          onChange={e => setCustomPrice(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full px-5 py-4 bg-white border border-slate-200 rounded-2xl outline-none font-black text-indigo-600 text-base shadow-sm"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Qtd. de Sessões / Créditos</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={customSessions}
+                          onChange={e => setCustomSessions(e.target.value)}
+                          placeholder="1"
+                          className="w-full px-5 py-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 text-center text-sm shadow-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Serviço do Catálogo */
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Serviço ou Pacote *</label>
+                    <select 
+                      value={sellData.service_id} 
+                      onChange={e => {
+                        const svcId = e.target.value;
+                        setSellData({ ...sellData, service_id: svcId });
+                        const svc = services.find(s => s.id === svcId);
+                        if (svc && svc.type === 'pacote') {
+                          setMultimodalItems([{ service_id: '', sessions: svc.sessions_count }]);
+                        } else {
+                          setMultimodalItems([]);
+                        }
+                      }}
+                      className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
+                    >
+                      <option value="">Selecione o serviço...</option>
+                      {services.map(s => <option key={s.id} value={s.id}>{s.name} — R$ {fmt(s.price)} ({s.type === 'pacote' ? `${s.sessions_count} sessões` : 'Avulso'})</option>)}
+                    </select>
+                  </div>
+                )}
 
             {/* Distribuição de Sessões para Pacote Multimodal */}
             {selectedSvc?.type === 'pacote' && (
@@ -778,6 +911,97 @@ export default function QuickSellPage() {
                   Fechar Janela
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: NOVO LANÇAMENTO (AVULSO) */}
+      {showEntryModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-md"><DollarSign className="w-6 h-6" /></div>
+                <h3 className="text-2xl font-black text-slate-900">Novo Lançamento</h3>
+              </div>
+              <button onClick={() => setShowEntryModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><X className="w-6 h-6" /></button>
+            </div>
+            <div className="p-8 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                {(['income', 'expense'] as const).map(t => (
+                  <button key={t} onClick={() => setNewEntry({ ...newEntry, type: t })}
+                    className={cn("py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all cursor-pointer",
+                      newEntry.type === t
+                        ? t === 'income' ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-rose-50 border-rose-500 text-rose-600"
+                        : "bg-slate-50 border-transparent text-slate-400 hover:border-slate-200"
+                    )}>
+                    {t === 'income' ? <><ArrowUpRight className="w-5 h-5" /> Receita</> : <><ArrowDownRight className="w-5 h-5" /> Despesa</>}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">VALOR (R$) *</label>
+                <input type="number" step="0.01" value={newEntry.amount} onChange={e => setNewEntry({ ...newEntry, amount: e.target.value })}
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-2xl font-black text-slate-700 focus:ring-2 focus:ring-indigo-500/20" placeholder="0,00" autoFocus />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">DESCRIÇÃO *</label>
+                <input value={newEntry.description} onChange={e => setNewEntry({ ...newEntry, description: e.target.value })}
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20" placeholder="Ex: Aluguel da Sala" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CATEGORIA</label>
+                  <select value={newEntry.category} onChange={e => setNewEntry({ ...newEntry, category: e.target.value })}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none cursor-pointer">
+                    {(newEntry.type === 'income' ? CATEGORIES_INCOME : CATEGORIES_EXPENSE).map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">STATUS</label>
+                  <select value={newEntry.status} onChange={e => setNewEntry({ ...newEntry, status: e.target.value as any })}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none cursor-pointer">
+                    <option value="paid">Pago / Recebido</option>
+                    <option value="pending">Pendente</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">MÉTODO DE PAGAMENTO</label>
+                  <select value={newEntry.payment_method} onChange={e => setNewEntry({ ...newEntry, payment_method: e.target.value })}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none cursor-pointer">
+                    <option value="pix">PIX</option>
+                    <option value="credit_card">Cartão de Crédito</option>
+                    <option value="debit_card">Cartão de Débito</option>
+                    <option value="cash">Dinheiro</option>
+                    <option value="transfer">Transferência / TED</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">DATA DE VENCIMENTO</label>
+                  <input type="date" value={newEntry.due_date} onChange={e => setNewEntry({ ...newEntry, due_date: e.target.value })}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700" />
+                </div>
+              </div>
+              
+              {newEntry.type === 'expense' && (
+                <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
+                  <input type="checkbox" id="is_fixed_qs" checked={newEntry.is_fixed} onChange={e => setNewEntry({ ...newEntry, is_fixed: e.target.checked })}
+                    className="w-5 h-5 rounded border-rose-300 text-rose-600 focus:ring-rose-500 cursor-pointer" />
+                  <label htmlFor="is_fixed_qs" className="text-sm font-bold text-rose-700 cursor-pointer select-none">
+                    Marcar como Despesa Fixa (Recorrente)
+                  </label>
+                </div>
+              )}
+
+              <button onClick={handleCreateEntry} disabled={saving}
+                className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Salvar Lançamento
+              </button>
             </div>
           </div>
         </div>

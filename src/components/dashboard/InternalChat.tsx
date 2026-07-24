@@ -21,6 +21,23 @@ interface Contact {
   color: string;
 }
 
+const playChimeSound = () => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+    osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.35);
+  } catch (e) {}
+};
+
 const DEPARTMENT_CONTACTS: Contact[] = [
   { id: 'admin',      name: 'Administração',   role: 'admin',      icon: <Shield className="w-5 h-5" />,      color: 'bg-slate-700' },
   { id: 'atendimento',name: 'Recepção / Agenda',role: 'atendimento',icon: <Calendar className="w-5 h-5" />,     color: 'bg-indigo-500' },
@@ -38,6 +55,40 @@ export default function InternalChat() {
   const [newMessage, setNewMessage] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const processedMsgIds = useRef<Set<string>>(new Set());
+
+  const triggerIncomingNotification = (newMsg: Message) => {
+    if (!user) return;
+    if (processedMsgIds.current.has(newMsg.id)) return;
+    processedMsgIds.current.add(newMsg.id);
+
+    // Ignorar se a mensagem foi enviada pelo próprio usuário
+    if (newMsg.sender_name === user.name) return;
+
+    // Tocar sinal sonoro de notificação
+    playChimeSound();
+
+    // Notificar no ícone de Sino do Sistema
+    window.dispatchEvent(new CustomEvent('new-chat-message', {
+      detail: {
+        title: `💬 Mensagem de ${newMsg.sender_name}`,
+        description: `"${newMsg.content.substring(0, 50)}${newMsg.content.length > 50 ? '...' : ''}"`
+      }
+    }));
+
+    // Abrir o Popup do Chat automaticamente para o destinatário!
+    const senderContact: Contact = {
+      id: newMsg.channel,
+      name: newMsg.sender_name,
+      role: newMsg.sender_role || 'Equipe',
+      icon: <Users className="w-5 h-5" />,
+      color: 'bg-indigo-600'
+    };
+
+    setActiveContact(senderContact);
+    setView('chat');
+    setIsOpen(true);
+  };
 
   // Fetch therapists to build contact list
   useEffect(() => {
@@ -53,7 +104,7 @@ export default function InternalChat() {
     role: t.specialty || 'Terapeuta',
     icon: <Stethoscope className="w-5 h-5" />,
     color: 'bg-violet-500',
-  })), [therapists]);;
+  })), [therapists]);
 
   // Listen for external trigger (e.g. from session list buttons)
   useEffect(() => {
@@ -83,27 +134,55 @@ export default function InternalChat() {
           if (prev.find(m => m.id === newMsg.id)) return prev;
           return [...prev, newMsg];
         });
-        if (!isOpen || newMsg.channel !== activeContact?.id) {
-          setUnreadCount((prev) => prev + 1);
-        }
+        
+        triggerIncomingNotification(newMsg);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [isOpen, activeContact]);
+  }, [isOpen, activeContact, user]);
 
-  // Fetch messages when opening a channel
+  // Fetch messages when opening a channel with polling fallback
   useEffect(() => {
     if (!activeContact) return;
-    supabase
-      .from('internal_messages')
-      .select('*')
-      .eq('channel', activeContact.id)
-      .order('created_at', { ascending: true })
-      .limit(100)
-      .then(({ data }) => {
-        setMessages(data || []);
-      });
+
+    const fetchChannelMessages = async () => {
+      const { data, error } = await supabase
+        .from('internal_messages')
+        .select('*')
+        .eq('channel', activeContact.id)
+        .order('created_at', { ascending: true })
+        .limit(100);
+      
+      if (!error && data) {
+        setMessages(data);
+      }
+    };
+
+    fetchChannelMessages();
+    const interval = setInterval(fetchChannelMessages, 4000);
+    return () => clearInterval(interval);
   }, [activeContact]);
+
+  // Polling de background para abrir popup e notificar no sino mesmo com o chat fechado
+  useEffect(() => {
+    if (!user) return;
+    const checkNewGlobalMessages = async () => {
+      const { data } = await supabase
+        .from('internal_messages')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (data) {
+        data.reverse().forEach((msg: Message) => {
+          triggerIncomingNotification(msg);
+        });
+      }
+    };
+
+    const interval = setInterval(checkNewGlobalMessages, 5000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   useEffect(() => {
     if (isOpen && view === 'chat') {
@@ -127,14 +206,33 @@ export default function InternalChat() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !user || !activeContact) return;
-    const content = newMessage;
+    
+    const content = newMessage.trim();
     setNewMessage('');
-    await supabase.from('internal_messages').insert({
+
+    // Atualização Otimista (UI instantânea)
+    const tempMsg: Message = {
+      id: `temp-${Date.now()}`,
+      sender_name: user.name || 'Usuário',
+      sender_role: user.role || 'Membro',
+      content,
+      channel: activeContact.id,
+      created_at: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, tempMsg]);
+
+    const { error } = await supabase.from('internal_messages').insert({
       sender_name: user.name || 'Usuário',
       sender_role: user.role || 'Membro',
       content,
       channel: activeContact.id,
     });
+
+    if (error) {
+      console.error("Erro ao enviar mensagem interna:", error);
+      alert('Erro ao enviar mensagem. Certifique-se de executar o script SQL supabase_internal_messages.sql no Supabase.');
+    }
   };
 
   const allContacts = [...DEPARTMENT_CONTACTS, ...therapistContacts];
