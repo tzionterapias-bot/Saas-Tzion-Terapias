@@ -52,8 +52,8 @@ export default function InternalChat() {
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [therapists, setTherapists] = useState<any[]>([]);
-  const [newMessage, setNewMessage] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
+  const [contactUnreadMap, setContactUnreadMap] = useState<Record<string, number>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const processedMsgIds = useRef<Set<string>>(new Set());
 
@@ -65,9 +65,13 @@ export default function InternalChat() {
     // Ignorar se a mensagem foi enviada pelo próprio usuário
     if (newMsg.sender_name === user.name) return;
 
-    // Incrementar contador de mensagens não lidas se o chat não estiver aberto
-    if (!isOpen) {
+    // Incrementar contador global e contador específico do canal/contato pendente
+    if (!isOpen || activeContact?.id !== newMsg.channel) {
       setUnreadCount(prev => prev + 1);
+      setContactUnreadMap(prev => ({
+        ...prev,
+        [newMsg.channel]: (prev[newMsg.channel] || 0) + 1
+      }));
     }
 
     // Tocar sinal sonoro e notificar apenas para novas mensagens em tempo real
@@ -188,6 +192,15 @@ export default function InternalChat() {
     setActiveContact(contact);
     setMessages([]);
     setView('chat');
+    
+    // Limpar badge de pendente deste contato específico
+    setContactUnreadMap(prev => {
+      const count = prev[contact.id] || 0;
+      if (count > 0) {
+        setUnreadCount(total => Math.max(0, total - count));
+      }
+      return { ...prev, [contact.id]: 0 };
+    });
   };
 
   const handleBack = () => {
@@ -266,21 +279,32 @@ export default function InternalChat() {
               <div className="px-4 pt-4 pb-1">
                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Departamentos</p>
                 <div className="space-y-1">
-                  {DEPARTMENT_CONTACTS.map(c => (
-                    <button
-                      key={c.id}
-                      onClick={() => handleOpenContact(c)}
-                      className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-indigo-50 transition-all text-left group"
-                    >
-                      <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-white flex-shrink-0", c.color)}>
-                        {c.icon}
-                      </div>
-                      <div>
-                        <p className="font-bold text-slate-800 text-sm group-hover:text-indigo-700">{c.name}</p>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase">{c.role}</p>
-                      </div>
-                    </button>
-                  ))}
+                  {DEPARTMENT_CONTACTS.map(c => {
+                    const unread = contactUnreadMap[c.id] || 0;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => handleOpenContact(c)}
+                        className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-indigo-50 transition-all text-left group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-white flex-shrink-0", c.color)}>
+                            {c.icon}
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-800 text-sm group-hover:text-indigo-700">{c.name}</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase">{c.role}</p>
+                          </div>
+                        </div>
+
+                        {unread > 0 && (
+                          <span className="px-2 py-0.5 bg-rose-500 text-white rounded-full text-[10px] font-extrabold shadow-sm animate-pulse">
+                            {unread} pendente{unread > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -289,21 +313,32 @@ export default function InternalChat() {
                 <div className="px-4 pt-3 pb-4">
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Terapeutas</p>
                   <div className="space-y-1">
-                    {therapistContacts.map(c => (
-                      <button
-                        key={c.id}
-                        onClick={() => handleOpenContact(c)}
-                        className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-violet-50 transition-all text-left group"
-                      >
-                        <div className="w-10 h-10 rounded-full bg-violet-500 flex items-center justify-center text-white flex-shrink-0 font-bold text-sm">
-                          {c.name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-800 text-sm group-hover:text-violet-700">{c.name}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase">{c.role}</p>
-                        </div>
-                      </button>
-                    ))}
+                    {therapistContacts.map(c => {
+                      const unread = contactUnreadMap[c.id] || 0;
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => handleOpenContact(c)}
+                          className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-violet-50 transition-all text-left group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-violet-500 flex items-center justify-center text-white flex-shrink-0 font-bold text-sm">
+                              {c.name.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-800 text-sm group-hover:text-violet-700">{c.name}</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase">{c.role}</p>
+                            </div>
+                          </div>
+
+                          {unread > 0 && (
+                            <span className="px-2 py-0.5 bg-rose-500 text-white rounded-full text-[10px] font-extrabold shadow-sm animate-pulse">
+                              {unread} pendente{unread > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
