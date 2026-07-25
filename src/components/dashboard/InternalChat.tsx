@@ -52,6 +52,7 @@ export default function InternalChat() {
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [therapists, setTherapists] = useState<any[]>([]);
+  const [newMessage, setNewMessage] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const [contactUnreadMap, setContactUnreadMap] = useState<Record<string, number>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
