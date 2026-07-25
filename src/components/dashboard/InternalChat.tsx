@@ -57,7 +57,7 @@ export default function InternalChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const processedMsgIds = useRef<Set<string>>(new Set());
 
-  const triggerIncomingNotification = (newMsg: Message) => {
+  const triggerIncomingNotification = (newMsg: Message, isRealtime = false) => {
     if (!user) return;
     if (processedMsgIds.current.has(newMsg.id)) return;
     processedMsgIds.current.add(newMsg.id);
@@ -65,29 +65,23 @@ export default function InternalChat() {
     // Ignorar se a mensagem foi enviada pelo próprio usuário
     if (newMsg.sender_name === user.name) return;
 
-    // Tocar sinal sonoro de notificação
-    playChimeSound();
+    // Incrementar contador de mensagens não lidas se o chat não estiver aberto
+    if (!isOpen) {
+      setUnreadCount(prev => prev + 1);
+    }
 
-    // Notificar no ícone de Sino do Sistema
-    window.dispatchEvent(new CustomEvent('new-chat-message', {
-      detail: {
-        title: `💬 Mensagem de ${newMsg.sender_name}`,
-        description: `"${newMsg.content.substring(0, 50)}${newMsg.content.length > 50 ? '...' : ''}"`
-      }
-    }));
+    // Tocar sinal sonoro e notificar apenas para novas mensagens em tempo real
+    if (isRealtime) {
+      playChimeSound();
 
-    // Abrir o Popup do Chat automaticamente para o destinatário!
-    const senderContact: Contact = {
-      id: newMsg.channel,
-      name: newMsg.sender_name,
-      role: newMsg.sender_role || 'Equipe',
-      icon: <Users className="w-5 h-5" />,
-      color: 'bg-indigo-600'
-    };
-
-    setActiveContact(senderContact);
-    setView('chat');
-    setIsOpen(true);
+      // Notificar no ícone de Sino do Sistema
+      window.dispatchEvent(new CustomEvent('new-chat-message', {
+        detail: {
+          title: `💬 Mensagem de ${newMsg.sender_name}`,
+          description: `"${newMsg.content.substring(0, 50)}${newMsg.content.length > 50 ? '...' : ''}"`
+        }
+      }));
+    }
   };
 
   // Fetch therapists to build contact list
@@ -135,7 +129,7 @@ export default function InternalChat() {
           return [...prev, newMsg];
         });
         
-        triggerIncomingNotification(newMsg);
+        triggerIncomingNotification(newMsg, true);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -163,7 +157,7 @@ export default function InternalChat() {
     return () => clearInterval(interval);
   }, [activeContact]);
 
-  // Polling de background para abrir popup e notificar no sino mesmo com o chat fechado
+  // Polling silencioso de histórico para registrar IDs já existentes sem abrir o popup automaticamente
   useEffect(() => {
     if (!user) return;
     const checkNewGlobalMessages = async () => {
@@ -175,13 +169,12 @@ export default function InternalChat() {
       
       if (data) {
         data.reverse().forEach((msg: Message) => {
-          triggerIncomingNotification(msg);
+          triggerIncomingNotification(msg, false);
         });
       }
     };
 
-    const interval = setInterval(checkNewGlobalMessages, 5000);
-    return () => clearInterval(interval);
+    checkNewGlobalMessages();
   }, [user]);
 
   useEffect(() => {

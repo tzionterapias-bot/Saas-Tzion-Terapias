@@ -29,7 +29,130 @@ export default function CRMPage() {
   const fetchAutomations = async () => {
     setLoading(true);
     const { data } = await supabase.from('crm_automations').select('*').order('created_at', { ascending: true });
-    setAutomations(data || []);
+    
+    // Lista de todas as automações com o padrão exato da Clínica Tzion Terapias
+    const DEFAULT_AUTOMATIONS = [
+      {
+        trigger_type: 'appointment_created',
+        title: 'Confirmação de Agendamento (Paciente)',
+        description: 'Olá, *{{nome}}*! ✨\n\nSeu agendamento na *Clínica Tzion Terapias* está confirmado!\n\n📅 *Data:* {{data}}\n⏰ *Horário:* {{horario}}\n📍 *Modalidade:* {{modalidade}}\n\n📍 *Local Presencial:*\nRua Princesa Isabel, esquina com Rua Capibaribe, R. Santa Helena\n\nUm abraço e te esperamos! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'appointment_reminder',
+        title: 'Lembrete de Agendamento (Paciente)',
+        description: 'Olá, *{{nome}}*! ✨\n\nPassando aqui para lembrar da sua sessão na *Clínica Tzion Terapias* marcada para hoje!\n\n⏰ *Horário:* {{horario}}\n📍 *Modalidade:* {{modalidade}}\n\n📍 *Local Presencial:*\nRua Princesa Isabel, esquina com Rua Capibaribe, R. Santa Helena\n\nUm abraço e até mais tarde! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'appointment_created_therapist',
+        title: 'Alerta de Novo Agendamento (Terapeuta)',
+        description: 'Olá, *{{terapeuta}}*! ✨\n\nNova sessão agendada na *Clínica Tzion Terapias*!\n\n👤 *Paciente:* {{nome}}\n📅 *Data:* {{data}}\n⏰ *Horário:* {{horario}}\n📍 *Modalidade:* {{modalidade}}\n\n📍 *Local Presencial:*\nRua Princesa Isabel, esquina com Rua Capibaribe, R. Santa Helena\n\nBom atendimento! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'appointment_reminder_therapist',
+        title: 'Lembrete de Consulta (Terapeuta)',
+        description: 'Olá, *{{terapeuta}}*! ✨\n\nLembrete profissional de atendimento agendado para hoje na *Clínica Tzion Terapias*:\n\n👤 *Paciente:* {{nome}}\n⏰ *Horário:* {{horario}}\n📍 *Modalidade:* {{modalidade}}\n\n📍 *Local Presencial:*\nRua Princesa Isabel, esquina com Rua Capibaribe, R. Santa Helena\n\nTenha uma ótima sessão! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'appointment_cancelled',
+        title: 'Aviso de Cancelamento (Paciente)',
+        description: 'Olá, *{{nome}}*! ⚠️\n\nA sessão agendada para *{{data}} às {{horario}}* na *Clínica Tzion Terapias* foi cancelada/desmarcada.\n\nQualquer dúvida ou se quiser remarcar, estamos à disposição!\n\nUm abraço! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'appointment_cancelled_therapist',
+        title: 'Aviso de Cancelamento (Terapeuta)',
+        description: 'Olá, *{{terapeuta}}*! ⚠️\n\nAviso de cancelamento na *Clínica Tzion Terapias*:\n\nA sessão com o(a) paciente *{{nome}}* agendada para *{{data}} às {{horario}}* foi cancelada/desmarcada.\n\nQualquer dúvida, estamos à disposição! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'appointment_rescheduled',
+        title: 'Aviso de Reagendamento (Paciente)',
+        description: 'Olá, *{{nome}}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* {{data}}\n⏰ *Novo Horário:* {{horario}}\n📍 *Modalidade:* {{modalidade}}\n\n📍 *Local Presencial:*\nRua Princesa Isabel, esquina com Rua Capibaribe, R. Santa Helena\n\nUm abraço e te esperamos! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'commission_paid',
+        title: 'Aviso de Repasse / Comissão (Terapeuta)',
+        description: '✅ *Repasse Confirmado — Tzion Terapias*\n\nOlá, *{{terapeuta}}*!\n\nO seu repasse de *{{mes_ano}}* foi processado:\n\n💰 *Faturamento Bruto:* R$ {{faturamento_bruto}}\n🏥 *Taxa Clínica:* R$ {{taxa_clinica}}\n✅ *Valor Líquido:* R$ {{valor_liquido}}\n\n💳 *Método:* {{metodo}}\n📝 *Obs:* {{observacao}}\n\nQualquer dúvida, entre em contato! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'nps_survey',
+        title: 'Pesquisa de Satisfação (NPS)',
+        description: 'Olá, *{{nome}}*! ✨\n\nGostaríamos de saber como foi sua sessão de hoje na *Clínica Tzion Terapias*.\n\nDe 0 a 10, o quanto você recomendaria nossos serviços?\n\nAcesse o link para avaliar: {{link_nps}}\n\nMuito obrigado pelo seu carinho! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'new_lead',
+        title: 'Boas-vindas Automática (Novo Lead)',
+        description: 'Olá, *{{nome}}*! ✨ Seja bem-vindo(a) à *Clínica Tzion Terapias*.\n\nComo podemos te ajudar hoje? Ficaremos muito felizes em cuidar de você!\n\n📍 *Nosso Endereço:*\nRua Princesa Isabel, esquina com Rua Capibaribe, R. Santa Helena\n\nUm abraço! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'anamnesis_invite',
+        title: 'Envio de Ficha de Anamnese',
+        description: 'Olá, *{{nome}}*! ✨\n\nPara tornar seu atendimento na *Clínica Tzion Terapias* ainda mais personalizado, por favor preencha sua ficha de anamnese antes da consulta:\n\n📋 *Acesse o link:* {{link_anamnese}}\n\nMuito obrigado! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'contract_sent',
+        title: 'Envio de Contrato',
+        description: 'Olá, *{{nome}}*! ✨\n\nSeu contrato da *Clínica Tzion Terapias* está pronto para assinatura digital:\n\n📄 *Acesse para assinar:* {{link_contrato}}\n\nQualquer dúvida, estamos à disposição! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'payment_link_sent',
+        title: 'Envio de Cobrança / Link de Pagamento',
+        description: 'Olá, *{{nome}}*! ✨\n\nSegue o link para pagamento referente ao seu atendimento na *Clínica Tzion Terapias*:\n\n💳 *Acesse para pagar:* {{link_pagamento}}\n\nAgradecemos a confiança! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'birthday',
+        title: 'Campanha de Aniversário',
+        description: 'Parabéns, *{{nome}}*! 🎉✨\n\nA equipe da *Clínica Tzion Terapias* te deseja um feliz aniversário com muita saúde e paz! Um abraço carinhoso! 💙',
+        status: true
+      },
+      {
+        trigger_type: 'inactive_patient',
+        title: 'Recuperação de Inativos',
+        description: 'Olá, *{{nome}}*! ✨\n\nSentimos sua falta aqui na *Clínica Tzion Terapias*. Que tal agendar sua próxima sessão de autocuidado?\n\n📍 *Nosso Endereço:*\nRua Princesa Isabel, esquina com Rua Capibaribe, R. Santa Helena\n\nEstamos te aguardando com muito carinho! 💙',
+        status: true
+      }
+    ];
+
+    let currentList = data || [];
+
+    // Mapeamento das mensagens padrão atualizadas
+    const defaultMap = new Map(DEFAULT_AUTOMATIONS.map(d => [d.trigger_type, d]));
+
+    // Sobrescrever e garantir que todas as automações tenham o formato oficial da Tzion
+    currentList = DEFAULT_AUTOMATIONS.map((defaultItem) => {
+      const existing = currentList.find(a => a.trigger_type === defaultItem.trigger_type);
+      if (!existing) {
+        return {
+          id: String(Date.now() + Math.random()),
+          ...defaultItem,
+          settings: { message: defaultItem.description }
+        };
+      }
+      // Se a mensagem salva no banco for a antiga/curta sem emojis ou formato da Tzion, atualizar visualmente
+      const currentMsg = existing.settings?.message || existing.description || '';
+      const isOldFormat = !currentMsg.includes('Clínica Tzion Terapias') && !currentMsg.includes('📍');
+      
+      const finalMsg = isOldFormat ? defaultItem.description : currentMsg;
+      return {
+        ...existing,
+        title: existing.title || defaultItem.title,
+        description: defaultItem.description,
+        settings: { ...existing.settings, message: finalMsg }
+      };
+    });
+
+    setAutomations(currentList);
     
     // Fetch Leads Stats
     const { data: leadsData } = await supabase.from('leads').select('status');
@@ -89,7 +212,11 @@ export default function CRMPage() {
     setLoading(true);
     const { error } = await supabase
       .from('crm_automations')
-      .update({ settings: editAuto.settings })
+      .update({ 
+        title: editAuto.title,
+        description: editAuto.description,
+        settings: editAuto.settings 
+      })
       .eq('id', editAuto.id);
     
     if (!error) {
@@ -402,35 +529,69 @@ export default function CRMPage() {
       {/* Edit Automation Modal */}
       {showEditAutoModal && editAuto && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
-           <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden">
+           <div className="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl border border-slate-100 overflow-hidden">
               <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <h3 className="text-2xl font-black text-slate-900 flex items-center gap-3">
-                  <Settings className="w-6 h-6 text-indigo-600" />
-                  Configurar Automação
-                </h3>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900 flex items-center gap-3">
+                    <Settings className="w-6 h-6 text-indigo-600" />
+                    Editar Automação & Mensagem
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium mt-1">Personalize o texto que será disparado via WhatsApp</p>
+                </div>
                 <button onClick={() => setShowEditAutoModal(false)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors">
                   <X className="w-6 h-6 text-slate-500" />
                 </button>
               </div>
-              <div className="p-8 space-y-6">
+              <div className="p-8 space-y-5">
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block">Mensagem da Automação</label>
-                  <textarea 
-                    rows={6}
-                    value={editAuto.settings?.message || ''}
-                    onChange={(e) => setEditAuto({ ...editAuto, settings: { ...editAuto.settings, message: e.target.value } })}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium text-slate-700 resize-none"
-                    placeholder="Digite a mensagem que será enviada..."
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Título da Automação</label>
+                  <input 
+                    type="text"
+                    value={editAuto.title || ''}
+                    onChange={(e) => setEditAuto({ ...editAuto, title: e.target.value })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-bold text-slate-800 text-sm"
                   />
-                  <p className="text-xs text-slate-500 mt-2">Dica: Use formatação do WhatsApp como *negrito*, _itálico_ e ~riscado~.</p>
                 </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Descrição / Objetivo</label>
+                  <input 
+                    type="text"
+                    value={editAuto.description || ''}
+                    onChange={(e) => setEditAuto({ ...editAuto, description: e.target.value })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-xs font-medium text-slate-700"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Mensagem do Disparo (WhatsApp)</label>
+                    <span className="text-[10px] text-indigo-600 font-bold">Tags: &#123;&#123;nome&#127976;&#127974;&#125;</span>
+                  </div>
+                  <textarea 
+                    rows={7}
+                    value={editAuto.settings?.message || editAuto.description || ''}
+                    onChange={(e) => setEditAuto({ 
+                      ...editAuto, 
+                      description: e.target.value,
+                      settings: { ...editAuto.settings, message: e.target.value } 
+                    })}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium text-slate-700 text-sm leading-relaxed resize-none"
+                    placeholder="Digite o modelo de mensagem que será disparado via WhatsApp..."
+                  />
+                  <div className="p-3 bg-indigo-50/60 rounded-xl border border-indigo-100 text-[11px] text-indigo-800 mt-2 space-y-1">
+                    <p className="font-bold flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Variáveis dinâmicas disponíveis:</p>
+                    <p className="text-slate-600"><code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-indigo-600">&#123;&#123;nome&#125;&#125;</code> Paciente/Cliente | <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-indigo-600">&#123;&#123;terapeuta&#125;&#125;</code> Terapeuta | <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-indigo-600">&#123;&#123;data&#125;&#125;</code> Data | <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-indigo-600">&#123;&#123;horario&#125;&#125;</code> Horário | <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-indigo-600">&#123;&#123;modalidade&#125;&#125;</code> Presencial/Online</p>
+                  </div>
+                </div>
+
                 <button 
                   onClick={handleSaveAuto}
                   disabled={loading}
                   className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
                 >
                   {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                  Salvar Configuração
+                  Salvar e Atualizar Mensagem
                 </button>
               </div>
            </div>

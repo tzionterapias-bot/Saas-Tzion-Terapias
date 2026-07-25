@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Calendar, Banknote, MessageSquare, 
   BookOpen, Settings, LogOut, Heart, Headset, Menu, X, Bell, Search, User, Award,
   Sun, Moon, Shield, Megaphone, PieChart, Globe, Monitor, UserCog, Briefcase, Package,
-  Lock, Phone, Save, Loader2
+  Lock, Phone, Save, Loader2, Trophy
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
@@ -33,6 +33,7 @@ const menuCategories = [
     title: 'Gestão & Vendas',
     items: [
       { icon: Banknote, label: 'Financeiro', path: '/admin/financeiro', roles: ['admin', 'financeiro', 'atendimento'] },
+      { icon: Trophy, label: 'Gamificação & Metas', path: '/admin/gamificacao', roles: ['admin', 'financeiro', 'terapeuta'] },
       { icon: Briefcase, label: 'Venda Rápida', path: '/admin/vendas', roles: ['admin', 'financeiro', 'atendimento'] },
       { icon: Package, label: 'Insumos & Estoque', path: '/admin/insumos', roles: ['admin', 'atendimento', 'financeiro'] },
       { icon: Headset, label: 'Central de Atendimento', path: '/admin/atendimento', roles: ['admin', 'atendimento'] },

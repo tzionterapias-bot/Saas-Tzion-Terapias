@@ -132,6 +132,7 @@ export default function App() {
           <Route path="/admin/portal-terapeuta" element={<RoleGuard allowedRoles={['admin', 'terapeuta']}><AdminLayout><TherapistPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/usuarios" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><UsersManager /></AdminLayout></RoleGuard>} />
           <Route path="/admin/terapeutas" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><TherapistsManagementPage /></AdminLayout></RoleGuard>} />
+          <Route path="/admin/gamificacao" element={<RoleGuard allowedRoles={['admin', 'financeiro', 'terapeuta']}><AdminLayout><GamificationView /></AdminLayout></RoleGuard>} />
           <Route path="/admin/editor-site" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><SiteEditorPage /></AdminLayout></RoleGuard>} />
 
           {/* Fallback */}
