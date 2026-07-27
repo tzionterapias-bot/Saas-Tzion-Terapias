@@ -81,8 +81,8 @@ export const evolutionService = {
         })
       });
 
-      // 3. Configurar Webhook via Proxy Seguro (Padrão Evolution v2)
-      const webhookUrl = `https://youxrufxufxxcgixymdd.supabase.co/functions/v1/whatsapp-evolution-v2`;
+      // 3. Configurar Webhook (Aponta para o n8n ou Edge Function conforme env)
+      const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL || `https://youxrufxufxxcgixymdd.supabase.co/functions/v1/whatsapp-evolution-v2`;
       
       await authFetch(`${EVOLUTION_API_URL}/webhook/${instanceName}`, {
         method: 'POST',

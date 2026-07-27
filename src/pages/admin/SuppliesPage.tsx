@@ -12,23 +12,54 @@ const initialItems = [
 export default function SuppliesPage() {
   const [items, setItems] = useState(initialItems);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [showStockModal, setShowStockModal] = useState<{item: any, type: 'in' | 'out'} | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [newItem, setNewItem] = useState({ name: '', category: 'Higiene', stock: '', minStock: '', price: '' });
   const [stockAmount, setStockAmount] = useState('');
 
-  const handleAddItem = () => {
-    const item = {
-      id: Date.now(),
-      name: newItem.name,
-      category: newItem.category,
-      stock: Number(newItem.stock),
-      minStock: Number(newItem.minStock),
-      price: Number(newItem.price)
-    };
-    setItems([...items, item]);
+  const handleSaveItem = () => {
+    if (editingId) {
+      setItems(items.map(i => i.id === editingId ? {
+        ...i,
+        name: newItem.name,
+        category: newItem.category,
+        stock: Number(newItem.stock),
+        minStock: Number(newItem.minStock),
+        price: Number(newItem.price)
+      } : i));
+    } else {
+      const item = {
+        id: Date.now(),
+        name: newItem.name,
+        category: newItem.category,
+        stock: Number(newItem.stock),
+        minStock: Number(newItem.minStock),
+        price: Number(newItem.price)
+      };
+      setItems([...items, item]);
+    }
     setShowModal(false);
-    alert('Insumo cadastrado com sucesso!');
+    setEditingId(null);
+    setNewItem({ name: '', category: 'Higiene', stock: '', minStock: '', price: '' });
+  };
+
+  const openNewItemModal = () => {
+    setEditingId(null);
+    setNewItem({ name: '', category: 'Higiene', stock: '', minStock: '', price: '' });
+    setShowModal(true);
+  };
+
+  const handleEdit = (item: any) => {
+    setNewItem({
+      name: item.name,
+      category: item.category,
+      stock: item.stock.toString(),
+      minStock: item.minStock.toString(),
+      price: item.price.toString()
+    });
+    setEditingId(item.id);
+    setShowModal(true);
   };
 
   const handleStockAdjust = () => {
@@ -46,6 +77,10 @@ export default function SuppliesPage() {
   };
 
   const filteredItems = items.filter(i => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  
+  const lowStockCount = items.filter(i => i.stock <= i.minStock).length;
+  const totalStock = items.reduce((acc, i) => acc + i.stock, 0);
+  const totalValue = items.reduce((acc, i) => acc + (i.stock * i.price), 0);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -55,7 +90,7 @@ export default function SuppliesPage() {
           <p className="text-slate-500 font-medium">Controle de estoque, fornecedores e insumos da clínica.</p>
         </div>
         <button 
-          onClick={() => setShowModal(true)}
+          onClick={openNewItemModal}
           className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all"
         >
           <Plus className="w-4 h-4" /> Novo Insumo
@@ -67,8 +102,8 @@ export default function SuppliesPage() {
             <div className="p-4 bg-amber-100 text-amber-600 rounded-2xl">
                <AlertCircle className="w-8 h-8" />
             </div>
-            <div>
-               <p className="text-4xl font-black text-amber-600">2</p>
+             <div>
+               <p className="text-4xl font-black text-amber-600">{lowStockCount}</p>
                <p className="text-sm font-bold text-amber-700/60 uppercase tracking-widest">Itens Abaixo do Mínimo</p>
             </div>
          </div>
@@ -77,7 +112,7 @@ export default function SuppliesPage() {
                <Package className="w-8 h-8" />
             </div>
             <div>
-               <p className="text-4xl font-black text-indigo-600">324</p>
+               <p className="text-4xl font-black text-indigo-600">{totalStock}</p>
                <p className="text-sm font-bold text-indigo-700/60 uppercase tracking-widest">Total em Estoque</p>
             </div>
          </div>
@@ -86,7 +121,7 @@ export default function SuppliesPage() {
                <ShoppingCart className="w-8 h-8" />
             </div>
             <div>
-               <p className="text-4xl font-black text-emerald-600">R$ 1.150</p>
+               <p className="text-4xl font-black text-emerald-600">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalValue)}</p>
                <p className="text-sm font-bold text-emerald-700/60 uppercase tracking-widest">Valor de Inventário</p>
             </div>
          </div>
@@ -153,7 +188,12 @@ export default function SuppliesPage() {
                        >
                          Saída
                        </button>
-                       <button className="p-2 text-slate-300 hover:text-indigo-600 transition-colors"><Edit className="w-5 h-5" /></button>
+                       <button 
+                         onClick={() => handleEdit(item)}
+                         className="p-2 text-slate-300 hover:text-indigo-600 transition-colors"
+                       >
+                         <Edit className="w-5 h-5" />
+                       </button>
                     </div>
                   </td>
                 </tr>
@@ -168,7 +208,7 @@ export default function SuppliesPage() {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-xl rounded-[3rem] p-10 shadow-2xl space-y-8 animate-in zoom-in-95 duration-300">
             <div className="flex justify-between items-center">
-              <h3 className="text-2xl font-black text-slate-900">Novo Insumo</h3>
+              <h3 className="text-2xl font-black text-slate-900">{editingId ? 'Editar Insumo' : 'Novo Insumo'}</h3>
               <button onClick={() => setShowModal(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-6 h-6 text-slate-400" /></button>
             </div>
             <div className="grid grid-cols-2 gap-6">
@@ -224,10 +264,10 @@ export default function SuppliesPage() {
               </div>
             </div>
             <button 
-              onClick={handleAddItem}
+              onClick={handleSaveItem}
               className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100"
             >
-              Finalizar Cadastro
+              {editingId ? 'Salvar Alterações' : 'Finalizar Cadastro'}
             </button>
           </div>
         </div>
