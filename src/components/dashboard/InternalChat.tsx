@@ -227,9 +227,23 @@ export default function InternalChat() {
         .from('internal_messages')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(50);
       
       if (data) {
+        // Primeiro passe: marcar como processadas todas as mensagens já lidas
+        // para evitar que contem como pendentes ao recarregar a página
+        data.forEach((msg: Message) => {
+          const channelLastRead = readTimestampsRef.current[msg.channel];
+          if (channelLastRead && new Date(msg.created_at) <= new Date(channelLastRead)) {
+            processedMsgIds.current.add(msg.id);
+          }
+          // Também marca as próprias mensagens do usuário como já processadas
+          if (msg.sender_name === user.name) {
+            processedMsgIds.current.add(msg.id);
+          }
+        });
+
+        // Segundo passe: processar apenas mensagens realmente não lidas
         data.reverse().forEach((msg: Message) => {
           triggerIncomingNotification(msg, false);
         });
