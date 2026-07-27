@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { MessageSquare, X, Send, ChevronLeft, Users, Stethoscope, Banknote, Calendar, ShoppingCart, Shield } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { MessageSquare, X, Send, ChevronLeft, Stethoscope, Banknote, Calendar, ShoppingCart, Shield } from 'lucide-react';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { cn } from '@/src/lib/utils';
 
 interface Message {
   id: string;
+  sender_id?: string;
   sender_name: string;
   sender_role: string;
   content: string;
@@ -19,6 +20,13 @@ interface Contact {
   role: string;
   icon: React.ReactNode;
   color: string;
+}
+
+interface PresenceUser {
+  id: string;
+  name: string;
+  role: string;
+  therapist_id?: string | null;
 }
 
 const playChimeSound = () => {
@@ -39,83 +47,87 @@ const playChimeSound = () => {
 };
 
 const DEPARTMENT_CONTACTS: Contact[] = [
-  { id: 'admin',      name: 'Administração',   role: 'admin',      icon: <Shield className="w-5 h-5" />,      color: 'bg-slate-700' },
-  { id: 'atendimento',name: 'Recepção / Agenda',role: 'atendimento',icon: <Calendar className="w-5 h-5" />,     color: 'bg-indigo-500' },
-  { id: 'financeiro', name: 'Financeiro',       role: 'financeiro', icon: <Banknote className="w-5 h-5" />,     color: 'bg-emerald-500' },
-  { id: 'comercial',  name: 'Comercial',        role: 'comercial',  icon: <ShoppingCart className="w-5 h-5" />, color: 'bg-amber-500' },
+  { id: 'admin',       name: 'Administração',    role: 'admin',       icon: <Shield className="w-5 h-5" />,       color: 'bg-slate-700' },
+  { id: 'atendimento', name: 'Recepção / Agenda', role: 'atendimento', icon: <Calendar className="w-5 h-5" />,     color: 'bg-indigo-500' },
+  { id: 'financeiro',  name: 'Financeiro',        role: 'financeiro',  icon: <Banknote className="w-5 h-5" />,     color: 'bg-emerald-500' },
+  { id: 'comercial',   name: 'Comercial',         role: 'comercial',   icon: <ShoppingCart className="w-5 h-5" />, color: 'bg-amber-500' },
 ];
+
+const READ_KEY = (userId: string) => `internalChat_readTimestamps_${userId}`;
 
 export default function InternalChat() {
   const { user } = useAuth();
-  const [isOpen, setIsOpen] = useState(false);
-  const [view, setView] = useState<'contacts' | 'chat'>('contacts');
-  const [activeContact, setActiveContact] = useState<Contact | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [therapists, setTherapists] = useState<any[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [contactUnreadMap, setContactUnreadMap] = useState<Record<string, number>>({});
-  const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const processedMsgIds = useRef<Set<string>>(new Set());
+  const [isOpen, setIsOpen]                       = useState(false);
+  const [view, setView]                           = useState<'contacts' | 'chat'>('contacts');
+  const [activeContact, setActiveContact]         = useState<Contact | null>(null);
+  const [messages, setMessages]                   = useState<Message[]>([]);
+  const [therapists, setTherapists]               = useState<any[]>([]);
+  const [newMessage, setNewMessage]               = useState('');
+  const [unreadCount, setUnreadCount]             = useState(0);
+  const [contactUnreadMap, setContactUnreadMap]   = useState<Record<string, number>>({});
+  const [onlineUsers, setOnlineUsers]             = useState<PresenceUser[]>([]);
+
+  const messagesEndRef    = useRef<HTMLDivElement>(null);
+  const processedMsgIds   = useRef<Set<string>>(new Set());
   const readTimestampsRef = useRef<Record<string, string>>({});
+  const isOpenRef         = useRef(isOpen);
+  const activeContactRef  = useRef<Contact | null>(activeContact);
 
-  const updateChannelReadTimestamp = (channelId: string) => {
+  useEffect(() => { isOpenRef.current = isOpen; }, [isOpen]);
+  useEffect(() => { activeContactRef.current = activeContact; }, [activeContact]);
+
+  const saveReadTimestamps = useCallback(() => {
     if (!user?.id) return;
-    const now = new Date().toISOString();
-    readTimestampsRef.current[channelId] = now;
-    localStorage.setItem(`internalChat_readTimestamps_${user.id}`, JSON.stringify(readTimestampsRef.current));
-  };
+    localStorage.setItem(READ_KEY(user.id), JSON.stringify(readTimestampsRef.current));
+  }, [user?.id]);
 
-  const triggerIncomingNotification = (newMsg: Message, isRealtime = false) => {
+  const markChannelRead = useCallback((channelId: string) => {
+    readTimestampsRef.current[channelId] = new Date().toISOString();
+    saveReadTimestamps();
+    setContactUnreadMap(prev => {
+      const count = prev[channelId] || 0;
+      if (count > 0) setUnreadCount(total => Math.max(0, total - count));
+      return { ...prev, [channelId]: 0 };
+    });
+  }, [saveReadTimestamps]);
+
+  const isMessageUnread = useCallback((msg: Message): boolean => {
+    if (!user) return false;
+    if (msg.sender_id && msg.sender_id === user.id) return false;
+    if (!msg.sender_id && msg.sender_name === user.name) return false;
+    if (processedMsgIds.current.has(msg.id)) return false;
+    const lastRead = readTimestampsRef.current[msg.channel];
+    if (lastRead && new Date(msg.created_at) <= new Date(lastRead)) return false;
+    return true;
+  }, [user]);
+
+  const triggerNotification = useCallback((msg: Message, isRealtime: boolean) => {
     if (!user) return;
-    if (processedMsgIds.current.has(newMsg.id)) return;
-    processedMsgIds.current.add(newMsg.id);
-
-    // Ignorar se a mensagem foi enviada pelo próprio usuário
-    if (newMsg.sender_name === user.name) return;
-
-    // Verificar se a mensagem já foi lida (baseado no localStorage)
-    const channelLastRead = readTimestampsRef.current[newMsg.channel];
-    if (channelLastRead && new Date(newMsg.created_at) <= new Date(channelLastRead)) {
-      return; // Já foi lida no passado
-    }
-
-    // Se o canal estiver aberto, atualiza o timestamp e não incrementa
-    if (isOpen && activeContact?.id === newMsg.channel) {
-      updateChannelReadTimestamp(newMsg.channel);
+    if (!isMessageUnread(msg)) return;
+    processedMsgIds.current.add(msg.id);
+    if (isOpenRef.current && activeContactRef.current?.id === msg.channel) {
+      markChannelRead(msg.channel);
       return;
     }
-
-    // Incrementar contador global e contador específico do canal/contato pendente
     setUnreadCount(prev => prev + 1);
-    setContactUnreadMap(prev => ({
-      ...prev,
-      [newMsg.channel]: (prev[newMsg.channel] || 0) + 1
-    }));
-
-    // Tocar sinal sonoro e notificar apenas para novas mensagens em tempo real
+    setContactUnreadMap(prev => ({ ...prev, [msg.channel]: (prev[msg.channel] || 0) + 1 }));
     if (isRealtime) {
       playChimeSound();
-
-      // Notificar no ícone de Sino do Sistema
       window.dispatchEvent(new CustomEvent('new-chat-message', {
         detail: {
-          title: `💬 Mensagem de ${newMsg.sender_name}`,
-          description: `"${newMsg.content.substring(0, 50)}${newMsg.content.length > 50 ? '...' : ''}"`
+          title: `Mensagem de ${msg.sender_name}`,
+          description: `"${msg.content.substring(0, 50)}${msg.content.length > 50 ? '...' : ''}"`
         }
       }));
     }
-  };
+  }, [user, isMessageUnread, markChannelRead]);
 
-  // Fetch therapists to build contact list
   useEffect(() => {
     supabase.from('therapists').select('id, name, specialty').eq('active', true).then(({ data }) => {
       setTherapists(data || []);
     });
   }, []);
 
-  // Build therapistContacts early so useEffect below can use it
   const therapistContacts: Contact[] = useMemo(() => therapists.map(t => ({
     id: t.id,
     name: t.name,
@@ -124,18 +136,13 @@ export default function InternalChat() {
     color: 'bg-violet-500',
   })), [therapists]);
 
-  // Listen for external trigger (e.g. from session list buttons)
   useEffect(() => {
     const handler = (e: Event) => {
-      const { contactId, name, role } = (e as CustomEvent).detail;
-      // Find in static departments first
+      const { contactId } = (e as CustomEvent).detail;
       const dept = DEPARTMENT_CONTACTS.find(c => c.id === contactId);
-      if (dept) {
-        handleOpenContact(dept);
-      } else {
-        // Try therapists
+      if (dept) { openContact(dept); } else {
         const t = therapistContacts.find(c => c.id === contactId);
-        if (t) handleOpenContact(t);
+        if (t) openContact(t);
       }
       setIsOpen(true);
     };
@@ -143,198 +150,146 @@ export default function InternalChat() {
     return () => window.removeEventListener('open-internal-chat', handler);
   }, [therapistContacts]);
 
-  // Subscribe to realtime messages
   useEffect(() => {
-    const channel = supabase.channel('public:internal_messages')
+    const channel = supabase
+      .channel('internal_messages:realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'internal_messages' }, (payload) => {
         const newMsg = payload.new as Message;
-        setMessages((prev) => {
-          if (prev.find(m => m.id === newMsg.id)) return prev;
-          return [...prev, newMsg];
-        });
-        
-        triggerIncomingNotification(newMsg, true);
+        if (activeContactRef.current?.id === newMsg.channel) {
+          setMessages(prev => {
+            if (prev.find(m => m.id === newMsg.id)) return prev;
+            return [...prev, newMsg];
+          });
+        }
+        triggerNotification(newMsg, true);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [isOpen, activeContact, user]);
+  }, [triggerNotification]);
 
-  // Subscribe to online presence
   useEffect(() => {
     if (!user) return;
-    const room = supabase.channel('online-users');
-
+    const room = supabase.channel('presence:online-users', { config: { presence: { key: user.id } } });
     room
       .on('presence', { event: 'sync' }, () => {
-        const state = room.presenceState();
-        const users = [];
-        for (const id of Object.keys(state)) {
-          if (state[id].length > 0) {
-             users.push(state[id][0]);
-          }
+        const state = room.presenceState<PresenceUser>();
+        const users: PresenceUser[] = [];
+        for (const key of Object.keys(state)) {
+          const presences = state[key] as any[];
+          if (presences?.length > 0) users.push(presences[0] as PresenceUser);
         }
         setOnlineUsers(users);
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
+          const { data: therapistData } = await supabase
+            .from('therapists').select('id').eq('user_id', user.id).maybeSingle();
           await room.track({
-            id: user.id,
-            name: user.name,
-            role: user.role
-          });
+            id: user.id, name: user.name, role: user.role,
+            therapist_id: therapistData?.id ?? null,
+          } as PresenceUser);
         }
       });
-
-    return () => {
-      supabase.removeChannel(room);
-    };
+    return () => { supabase.removeChannel(room); };
   }, [user]);
 
-  // Fetch messages when opening a channel with polling fallback
   useEffect(() => {
     if (!activeContact) return;
-
-    const fetchChannelMessages = async () => {
+    const fetchMessages = async () => {
       const { data, error } = await supabase
-        .from('internal_messages')
-        .select('*')
+        .from('internal_messages').select('*')
         .eq('channel', activeContact.id)
-        .order('created_at', { ascending: true })
-        .limit(100);
-      
+        .order('created_at', { ascending: true }).limit(100);
       if (!error && data) {
         setMessages(data);
+        data.forEach((m: Message) => processedMsgIds.current.add(m.id));
       }
     };
-
-    fetchChannelMessages();
-    const interval = setInterval(fetchChannelMessages, 4000);
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 5000);
     return () => clearInterval(interval);
   }, [activeContact]);
 
-  // Polling silencioso de histórico para registrar IDs já existentes sem abrir o popup automaticamente
   useEffect(() => {
-    if (!user) return;
-
-    // Carregar timestamps do localStorage
-    const stored = localStorage.getItem(`internalChat_readTimestamps_${user.id}`);
-    if (stored) {
-      readTimestampsRef.current = JSON.parse(stored);
-    }
-
-    const checkNewGlobalMessages = async () => {
-      const { data } = await supabase
-        .from('internal_messages')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      
-      if (data) {
-        // Primeiro passe: marcar como processadas todas as mensagens já lidas
-        // para evitar que contem como pendentes ao recarregar a página
-        data.forEach((msg: Message) => {
-          const channelLastRead = readTimestampsRef.current[msg.channel];
-          if (channelLastRead && new Date(msg.created_at) <= new Date(channelLastRead)) {
-            processedMsgIds.current.add(msg.id);
-          }
-          // Também marca as próprias mensagens do usuário como já processadas
-          if (msg.sender_name === user.name) {
-            processedMsgIds.current.add(msg.id);
-          }
-        });
-
-        // Segundo passe: processar apenas mensagens realmente não lidas
-        data.reverse().forEach((msg: Message) => {
-          triggerIncomingNotification(msg, false);
-        });
-      }
+    if (!user?.id) return;
+    const stored = localStorage.getItem(READ_KEY(user.id));
+    if (stored) { try { readTimestampsRef.current = JSON.parse(stored); } catch {} }
+    const countUnread = async () => {
+      const { data } = await supabase.from('internal_messages').select('*')
+        .order('created_at', { ascending: false }).limit(50);
+      if (!data) return;
+      data.forEach((msg: Message) => {
+        const isOwn = msg.sender_id === user.id || (!msg.sender_id && msg.sender_name === user.name);
+        const lastRead = readTimestampsRef.current[msg.channel];
+        const alreadyRead = lastRead && new Date(msg.created_at) <= new Date(lastRead);
+        if (isOwn || alreadyRead) processedMsgIds.current.add(msg.id);
+      });
+      const unreadMap: Record<string, number> = {};
+      data.forEach((msg: Message) => {
+        if (!processedMsgIds.current.has(msg.id)) {
+          unreadMap[msg.channel] = (unreadMap[msg.channel] || 0) + 1;
+          processedMsgIds.current.add(msg.id);
+        }
+      });
+      setContactUnreadMap(unreadMap);
+      setUnreadCount(Object.values(unreadMap).reduce((a, b) => a + b, 0));
     };
-
-    checkNewGlobalMessages();
-  }, [user]);
+    countUnread();
+  }, [user?.id]);
 
   useEffect(() => {
-    if (isOpen && view === 'chat') {
-      setUnreadCount(0);
-      if (activeContact) {
-        updateChannelReadTimestamp(activeContact.id);
-      }
+    if (isOpen && view === 'chat' && activeContact) {
+      markChannelRead(activeContact.id);
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }
-  }, [isOpen, view, messages, activeContact]);
+  }, [isOpen, view, messages, activeContact, markChannelRead]);
 
-  const handleOpenContact = (contact: Contact) => {
+  const openContact = (contact: Contact) => {
     setActiveContact(contact);
     setMessages([]);
     setView('chat');
-    
-    // Marcar como lido
-    updateChannelReadTimestamp(contact.id);
-
-    // Limpar badge de pendente deste contato específico
-    setContactUnreadMap(prev => {
-      const count = prev[contact.id] || 0;
-      if (count > 0) {
-        setUnreadCount(total => Math.max(0, total - count));
-      }
-      return { ...prev, [contact.id]: 0 };
-    });
+    markChannelRead(contact.id);
   };
 
-  const handleBack = () => {
-    setView('contacts');
-    setActiveContact(null);
-    setMessages([]);
-  };
+  const handleBack = () => { setView('contacts'); setActiveContact(null); setMessages([]); };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !user || !activeContact) return;
-    
     const content = newMessage.trim();
     setNewMessage('');
-
-    // Atualização Otimista (UI instantânea)
     const tempMsg: Message = {
-      id: `temp-${Date.now()}`,
-      sender_name: user.name || 'Usuário',
-      sender_role: user.role || 'Membro',
-      content,
-      channel: activeContact.id,
-      created_at: new Date().toISOString()
+      id: `temp-${Date.now()}`, sender_id: user.id,
+      sender_name: user.name || 'Usuario', sender_role: user.role || 'Membro',
+      content, channel: activeContact.id, created_at: new Date().toISOString()
     };
-
     setMessages(prev => [...prev, tempMsg]);
-
+    processedMsgIds.current.add(tempMsg.id);
     const { error } = await supabase.from('internal_messages').insert({
-      sender_name: user.name || 'Usuário',
-      sender_role: user.role || 'Membro',
-      content,
-      channel: activeContact.id,
+      sender_id: user.id, sender_name: user.name || 'Usuario',
+      sender_role: user.role || 'Membro', content, channel: activeContact.id,
     });
-
     if (error) {
-      console.error("Erro ao enviar mensagem interna:", error);
-      alert('Erro ao enviar mensagem. Certifique-se de executar o script SQL supabase_internal_messages.sql no Supabase.');
+      console.error('Erro ao enviar mensagem interna:', error);
+      alert('Erro ao enviar mensagem. Verifique o script supabase_internal_messages.sql no Supabase.');
     }
   };
 
-  const allContacts = [...DEPARTMENT_CONTACTS, ...therapistContacts];
+  const isDeptOnline = (dept: Contact) => onlineUsers.some(u => u.id !== user?.id && u.role === dept.id);
+  const isTherapistOnline = (contact: Contact) => onlineUsers.some(u => u.therapist_id === contact.id || u.id === contact.id);
+  const onlineCount = onlineUsers.filter(u => u.id !== user?.id).length;
 
   return (
     <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end">
-      {/* Chat Window */}
       {isOpen && (
-        <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-[360px] sm:w-[400px] h-[540px] mb-4 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-300">
-
-          {/* ── HEADER ── */}
+        <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-[360px] sm:w-[400px] h-[560px] mb-4 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-300">
           <div className="bg-indigo-600 px-5 py-4 text-white flex items-center gap-3">
             {view === 'chat' && (
               <button onClick={handleBack} className="p-1.5 hover:bg-white/20 rounded-full transition-colors">
                 <ChevronLeft className="w-5 h-5" />
               </button>
             )}
-            <div className={cn("w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0", view === 'chat' && activeContact ? activeContact.color : 'bg-white/20')}>
+            <div className={cn('w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0', view === 'chat' && activeContact ? activeContact.color : 'bg-white/20')}>
               {view === 'chat' && activeContact ? activeContact.icon : <MessageSquare className="w-5 h-5 text-white" />}
             </div>
             <div className="flex-1 min-w-0">
@@ -342,7 +297,7 @@ export default function InternalChat() {
                 {view === 'chat' && activeContact ? activeContact.name : 'Chat da Clínica'}
               </h3>
               <p className="text-[10px] text-indigo-200 uppercase tracking-widest font-bold mt-0.5">
-                {view === 'chat' && activeContact ? activeContact.role : 'Comunicação Interna'}
+                {view === 'chat' && activeContact ? activeContact.role : onlineCount > 0 ? `${onlineCount} online agora` : 'Comunicação Interna'}
               </p>
             </div>
             <button onClick={() => setIsOpen(false)} className="p-1.5 hover:bg-white/20 rounded-full transition-colors flex-shrink-0">
@@ -350,37 +305,28 @@ export default function InternalChat() {
             </button>
           </div>
 
-          {/* ── CONTACT LIST ── */}
           {view === 'contacts' && (
             <div className="flex-1 overflow-y-auto">
-              {/* Departments */}
               <div className="px-4 pt-4 pb-1">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Departamentos</p>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">DEPARTAMENTOS</p>
                 <div className="space-y-1">
                   {DEPARTMENT_CONTACTS.map(c => {
                     const unread = contactUnreadMap[c.id] || 0;
-                    // Para departamentos, consideramos online se houver algum usuário com a role correspondente (que não seja o próprio usuário logado)
-                    const isOnline = onlineUsers.some(u => u.role === c.role && u.id !== user?.id);
-                    
+                    const isOnline = isDeptOnline(c);
                     return (
-                      <button
-                        key={c.id}
-                        onClick={() => handleOpenContact(c)}
-                        className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-indigo-50 transition-all text-left group"
-                      >
+                      <button key={c.id} onClick={() => openContact(c)} className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-indigo-50 transition-all text-left group">
                         <div className="flex items-center gap-3">
-                          <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-white flex-shrink-0 relative", c.color)}>
+                          <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-white flex-shrink-0 relative', c.color)}>
                             {c.icon}
-                            {isOnline && (
-                               <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full"></div>
-                            )}
+                            {isOnline && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-400 border-2 border-white rounded-full shadow-sm" />}
                           </div>
                           <div>
                             <p className="font-bold text-slate-800 text-sm group-hover:text-indigo-700">{c.name}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase">{c.role}</p>
+                            <p className={cn('text-[10px] font-bold uppercase', isOnline ? 'text-emerald-500' : 'text-slate-400')}>
+                              {isOnline ? '● Online' : c.role}
+                            </p>
                           </div>
                         </div>
-
                         {unread > 0 && (
                           <span className="px-2 py-0.5 bg-rose-500 text-white rounded-full text-[10px] font-extrabold shadow-sm animate-pulse">
                             {unread} pendente{unread > 1 ? 's' : ''}
@@ -391,36 +337,27 @@ export default function InternalChat() {
                   })}
                 </div>
               </div>
-
-              {/* Therapists */}
               {therapistContacts.length > 0 && (
                 <div className="px-4 pt-3 pb-4">
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Terapeutas</p>
                   <div className="space-y-1">
                     {therapistContacts.map(c => {
                       const unread = contactUnreadMap[c.id] || 0;
-                      // Para terapeutas, consideramos online se o ID bater com algum logado
-                      const isOnline = onlineUsers.some(u => u.id === c.id);
-                      
+                      const isOnline = isTherapistOnline(c);
                       return (
-                        <button
-                          key={c.id}
-                          onClick={() => handleOpenContact(c)}
-                          className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-violet-50 transition-all text-left group"
-                        >
+                        <button key={c.id} onClick={() => openContact(c)} className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-violet-50 transition-all text-left group">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-violet-500 flex items-center justify-center text-white flex-shrink-0 font-bold text-sm relative">
                               {c.name.charAt(0)}
-                              {isOnline && (
-                                 <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full"></div>
-                              )}
+                              {isOnline && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-400 border-2 border-white rounded-full shadow-sm" />}
                             </div>
                             <div>
                               <p className="font-bold text-slate-800 text-sm group-hover:text-violet-700">{c.name}</p>
-                              <p className="text-[10px] text-slate-400 font-bold uppercase">{c.role}</p>
+                              <p className={cn('text-[10px] font-bold uppercase', isOnline ? 'text-emerald-500' : 'text-slate-400')}>
+                                {isOnline ? '● Online' : c.role}
+                              </p>
                             </div>
                           </div>
-
                           {unread > 0 && (
                             <span className="px-2 py-0.5 bg-rose-500 text-white rounded-full text-[10px] font-extrabold shadow-sm animate-pulse">
                               {unread} pendente{unread > 1 ? 's' : ''}
@@ -435,7 +372,6 @@ export default function InternalChat() {
             </div>
           )}
 
-          {/* ── CHAT MESSAGES ── */}
           {view === 'chat' && (
             <>
               <div className="flex-1 overflow-y-auto p-4 bg-slate-50 space-y-4">
@@ -446,20 +382,19 @@ export default function InternalChat() {
                     <p className="text-xs text-center text-slate-300">Seja o primeiro a enviar uma mensagem!</p>
                   </div>
                 ) : messages.map((msg) => {
-                  const isMe = msg.sender_name === user?.name;
+                  const isMe = (msg.sender_id && msg.sender_id === user?.id) || msg.sender_name === user?.name;
                   return (
-                    <div key={msg.id} className={cn("flex flex-col", isMe ? "items-end" : "items-start")}>
+                    <div key={msg.id} className={cn('flex flex-col', isMe ? 'items-end' : 'items-start')}>
                       {!isMe && (
                         <div className="flex items-center gap-1.5 mb-1">
                           <span className="text-[10px] font-bold text-slate-500">{msg.sender_name}</span>
-                          <span className={cn("text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-md",
+                          <span className={cn('text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-md',
                             msg.sender_role === 'terapeuta' ? 'bg-violet-100 text-violet-700' : 'bg-indigo-100 text-indigo-700'
                           )}>{msg.sender_role}</span>
                         </div>
                       )}
-                      <div className={cn(
-                        "px-4 py-2.5 rounded-2xl max-w-[85%] text-sm font-medium shadow-sm",
-                        isMe ? "bg-indigo-600 text-white rounded-tr-sm" : "bg-white border border-slate-200 text-slate-700 rounded-tl-sm"
+                      <div className={cn('px-4 py-2.5 rounded-2xl max-w-[85%] text-sm font-medium shadow-sm',
+                        isMe ? 'bg-indigo-600 text-white rounded-tr-sm' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm'
                       )}>
                         {msg.content}
                       </div>
@@ -471,23 +406,16 @@ export default function InternalChat() {
                 })}
                 <div ref={messagesEndRef} />
               </div>
-
-              {/* Input */}
               <div className="p-4 bg-white border-t border-slate-100">
                 <form onSubmit={handleSend} className="flex items-center gap-2">
                   <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
+                    type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)}
                     placeholder={`Mensagem para ${activeContact?.name}...`}
                     className="flex-1 bg-slate-100 border-none outline-none rounded-full px-5 py-3 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500"
                     autoFocus
                   />
-                  <button
-                    type="submit"
-                    disabled={!newMessage.trim()}
-                    className="p-3 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md"
-                  >
+                  <button type="submit" disabled={!newMessage.trim()}
+                    className="p-3 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md">
                     <Send className="w-4 h-4" />
                   </button>
                 </form>
@@ -497,16 +425,16 @@ export default function InternalChat() {
         </div>
       )}
 
-      {/* Floating Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-16 h-16 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-xl shadow-indigo-200 hover:bg-indigo-700 hover:scale-105 transition-all relative"
-      >
+      <button onClick={() => setIsOpen(!isOpen)}
+        className="w-16 h-16 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-xl shadow-indigo-200 hover:bg-indigo-700 hover:scale-105 transition-all relative">
         {isOpen ? <X className="w-6 h-6" /> : <MessageSquare className="w-6 h-6" />}
         {!isOpen && unreadCount > 0 && (
           <div className="absolute -top-1 -right-1 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center text-[11px] font-black border-2 border-white animate-bounce">
             {unreadCount > 99 ? '99+' : unreadCount}
           </div>
+        )}
+        {!isOpen && onlineCount > 0 && unreadCount === 0 && (
+          <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-400 border-2 border-white rounded-full" />
         )}
       </button>
     </div>

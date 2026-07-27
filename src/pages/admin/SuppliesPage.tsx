@@ -17,6 +17,12 @@ export default function SuppliesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [newItem, setNewItem] = useState({ name: '', category: 'Higiene', stock: '', minStock: '', price: '' });
   const [stockAmount, setStockAmount] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
+  const handleDelete = (id: number) => {
+    setItems(items.filter(i => i.id !== id));
+    setConfirmDeleteId(null);
+  };
 
   const handleSaveItem = () => {
     if (editingId) {
@@ -188,12 +194,20 @@ export default function SuppliesPage() {
                        >
                          Saída
                        </button>
-                       <button 
-                         onClick={() => handleEdit(item)}
-                         className="p-2 text-slate-300 hover:text-indigo-600 transition-colors"
-                       >
-                         <Edit className="w-5 h-5" />
-                       </button>
+                        <button 
+                          onClick={() => handleEdit(item)}
+                          className="p-2 text-slate-300 hover:text-indigo-600 transition-colors"
+                          title="Editar insumo"
+                        >
+                          <Edit className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => setConfirmDeleteId(item.id)}
+                          className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                          title="Excluir insumo"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
                     </div>
                   </td>
                 </tr>
@@ -311,6 +325,40 @@ export default function SuppliesPage() {
           </div>
         </div>
       )}
+
+      {/* Modal: Confirmar Exclusão */}
+      {confirmDeleteId !== null && (() => {
+        const item = items.find(i => i.id === confirmDeleteId);
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl space-y-6 animate-in zoom-in-95 duration-300">
+              <div className="flex flex-col items-center text-center space-y-4">
+                <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center">
+                  <Trash2 className="w-8 h-8 text-rose-500" />
+                </div>
+                <h3 className="text-xl font-black text-slate-900">Excluir Insumo?</h3>
+                <p className="text-sm text-slate-500 font-medium">
+                  Tem certeza que deseja excluir <span className="font-bold text-slate-800">{item?.name}</span>? Esta ação não pode ser desfeita.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="flex-1 py-3 border border-slate-200 rounded-2xl font-bold text-slate-600 hover:bg-slate-50 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => handleDelete(confirmDeleteId)}
+                  className="flex-1 py-3 bg-rose-600 text-white rounded-2xl font-bold hover:bg-rose-700 transition-all shadow-lg shadow-rose-100"
+                >
+                  Sim, excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
