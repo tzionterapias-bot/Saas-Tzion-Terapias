@@ -26,23 +26,16 @@ export async function sendWhatsAppMessage(
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token || '';
 
-        // Sempre envia direto pela Evolution API via Proxy (evita conflito com o webhook da IA)
-        console.log('[WHATSAPP] Enviando direto pela Evolution API via Proxy...');
-        let endpoint = `${EVOLUTION_API_URL}/sendText/${EVOLUTION_INSTANCE}`;
-        let body: any = {
-          number: waNumber,
-          text: message,
-          options: { delay: 1200, presence: 'composing' }
-        };
-
+        // Mídia: envia direto pela Evolution API via Proxy
         if (mediaAttachment) {
-          endpoint = `${EVOLUTION_API_URL}/sendMedia/${EVOLUTION_INSTANCE}`;
+          console.log('[WHATSAPP] Enviando mídia direto pela Evolution API via Proxy...');
+          const endpoint = `${EVOLUTION_API_URL}/sendMedia/${EVOLUTION_INSTANCE}`;
           let mediaType = 'document';
           if (mediaAttachment.mimeType.startsWith('image/')) mediaType = 'image';
           if (mediaAttachment.mimeType.startsWith('video/')) mediaType = 'video';
           if (mediaAttachment.mimeType.startsWith('audio/')) mediaType = 'audio';
 
-          body = {
+          const body = {
             number: waNumber,
             options: { delay: 1200, presence: 'composing' },
             mediatype: mediaType,
@@ -51,21 +44,45 @@ export async function sendWhatsAppMessage(
             media: mediaAttachment.base64.split(',')[1] || mediaAttachment.base64,
             fileName: mediaAttachment.fileName || 'arquivo'
           };
-        }
 
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify(body)
-        });
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(body)
+          });
 
-        if (response.ok) {
-          status = 'sent';
+          if (response.ok) {
+            status = 'sent';
+          } else {
+            console.error('Falha no envio de mídia via Proxy:', await response.text());
+          }
         } else {
-          console.error('Falha no envio via Proxy de WhatsApp:', await response.text());
+          // Texto: envia via nó ATENDIMENTO DASHBOARD do n8n (que chama a Evolution API internamente)
+          const dashboardWebhookUrl = import.meta.env.VITE_N8N_DASHBOARD_WEBHOOK_URL || n8nWebhookUrl;
+          console.log('[WHATSAPP] Enviando via Webhook ATENDIMENTO DASHBOARD n8n...');
+          const response = await fetch('/api/n8n-proxy', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              webhookUrl: dashboardWebhookUrl,
+              payload: {
+                phone: waNumber,
+                message: message
+              }
+            })
+          });
+
+          if (response.ok) {
+            status = 'sent';
+          } else {
+            console.error('Falha no envio via Webhook n8n Dashboard:', await response.text());
+          }
         }
       } catch (err) {
         console.error('Erro de rede ao chamar a API de WhatsApp:', err);
