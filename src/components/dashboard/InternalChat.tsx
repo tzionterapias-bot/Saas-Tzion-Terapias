@@ -55,8 +55,17 @@ export default function InternalChat() {
   const [newMessage, setNewMessage] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const [contactUnreadMap, setContactUnreadMap] = useState<Record<string, number>>({});
+  const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const processedMsgIds = useRef<Set<string>>(new Set());
+  const readTimestampsRef = useRef<Record<string, string>>({});
+
+  const updateChannelReadTimestamp = (channelId: string) => {
+    if (!user?.id) return;
+    const now = new Date().toISOString();
+    readTimestampsRef.current[channelId] = now;
+    localStorage.setItem(`internalChat_readTimestamps_${user.id}`, JSON.stringify(readTimestampsRef.current));
+  };
 
   const triggerIncomingNotification = (newMsg: Message, isRealtime = false) => {
     if (!user) return;
@@ -66,14 +75,24 @@ export default function InternalChat() {
     // Ignorar se a mensagem foi enviada pelo próprio usuário
     if (newMsg.sender_name === user.name) return;
 
-    // Incrementar contador global e contador específico do canal/contato pendente
-    if (!isOpen || activeContact?.id !== newMsg.channel) {
-      setUnreadCount(prev => prev + 1);
-      setContactUnreadMap(prev => ({
-        ...prev,
-        [newMsg.channel]: (prev[newMsg.channel] || 0) + 1
-      }));
+    // Verificar se a mensagem já foi lida (baseado no localStorage)
+    const channelLastRead = readTimestampsRef.current[newMsg.channel];
+    if (channelLastRead && new Date(newMsg.created_at) <= new Date(channelLastRead)) {
+      return; // Já foi lida no passado
     }
+
+    // Se o canal estiver aberto, atualiza o timestamp e não incrementa
+    if (isOpen && activeContact?.id === newMsg.channel) {
+      updateChannelReadTimestamp(newMsg.channel);
+      return;
+    }
+
+    // Incrementar contador global e contador específico do canal/contato pendente
+    setUnreadCount(prev => prev + 1);
+    setContactUnreadMap(prev => ({
+      ...prev,
+      [newMsg.channel]: (prev[newMsg.channel] || 0) + 1
+    }));
 
     // Tocar sinal sonoro e notificar apenas para novas mensagens em tempo real
     if (isRealtime) {
@@ -140,6 +159,37 @@ export default function InternalChat() {
     return () => { supabase.removeChannel(channel); };
   }, [isOpen, activeContact, user]);
 
+  // Subscribe to online presence
+  useEffect(() => {
+    if (!user) return;
+    const room = supabase.channel('online-users');
+
+    room
+      .on('presence', { event: 'sync' }, () => {
+        const state = room.presenceState();
+        const users = [];
+        for (const id of Object.keys(state)) {
+          if (state[id].length > 0) {
+             users.push(state[id][0]);
+          }
+        }
+        setOnlineUsers(users);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await room.track({
+            id: user.id,
+            name: user.name,
+            role: user.role
+          });
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(room);
+    };
+  }, [user]);
+
   // Fetch messages when opening a channel with polling fallback
   useEffect(() => {
     if (!activeContact) return;
@@ -165,6 +215,13 @@ export default function InternalChat() {
   // Polling silencioso de histórico para registrar IDs já existentes sem abrir o popup automaticamente
   useEffect(() => {
     if (!user) return;
+
+    // Carregar timestamps do localStorage
+    const stored = localStorage.getItem(`internalChat_readTimestamps_${user.id}`);
+    if (stored) {
+      readTimestampsRef.current = JSON.parse(stored);
+    }
+
     const checkNewGlobalMessages = async () => {
       const { data } = await supabase
         .from('internal_messages')
@@ -185,15 +242,21 @@ export default function InternalChat() {
   useEffect(() => {
     if (isOpen && view === 'chat') {
       setUnreadCount(0);
+      if (activeContact) {
+        updateChannelReadTimestamp(activeContact.id);
+      }
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }
-  }, [isOpen, view, messages]);
+  }, [isOpen, view, messages, activeContact]);
 
   const handleOpenContact = (contact: Contact) => {
     setActiveContact(contact);
     setMessages([]);
     setView('chat');
     
+    // Marcar como lido
+    updateChannelReadTimestamp(contact.id);
+
     // Limpar badge de pendente deste contato específico
     setContactUnreadMap(prev => {
       const count = prev[contact.id] || 0;
@@ -282,6 +345,9 @@ export default function InternalChat() {
                 <div className="space-y-1">
                   {DEPARTMENT_CONTACTS.map(c => {
                     const unread = contactUnreadMap[c.id] || 0;
+                    // Para departamentos, consideramos online se houver algum usuário com a role correspondente (que não seja o próprio usuário logado)
+                    const isOnline = onlineUsers.some(u => u.role === c.role && u.id !== user?.id);
+                    
                     return (
                       <button
                         key={c.id}
@@ -289,8 +355,11 @@ export default function InternalChat() {
                         className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-indigo-50 transition-all text-left group"
                       >
                         <div className="flex items-center gap-3">
-                          <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-white flex-shrink-0", c.color)}>
+                          <div className={cn("w-10 h-10 rounded-full flex items-center justify-center text-white flex-shrink-0 relative", c.color)}>
                             {c.icon}
+                            {isOnline && (
+                               <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full"></div>
+                            )}
                           </div>
                           <div>
                             <p className="font-bold text-slate-800 text-sm group-hover:text-indigo-700">{c.name}</p>
@@ -316,6 +385,9 @@ export default function InternalChat() {
                   <div className="space-y-1">
                     {therapistContacts.map(c => {
                       const unread = contactUnreadMap[c.id] || 0;
+                      // Para terapeutas, consideramos online se o ID bater com algum logado
+                      const isOnline = onlineUsers.some(u => u.id === c.id);
+                      
                       return (
                         <button
                           key={c.id}
@@ -323,8 +395,11 @@ export default function InternalChat() {
                           className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-violet-50 transition-all text-left group"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-violet-500 flex items-center justify-center text-white flex-shrink-0 font-bold text-sm">
+                            <div className="w-10 h-10 rounded-full bg-violet-500 flex items-center justify-center text-white flex-shrink-0 font-bold text-sm relative">
                               {c.name.charAt(0)}
+                              {isOnline && (
+                                 <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full"></div>
+                              )}
                             </div>
                             <div>
                               <p className="font-bold text-slate-800 text-sm group-hover:text-violet-700">{c.name}</p>

@@ -135,11 +135,12 @@ export default function EvolutionManager() {
   const handleGenerateQR = async (inst: Instance) => {
     try {
       setLoading(inst.id);
-      const result = await evolutionService.setupNewCustomerInstance(inst.name, inst.id);
-      const base64 = await evolutionService.getQRCode(result.instanceName);
+      // Como a instância já existe (ela veio de fetchInstances), só precisamos pegar o QR Code
+      const base64 = await evolutionService.getQRCode(inst.name);
       setShowQR({ id: inst.id, base64 });
     } catch (error) {
       console.error('Erro ao gerar QR Code:', error);
+      handleShowToast('Erro ao obter o QR Code. Tente novamente.', 'error');
     } finally {
       setLoading(null);
     }

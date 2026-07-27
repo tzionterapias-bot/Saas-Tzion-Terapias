@@ -41,6 +41,7 @@ export default function TherapistPage() {
   const [activeTemplate, setActiveTemplate] = useState<any>(null);
   const [isResponsible, setIsResponsible] = useState<boolean>(false);
   const [showSessionLoggerModal, setShowSessionLoggerModal] = useState<boolean>(false);
+  const [currentGoal, setCurrentGoal] = useState<any>(null);
   
   // Filter State
   const [periodFilter, setPeriodFilter] = useState('mes'); // 'mes', 'trimestre', 'ano'
@@ -172,7 +173,13 @@ export default function TherapistPage() {
           .eq('therapist_id', therapistId)
           .eq('type', 'income')
           .eq('status', 'paid')
-          .order('created_at', { ascending: false }))
+          .order('created_at', { ascending: false })),
+        Promise.resolve(supabase.from('therapist_goals')
+          .select('*')
+          .eq('therapist_id', therapistId)
+          .eq('month', new Date().getMonth() + 1)
+          .eq('year', new Date().getFullYear())
+          .maybeSingle())
       ];
 
       if (loadStatic) {
@@ -186,11 +193,12 @@ export default function TherapistPage() {
       const comRes = results[1];
       const payoutsDataRes = results[2];
       const paymentsDataRes = results[3];
+      const goalRes = results[4];
 
       if (loadStatic) {
-        const patRes = results[4];
-        const profRes = results[5];
-        const roomsRes = results[6];
+        const patRes = results[5];
+        const profRes = results[6];
+        const roomsRes = results[7];
 
         setAssignedPatients(patRes?.data || []);
         if (roomsRes?.data) setRooms(roomsRes.data);
@@ -255,6 +263,7 @@ export default function TherapistPage() {
       setCommissions(comRes.data || []);
       setPayouts(payoutsDataRes.data || []);
       setTherapistPayments(paymentsDataRes.data || []);
+      setCurrentGoal(goalRes?.data || null);
 
     } catch (error) {
       console.error('Error fetching therapist data:', error);
@@ -1421,6 +1430,46 @@ export default function TherapistPage() {
               <p className="text-xs text-slate-500 font-medium leading-relaxed">
                 Você tem {appointments.filter(a => a.type === 'Presencial').length} atendimentos presenciais hoje.
               </p>
+            </div>
+            <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-[2.5rem] p-8 text-white shadow-xl space-y-6">
+              <div className="flex items-center justify-between">
+                <h4 className="text-lg font-bold">Minha Meta do Mês</h4>
+                <Award className="w-6 h-6 text-indigo-300" />
+              </div>
+              
+              {!currentGoal ? (
+                 <p className="text-sm text-indigo-200 font-medium">Você ainda não possui uma meta definida para este mês. Fale com a administração.</p>
+              ) : (
+                <>
+                  {currentGoal.target_revenue > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm font-medium">
+                        <span className="text-indigo-200">Financeiro</span>
+                        <span>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentGoal.current_revenue || 0)} / {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(currentGoal.target_revenue)}</span>
+                      </div>
+                      <div className="w-full bg-indigo-900/50 rounded-full h-2">
+                        <div className="bg-emerald-400 h-2 rounded-full transition-all duration-1000" style={{ width: `${Math.min(100, ((currentGoal.current_revenue || 0) / currentGoal.target_revenue) * 100)}%` }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {currentGoal.target_sessions > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm font-medium">
+                        <span className="text-indigo-200">Sessões</span>
+                        <span>{currentGoal.current_sessions || 0} / {currentGoal.target_sessions}</span>
+                      </div>
+                      <div className="w-full bg-indigo-900/50 rounded-full h-2">
+                        <div className="bg-sky-400 h-2 rounded-full transition-all duration-1000" style={{ width: `${Math.min(100, ((currentGoal.current_sessions || 0) / currentGoal.target_sessions) * 100)}%` }} />
+                      </div>
+                    </div>
+                  )}
+                  
+                  {(!currentGoal.target_revenue && !currentGoal.target_sessions) && (
+                     <p className="text-sm text-indigo-200 font-medium">A sua meta para este mês foi configurada como zero.</p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
