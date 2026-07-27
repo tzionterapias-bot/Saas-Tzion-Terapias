@@ -26,71 +26,46 @@ export async function sendWhatsAppMessage(
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token || '';
 
-        // Se tiver anexo ou não tiver n8n, envia direto pela Evolution API via Proxy
-        if (mediaAttachment || !n8nWebhookUrl) {
-          console.log('[WHATSAPP] Enviando direto pela Evolution API via Proxy...');
-          let endpoint = `${EVOLUTION_API_URL}/sendText/${EVOLUTION_INSTANCE}`;
-          let body: any = {
+        // Sempre envia direto pela Evolution API via Proxy (evita conflito com o webhook da IA)
+        console.log('[WHATSAPP] Enviando direto pela Evolution API via Proxy...');
+        let endpoint = `${EVOLUTION_API_URL}/sendText/${EVOLUTION_INSTANCE}`;
+        let body: any = {
+          number: waNumber,
+          text: message,
+          options: { delay: 1200, presence: 'composing' }
+        };
+
+        if (mediaAttachment) {
+          endpoint = `${EVOLUTION_API_URL}/sendMedia/${EVOLUTION_INSTANCE}`;
+          let mediaType = 'document';
+          if (mediaAttachment.mimeType.startsWith('image/')) mediaType = 'image';
+          if (mediaAttachment.mimeType.startsWith('video/')) mediaType = 'video';
+          if (mediaAttachment.mimeType.startsWith('audio/')) mediaType = 'audio';
+
+          body = {
             number: waNumber,
-            text: message,
-            options: { delay: 1200, presence: 'composing' }
+            options: { delay: 1200, presence: 'composing' },
+            mediatype: mediaType,
+            mimetype: mediaAttachment.mimeType,
+            caption: message,
+            media: mediaAttachment.base64.split(',')[1] || mediaAttachment.base64,
+            fileName: mediaAttachment.fileName || 'arquivo'
           };
+        }
 
-          if (mediaAttachment) {
-            endpoint = `${EVOLUTION_API_URL}/sendMedia/${EVOLUTION_INSTANCE}`;
-            let mediaType = 'document';
-            if (mediaAttachment.mimeType.startsWith('image/')) mediaType = 'image';
-            if (mediaAttachment.mimeType.startsWith('video/')) mediaType = 'video';
-            if (mediaAttachment.mimeType.startsWith('audio/')) mediaType = 'audio';
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(body)
+        });
 
-            body = {
-              number: waNumber,
-              options: { delay: 1200, presence: 'composing' },
-              mediatype: mediaType,
-              mimetype: mediaAttachment.mimeType,
-              caption: message,
-              media: mediaAttachment.base64.split(',')[1] || mediaAttachment.base64,
-              fileName: mediaAttachment.fileName || 'arquivo'
-            };
-          }
-
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(body)
-          });
-
-          if (response.ok) {
-            status = 'sent';
-          } else {
-            console.error('Falha no envio via Proxy de WhatsApp:', await response.text());
-          }
+        if (response.ok) {
+          status = 'sent';
         } else {
-          // --- FLUXO N8N WEBHOOK Apenas para texto ---
-          console.log('[WHATSAPP] Enviando via Proxy Webhook n8n...');
-          const response = await fetch('/api/n8n-proxy', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              webhookUrl: n8nWebhookUrl,
-              payload: {
-                phone: waNumber,
-                message: message
-              }
-            })
-          });
-
-          if (response.ok) {
-            status = 'sent';
-          } else {
-            console.error('Falha no envio via Proxy de Webhook n8n:', await response.text());
-          }
+          console.error('Falha no envio via Proxy de WhatsApp:', await response.text());
         }
       } catch (err) {
         console.error('Erro de rede ao chamar a API de WhatsApp:', err);
