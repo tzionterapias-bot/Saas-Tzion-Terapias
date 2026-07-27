@@ -90,7 +90,7 @@ export const evolutionService = {
           webhook: {
             enabled: true,
             url: webhookUrl,
-            byEvents: true,
+            byEvents: false,
             events: ["MESSAGES_UPSERT"]
           }
         })
