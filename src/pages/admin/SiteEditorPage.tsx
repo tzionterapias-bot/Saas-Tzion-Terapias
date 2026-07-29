@@ -4,7 +4,7 @@ import {
   Globe, Save, Eye, ChevronRight, Plus, Trash2, Upload, X,
   Layout, Layers, Users, MessageSquare, MapPin, Sparkles,
   CheckCircle2, Loader2, Image, Type, Link, Phone, Mail,
-  Instagram, Facebook, Heart, Calendar, Clock, Shield, MessageCircle
+  Instagram, Facebook, Heart, Calendar, Clock, Shield, MessageCircle, BookOpen
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 
@@ -23,6 +23,17 @@ interface TeamMember {
   role: string;
   bio: string;
   photoUrl: string;
+}
+
+interface SiteProduct {
+  id: string;
+  title: string;
+  description: string;
+  price: number;
+  originalPrice: number;
+  coverUrl: string;
+  badge: string;
+  downloadUrl?: string;
 }
 
 interface SiteContent {
@@ -44,6 +55,11 @@ interface SiteContent {
     imageUrl: string;
   };
   services: SiteService[];
+  products: {
+    enabled: boolean;
+    sectionTitle: string;
+    items: SiteProduct[];
+  };
   team: {
     enabled: boolean;
     title: string;
@@ -98,6 +114,22 @@ const DEFAULT_CONTENT: SiteContent = {
     { id: 's5', icon: 'Clock', title: 'Ansiedade e Stress', desc: 'Estratégias práticas para lidar com a pressão e o ritmo do dia a dia.' },
     { id: 's6', icon: 'Calendar', title: 'Plantão Psicológico', desc: 'Atendimentos pontuais para situações de crise ou urgência emocional.' },
   ],
+  products: {
+    enabled: false,
+    sectionTitle: 'Materiais Exclusivos',
+    items: [
+      {
+        id: 'p1',
+        title: 'E-book: Desperte seu Potencial',
+        description: 'Desenvolva sua inteligência emocional, melhore seus relacionamentos e descubra o caminho para uma vida mais equilibrada com nosso material exclusivo.',
+        price: 47,
+        originalPrice: 97,
+        coverUrl: '',
+        badge: 'Lançamento Exclusivo',
+        downloadUrl: ''
+      }
+    ]
+  },
   team: {
     enabled: true,
     title: 'Nossa Equipe',
@@ -135,6 +167,7 @@ function ServiceIcon({ name, ...props }: { name: string; [k: string]: any }) {
 
 // ─── Section Labels ───────────────────────────────────────────────────────────
 const SECTIONS = [
+  { id: 'products', label: 'Produtos (E-books)', icon: Globe },
   { id: 'nav', label: 'Cabeçalho', icon: Layout },
   { id: 'hero', label: 'Banner Principal', icon: Sparkles },
   { id: 'services', label: 'Serviços', icon: Layers },
@@ -142,6 +175,78 @@ const SECTIONS = [
   { id: 'cta', label: 'Chamada p/ Ação', icon: MessageSquare },
   { id: 'footer', label: 'Rodapé', icon: MapPin },
 ];
+
+// ─── Currency Input ────────────────────────────────────────────────────────────
+function CurrencyInput({ value, onChange, label }: { value: number, onChange: (val: number) => void, label: string }) {
+  const [displayValue, setDisplayValue] = useState('');
+
+  useEffect(() => {
+    setDisplayValue((value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace('R$', '').trim());
+  }, [value]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let raw = e.target.value.replace(/\D/g, '');
+    if (!raw) raw = '0';
+    const num = parseInt(raw, 10) / 100;
+    setDisplayValue(num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  };
+
+  const handleBlur = () => {
+    let raw = displayValue.replace(/\D/g, '');
+    if (!raw) raw = '0';
+    onChange(parseInt(raw, 10) / 100);
+  };
+
+  return (
+    <Field label={label}>
+      <div className="relative">
+        <span className="absolute left-4 top-3 text-slate-400 font-bold">R$</span>
+        <input 
+          type="text" 
+          className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-medium" 
+          value={displayValue} 
+          onChange={handleChange}
+          onBlur={handleBlur}
+        />
+      </div>
+    </Field>
+  );
+}
+
+// ─── Image Upload Helper ──────────────────────────────────────────────────────
+const handleImageUpload = (file: File, callback: (base64: string) => void) => {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 600;
+      const MAX_HEIGHT = 600;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+      } else {
+        if (height > MAX_HEIGHT) {
+          width *= MAX_HEIGHT / height;
+          height = MAX_HEIGHT;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      callback(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.src = e.target?.result as string;
+  };
+  reader.readAsDataURL(file);
+};
 
 // ─── Main Editor ──────────────────────────────────────────────────────────────
 export default function SiteEditorPage() {
@@ -159,7 +264,15 @@ export default function SiteEditorPage() {
       setLoading(true);
       const { data } = await supabase.from('settings').select('value').eq('key', 'site_content').maybeSingle();
       if (data?.value) {
-        setContent({ ...DEFAULT_CONTENT, ...data.value });
+        setContent({ 
+          ...DEFAULT_CONTENT, 
+          ...data.value,
+          products: { 
+            ...DEFAULT_CONTENT.products, 
+            ...(data.value.products || {}),
+            items: data.value.products?.items?.length ? data.value.products.items : (data.value.ebook ? [{ id: 'p1', title: data.value.ebook.title, description: data.value.ebook.description, price: data.value.ebook.price, originalPrice: data.value.ebook.originalPrice, coverUrl: data.value.ebook.coverUrl, badge: 'Lançamento', downloadUrl: '' }] : DEFAULT_CONTENT.products.items)
+          }
+        });
       }
       setLoading(false);
     }
@@ -326,6 +439,135 @@ export default function SiteEditorPage() {
 
         {/* Center — Editor Form */}
         <div className="flex-1 overflow-y-auto p-8 space-y-6" style={{ minWidth: 0 }}>
+
+          {/* PRODUCTS */}
+          {activeSection === 'products' && (
+            <EditorSection title="Produtos & Infoprodutos" desc="Configure a venda de E-books, guias ou mentorias direto no site.">
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <span className="font-bold text-slate-700">Habilitar Vitrine de Produtos</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" checked={content.products.enabled} onChange={(e) => update('products', { ...content.products, enabled: e.target.checked })} />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                </label>
+              </div>
+
+              {content.products.enabled && (
+                <div className="space-y-6 pt-4">
+                  <Field label="Título da Seção">
+                    <input className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl" value={content.products.sectionTitle} onChange={e => update('products', { ...content.products, sectionTitle: e.target.value })} />
+                  </Field>
+
+                  <div className="pt-4 space-y-6">
+                    {content.products.items.map((prod, idx) => (
+                      <div key={prod.id} className="p-6 bg-white rounded-3xl border border-slate-100 shadow-sm relative space-y-6">
+                        <button onClick={() => {
+                          const newItems = content.products.items.filter(p => p.id !== prod.id);
+                          update('products', { ...content.products, items: newItems });
+                        }} className="absolute top-4 right-4 p-2 text-rose-400 hover:bg-rose-50 rounded-full transition-colors">
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                        
+                        <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
+                          <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold">
+                            {idx + 1}
+                          </div>
+                          <h4 className="font-bold text-slate-700">Configuração do Produto</h4>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Field label="Título do Produto">
+                            <input className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl" value={prod.title} onChange={e => {
+                              const newItems = content.products.items.map(p => p.id === prod.id ? { ...p, title: e.target.value } : p);
+                              update('products', { ...content.products, items: newItems });
+                            }} />
+                          </Field>
+                          <Field label="Badge (Faixa)">
+                            <input className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl" value={prod.badge} onChange={e => {
+                              const newItems = content.products.items.map(p => p.id === prod.id ? { ...p, badge: e.target.value } : p);
+                              update('products', { ...content.products, items: newItems });
+                            }} />
+                          </Field>
+                        </div>
+                        
+                        <Field label="Descrição Curta">
+                          <textarea className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl min-h-[100px]" value={prod.description} onChange={e => {
+                              const newItems = content.products.items.map(p => p.id === prod.id ? { ...p, description: e.target.value } : p);
+                              update('products', { ...content.products, items: newItems });
+                          }} />
+                        </Field>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <CurrencyInput 
+                            label="Preço Original (De)" 
+                            value={prod.originalPrice} 
+                            onChange={(val) => {
+                              const newItems = content.products.items.map(p => p.id === prod.id ? { ...p, originalPrice: val } : p);
+                              update('products', { ...content.products, items: newItems });
+                            }} 
+                          />
+                          <CurrencyInput 
+                            label="Preço de Venda (Por)" 
+                            value={prod.price} 
+                            onChange={(val) => {
+                              const newItems = content.products.items.map(p => p.id === prod.id ? { ...p, price: val } : p);
+                              update('products', { ...content.products, items: newItems });
+                            }} 
+                          />
+                        </div>
+                        
+                        <Field label="Foto de Capa">
+                          <div className="flex flex-col gap-2">
+                            {prod.coverUrl && (
+                              <div className="relative w-32 h-32 rounded-xl overflow-hidden border border-slate-200">
+                                <img src={prod.coverUrl} className="w-full h-full object-cover" alt="Capa" />
+                                <button onClick={() => {
+                                  const newItems = content.products.items.map(p => p.id === prod.id ? { ...p, coverUrl: '' } : p);
+                                  update('products', { ...content.products, items: newItems });
+                                }} className="absolute top-1 right-1 bg-white/90 text-red-500 rounded-full p-1 hover:bg-white shadow-sm">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                            <input 
+                              type="file" 
+                              accept="image/*"
+                              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer" 
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  handleImageUpload(file, (base64) => {
+                                    const newItems = content.products.items.map(p => p.id === prod.id ? { ...p, coverUrl: base64 } : p);
+                                    update('products', { ...content.products, items: newItems });
+                                  });
+                                }
+                              }}
+                            />
+                          </div>
+                        </Field>
+
+                        <Field label="Link para Download (Automático no WhatsApp)">
+                          <input className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl" placeholder="Link do Google Drive, PDF, etc..." value={prod.downloadUrl || ''} onChange={e => {
+                            const newItems = content.products.items.map(p => p.id === prod.id ? { ...p, downloadUrl: e.target.value } : p);
+                            update('products', { ...content.products, items: newItems });
+                          }} />
+                        </Field>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      const newItems = [...content.products.items, { id: `p${Date.now()}`, title: 'Novo Produto', description: '', price: 0, originalPrice: 0, coverUrl: '', badge: '', downloadUrl: '' }];
+                      update('products', { ...content.products, items: newItems });
+                    }}
+                    className="w-full py-4 border-2 border-dashed border-slate-300 text-slate-500 rounded-2xl hover:bg-slate-50 hover:text-indigo-600 hover:border-indigo-300 transition-colors font-bold flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-5 h-5" /> Adicionar Produto
+                  </button>
+                </div>
+              )}
+            </EditorSection>
+          )}
 
           {/* NAV */}
           {activeSection === 'nav' && (
@@ -725,6 +967,49 @@ function SitePreview({ content }: { content: SiteContent }) {
           </div>
         </div>
       </section>
+
+      {/* Products Preview */}
+      {c.products?.enabled && c.products.items?.length > 0 && (
+        <section className="py-20 px-12 bg-slate-50 border-t border-slate-100">
+          <div className="max-w-6xl mx-auto space-y-12">
+            <div className="text-center space-y-3">
+              <h2 className="text-4xl font-bold">{c.products.sectionTitle}</h2>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-8">
+              {c.products.items.map((prod: any) => (
+                <div key={prod.id} className="flex bg-white rounded-3xl p-6 gap-6 shadow-xl shadow-slate-200/50 border border-slate-100">
+                  <div className="w-40 shrink-0 flex justify-center">
+                    {prod.coverUrl ? (
+                      <img src={prod.coverUrl} alt={prod.title} className="w-full h-auto rounded-lg shadow-md" />
+                    ) : (
+                      <div className="w-full aspect-[3/4] bg-indigo-600 rounded-lg shadow-md flex flex-col items-center justify-center p-3 text-center text-white">
+                        <BookOpen className="w-12 h-12 opacity-50 mb-2" />
+                        <h3 className="text-[10px] font-black uppercase">{prod.title}</h3>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex flex-col justify-center">
+                    {prod.badge && (
+                      <div className="inline-flex px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-black uppercase mb-3 w-fit">
+                        {prod.badge}
+                      </div>
+                    )}
+                    <h3 className="text-xl font-black text-slate-900 mb-2">{prod.title}</h3>
+                    <p className="text-slate-500 text-xs mb-4 line-clamp-2">{prod.description}</p>
+                    
+                    <div className="flex items-end gap-3 mt-auto">
+                      <p className="text-xs font-bold text-slate-400 line-through mb-1">R$ {Number(prod.originalPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                      <p className="text-xl font-black text-indigo-600">R$ {Number(prod.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Team */}
       {c.team.enabled && c.team.members.length > 0 && (

@@ -5,6 +5,7 @@ import RoleGuard from '@/src/components/auth/RoleGuard';
 import AdminLayout from '@/src/components/dashboard/AdminLayout';
 import InstitutionalSite from '@/src/pages/site/InstitutionalSite';
 import NpsFeedbackPage from '@/src/pages/public/NpsFeedbackPage';
+import TicketNpsPage from '@/src/pages/public/TicketNpsPage';
 import PublicContractPage from '@/src/pages/public/PublicContractPage';
 import PublicAnamnesisPage from '@/src/pages/public/PublicAnamnesisPage';
 import LoginPage from '@/src/pages/auth/LoginPage';
@@ -62,6 +63,7 @@ export default function App() {
           
           {/* Avaliação NPS (Pública) */}
           <Route path="/avaliacao/:id" element={<NpsFeedbackPage />} />
+          <Route path="/avaliacao-atendimento/:id" element={<TicketNpsPage />} />
           
           {/* Contrato (Pública) */}
           <Route path="/contrato/:id" element={<PublicContractPage />} />

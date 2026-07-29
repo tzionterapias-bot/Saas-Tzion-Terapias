@@ -191,9 +191,9 @@ export default function KanbanBoard() {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 overflow-x-auto pb-6">
+    <div className="flex gap-6 overflow-x-auto pb-6 snap-x">
       {columns.map((col) => (
-        <div key={col.id} className="flex flex-col gap-4 min-w-[300px]">
+        <div key={col.id} className="flex flex-col gap-4 min-w-[320px] w-[320px] shrink-0 snap-center">
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-2">
               <div className={cn("w-2 h-2 rounded-full", col.color)} />
@@ -207,7 +207,7 @@ export default function KanbanBoard() {
             </button>
           </div>
 
-          <div className="flex flex-col gap-4 min-h-[500px] p-3 bg-slate-50/50 rounded-[2.5rem] border border-slate-100">
+          <div className="flex flex-col gap-4 h-[calc(100vh-420px)] overflow-y-auto p-3 bg-slate-50/50 rounded-[2.5rem] border border-slate-100 custom-scrollbar">
             {getLeadsByStatus(col.id).map((lead) => (
               <div 
                 key={lead.id} 

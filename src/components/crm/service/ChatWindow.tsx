@@ -1,5 +1,5 @@
 import React from 'react';
-import { Send, Smile, Paperclip, MoreVertical, Phone, Video, CheckCheck, User, Shield, ArrowRightLeft, Loader2, CheckCircle2, AlertCircle, X, ChevronLeft } from 'lucide-react';
+import { Send, Smile, Paperclip, MoreVertical, Phone, Video, CheckCheck, User, Shield, ClipboardList, ArrowRightLeft, Loader2, CheckCircle2, AlertCircle, X, ChevronLeft } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { Ticket } from './TicketList';
 import { supabase } from '@/src/lib/supabase';
@@ -30,6 +30,28 @@ function getInitials(name: string) {
   return name.substring(0, 2).toUpperCase();
 }
 
+
+const cleanBotMessage = (text: string) => {
+  if (!text) return text;
+  return text
+    .replace(/\[RESUMO:[\s\S]*?\]/gi, '')
+    .replace(/\[DEP:[^\]]*\]/gi, '')
+    .replace(/\[LEAD:[^\]]*\]/gi, '')
+    .replace(/\[STATUS:[^\]]*\]/gi, '')
+    .replace(/\[URGENCIA\]/gi, '')
+    .trim();
+};
+
+const getCaseSummary = (messages: Message[]) => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.sender === 'bot') {
+      const match = msg.text.match(/\[RESUMO:([\s\S]*?)\]/i);
+      if (match) return match[1].trim();
+    }
+  }
+  return null;
+};
 interface Message {
   id: string;
   sender: 'staff' | 'customer' | 'bot';
@@ -57,6 +79,7 @@ export default function ChatWindow({ ticket, onBack }: Props) {
   const [toast, setToast] = React.useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const caseSummary = getCaseSummary(messages);
 
   const handleShowToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -282,10 +305,14 @@ export default function ChatWindow({ ticket, onBack }: Props) {
           .select('settings')
           .eq('trigger_type', 'nps_survey')
           .single();
-
-        let npsMessage = "Obrigado por falar conosco! Seu atendimento foi encerrado.\n\nGostaríamos muito de ouvir sua opinião! Por favor, avalie nosso atendimento respondendo esta mensagem com uma nota de *0 (Jamais recomendaria)* a *10 (Com certeza recomendaria)*.";
+        const { getSystemBaseUrl } = await import('@/src/utils/systemUrl');
+        const baseUrl = await getSystemBaseUrl();
+        const generatedLink = `${baseUrl}/avaliacao-atendimento/${ticket.id}`;
+        
+        let npsMessage = "Obrigado por falar conosco! Seu atendimento foi encerrado.\n\nGostaríamos muito de ouvir sua opinião! Por favor, avalie nosso atendimento acessando este link:\n\n🔗 " + generatedLink;
         if (npsAuto && npsAuto.settings && npsAuto.settings.message) {
-          npsMessage = npsAuto.settings.message;
+          // Se a pessoa configurou no painel e usou o placeholder:
+          npsMessage = npsAuto.settings.message.replace('[COLE AQUI O LINK DO SEU FORMULÁRIO]', generatedLink);
         }
         
         // Envia via WhatsApp
@@ -308,7 +335,7 @@ export default function ChatWindow({ ticket, onBack }: Props) {
 
       const { error } = await supabase
         .from('service_tickets')
-        .update({ status: sendNps ? 'awaiting_nps' : 'closed' })
+        .update({ status: 'closed' })
         .eq('id', ticket.id);
 
       if (error) throw error;
@@ -324,7 +351,8 @@ export default function ChatWindow({ ticket, onBack }: Props) {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-white h-full relative overflow-hidden">
+    <div className="flex-1 flex h-full relative overflow-hidden bg-white">
+      <div className="flex-1 flex flex-col bg-white h-full relative overflow-hidden border-r border-slate-200">
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex flex-col sm:flex-row gap-3 sm:items-center justify-between bg-white z-20 shadow-sm">
         <div className="flex items-center gap-3.5 min-w-0 flex-1">
           {onBack && (
@@ -434,7 +462,7 @@ export default function ChatWindow({ ticket, onBack }: Props) {
                 </a>
               ) : null}
 
-              <p className="text-[14.5px] leading-snug whitespace-pre-wrap">{msg.text}</p>
+              <p className="text-[14.5px] leading-snug whitespace-pre-wrap">{msg.sender === 'bot' ? cleanBotMessage(msg.text) : msg.text}</p>
               
               <div className={cn(
                 "flex items-center gap-1 mt-1 -mb-1",
@@ -593,6 +621,27 @@ export default function ChatWindow({ ticket, onBack }: Props) {
           <button onClick={() => setToast(null)} className="ml-4 opacity-50 hover:opacity-100 transition-opacity">
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+      </div>
+      {/* Right Sidebar for Case Summary */}
+      {caseSummary && (
+        <div className="w-[320px] h-full bg-slate-50 flex flex-col shadow-inner hidden lg:flex shrink-0">
+          <div className="p-4 border-b border-slate-200 bg-white shadow-sm flex items-center gap-2">
+            <ClipboardList className="w-5 h-5 text-indigo-600" />
+            <h3 className="font-bold text-slate-800">Resumo do Caso</h3>
+          </div>
+          <div className="p-5 overflow-y-auto">
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-indigo-100 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+              <p className="text-[14px] text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
+                {caseSummary}
+              </p>
+            </div>
+            <p className="text-xs text-slate-400 mt-4 text-center px-4">
+              Este resumo foi gerado automaticamente pela Inteligência Artificial durante a triagem.
+            </p>
+          </div>
         </div>
       )}
     </div>

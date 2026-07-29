@@ -187,6 +187,34 @@ serve(async (req) => {
       if (event === 'PAYMENT_RECEIVED' || event === 'PAYMENT_CONFIRMED') {
         const asaasId = payment.id;
         
+        // 1. Tentar atualizar venda de produto (E-book)
+        const { data: updatedSale } = await supabase
+          .from('product_sales')
+          .update({ status: 'paid' })
+          .eq('asaas_payment_id', asaasId)
+          .select()
+          .maybeSingle();
+
+        if (updatedSale) {
+            const { data: n8nSetts } = await supabase.from('settings').select('value').eq('key', 'integrations').maybeSingle();
+            const n8nUrl = n8nSetts?.value?.n8n_webhook_url;
+            if (n8nUrl) {
+              await fetch(n8nUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  type: 'ebook_purchase', 
+                  customer_name: updatedSale.customer_name,
+                  customer_phone: updatedSale.customer_phone,
+                  product_name: updatedSale.product_name || 'E-book',
+                  product_url: updatedSale.product_url || '',
+                  asaas_id: asaasId
+                })
+              });
+            }
+        }
+
+        // 2. Tentar atualizar pagamento de serviço (Pacotes/Consultas)
         const { data: updatedPayment, error: payError } = await supabase
           .from('payments')
           .update({ status: 'paid' })

@@ -21,3 +21,7 @@ create_test_data.cjs
 add_meet_link.js
 
 .vercel
+
+*.cjs
+*.js
+!update_prompt_impact_scale.js

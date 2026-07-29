@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Heart, Shield, Clock, MessageCircle, MapPin, Phone, Instagram, Facebook, Users, Globe } from 'lucide-react';
+import { Calendar, Heart, Shield, Clock, MessageCircle, MapPin, Phone, Instagram, Facebook, Users, Globe, BookOpen, ChevronRight, CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/src/lib/supabase';
+import CheckoutModal from '@/src/components/checkout/CheckoutModal';
 
 // ─── Icon Map ──────────────────────────────────────────────────────────────────
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -43,6 +44,21 @@ const DEFAULT: any = {
     whatsappLabel: 'Conversar pelo WhatsApp',
     bgColor: '#4f46e5',
   },
+  products: {
+    enabled: false,
+    sectionTitle: 'Materiais Exclusivos',
+    items: [
+      {
+        id: 'p1',
+        title: 'E-book: Desperte seu Potencial',
+        description: 'Desenvolva sua inteligência emocional, melhore seus relacionamentos e descubra o caminho para uma vida mais equilibrada com nosso material exclusivo.',
+        price: 47,
+        originalPrice: 97,
+        coverUrl: '',
+        badge: 'Lançamento Exclusivo'
+      }
+    ]
+  },
   footer: {
     about: 'Promovendo a saúde emocional e o bem-estar através de atendimentos humanizados e especializados.',
     address: 'Rua das Terapias, 1000',
@@ -57,6 +73,7 @@ const DEFAULT: any = {
 
 export default function InstitutionalSite() {
   const [site, setSite] = useState<any>(DEFAULT);
+  const [selectedProduct, setSelectedProduct] = useState<{title: string, price: number, downloadUrl?: string} | null>(null);
 
   useEffect(() => {
     async function loadSite() {
@@ -71,6 +88,11 @@ export default function InstitutionalSite() {
             hero: { ...DEFAULT.hero, ...data.value.hero },
             team: { ...DEFAULT.team, ...data.value.team },
             cta: { ...DEFAULT.cta, ...data.value.cta },
+            products: { 
+              ...DEFAULT.products, 
+              ...(data.value.products || {}),
+              items: data.value.products?.items?.length ? data.value.products.items : (data.value.ebook ? [{ id: 'p1', title: data.value.ebook.title, description: data.value.ebook.description, price: data.value.ebook.price, originalPrice: data.value.ebook.originalPrice, coverUrl: data.value.ebook.coverUrl, badge: 'Lançamento' }] : DEFAULT.products.items)
+            },
             footer: { ...DEFAULT.footer, ...data.value.footer },
             services: data.value.services?.length ? data.value.services : DEFAULT.services,
           }));
@@ -80,7 +102,7 @@ export default function InstitutionalSite() {
     loadSite();
   }, []);
 
-  const { nav, hero, services, team, cta, footer } = site;
+  const { nav, hero, services, team, products, cta, footer } = site;
 
   useEffect(() => {
     if (!site) return;
@@ -274,6 +296,66 @@ export default function InstitutionalSite() {
         </div>
       </section>
 
+      {/* Products Section */}
+      {products?.enabled && products.items?.length > 0 && (
+        <section id="materiais" className="py-24 px-6 lg:px-20 bg-slate-50 relative overflow-hidden">
+          <div className="max-w-7xl mx-auto space-y-16 relative z-10">
+            <div className="text-center space-y-4">
+              <h2 className="text-4xl lg:text-5xl font-black text-slate-900 tracking-tight leading-tight">
+                {products.sectionTitle}
+              </h2>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+              {products.items.map((prod: any) => (
+                <div key={prod.id} className="flex flex-col md:flex-row bg-white rounded-[2.5rem] p-8 md:p-10 gap-8 shadow-2xl shadow-slate-200/50 border border-slate-100 hover:-translate-y-2 transition-transform duration-500">
+                  <div className="w-full md:w-1/3 flex justify-center shrink-0">
+                    {prod.coverUrl ? (
+                      <img src={prod.coverUrl} alt={prod.title} className="w-full max-w-[200px] h-auto rounded-lg shadow-xl" />
+                    ) : (
+                      <div className="w-full max-w-[200px] aspect-[3/4] bg-indigo-600 rounded-lg shadow-xl flex flex-col items-center justify-center p-4 text-center text-white relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 opacity-10"><BookOpen className="w-24 h-24" /></div>
+                        <h3 className="text-lg font-black mb-1 uppercase tracking-widest relative z-10">{prod.title}</h3>
+                        <div className="w-10 h-1 bg-white/30 my-2 relative z-10" />
+                        <p className="font-medium text-indigo-100 text-xs relative z-10">Material Exclusivo</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="w-full md:w-2/3 space-y-6 flex flex-col justify-center">
+                    {prod.badge && (
+                      <div className="inline-flex px-4 py-2 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-black uppercase tracking-widest w-fit">
+                        {prod.badge}
+                      </div>
+                    )}
+                    <h3 className="text-2xl font-black text-slate-900 tracking-tight leading-snug">
+                      {prod.title}
+                    </h3>
+                    <p className="text-slate-500 font-medium whitespace-pre-line text-sm">
+                      {prod.description}
+                    </p>
+                    
+                    <div className="pt-4 mt-auto">
+                      <div className="flex items-end gap-3 mb-6">
+                        <p className="text-sm font-bold text-slate-400 line-through mb-1">De R$ {Number(prod.originalPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                        <p className="text-3xl font-black text-indigo-600">R$ {Number(prod.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                      </div>
+                      
+                      <button 
+                        onClick={() => setSelectedProduct({ title: prod.title, price: prod.price, downloadUrl: prod.downloadUrl })}
+                        className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 hover:scale-[1.02] shadow-xl shadow-indigo-200 transition-all flex items-center justify-center gap-2"
+                      >
+                        Comprar Agora <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Footer */}
       <footer id="contato" className="py-20 px-6 lg:px-20 bg-slate-900 text-slate-400">
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-16">
@@ -330,6 +412,16 @@ export default function InstitutionalSite() {
           </div>
         </div>
       </footer>
+      {/* Render Checkout Modal */}
+      {selectedProduct && (
+        <CheckoutModal 
+          isOpen={!!selectedProduct} 
+          onClose={() => setSelectedProduct(null)} 
+          productName={selectedProduct.title} 
+          price={selectedProduct.price}
+          downloadUrl={selectedProduct.downloadUrl}
+        />
+      )}
     </div>
   );
 }

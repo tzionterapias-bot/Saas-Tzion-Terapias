@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { MessageSquare, X, Send, ChevronLeft, Stethoscope, Banknote, Calendar, ShoppingCart, Shield } from 'lucide-react';
+import { MessageSquare, X, Send, ChevronLeft, Stethoscope, Banknote, Calendar, ShoppingCart, Shield, Headset } from 'lucide-react';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { cn } from '@/src/lib/utils';
@@ -123,18 +123,38 @@ export default function InternalChat() {
   }, [user, isMessageUnread, markChannelRead]);
 
   useEffect(() => {
-    supabase.from('therapists').select('id, name, specialty').eq('active', true).then(({ data }) => {
+    supabase.from('profiles').select('id, name, role').neq('status', 'inativo').then(({ data }) => {
       setTherapists(data || []);
     });
   }, []);
 
-  const therapistContacts: Contact[] = useMemo(() => therapists.map(t => ({
-    id: t.id,
-    name: t.name,
-    role: t.specialty || 'Terapeuta',
-    icon: <Stethoscope className="w-5 h-5" />,
-    color: 'bg-violet-500',
-  })), [therapists]);
+  const therapistContacts: Contact[] = useMemo(() => therapists.map(t => {
+    const roleLabel = t.role === 'admin' ? 'ADMINISTRADOR' : 
+                      t.role === 'atendimento' ? 'ATENDIMENTO' : 
+                      t.role === 'financeiro' ? 'FINANCEIRO' : 'TERAPEUTA';
+                      
+    let icon = <Stethoscope className="w-5 h-5" />;
+    let color = 'bg-violet-500';
+
+    if (t.role === 'admin') {
+      icon = <Shield className="w-5 h-5" />;
+      color = 'bg-rose-500';
+    } else if (t.role === 'atendimento') {
+      icon = <Headset className="w-5 h-5" />;
+      color = 'bg-blue-500';
+    } else if (t.role === 'financeiro') {
+      icon = <Banknote className="w-5 h-5" />;
+      color = 'bg-emerald-500';
+    }
+
+    return {
+      id: t.id,
+      name: t.name || 'Usuário',
+      role: roleLabel,
+      icon,
+      color,
+    };
+  }), [therapists]);
 
   useEffect(() => {
     const handler = (e: Event) => {

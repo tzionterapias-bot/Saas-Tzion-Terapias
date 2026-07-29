@@ -1,3 +1,8 @@
+-- ==============================================================================
+-- CORREÇÃO DO TRIGGER DE NPS (TZION TERAPIAS)
+-- Execute este script no SQL Editor do Supabase para atualizar o trigger.
+-- ==============================================================================
+
 -- 1. Remove o trigger antigo se existir para evitar conflitos
 DROP TRIGGER IF EXISTS trigger_process_nps_from_chat_messages ON chat_messages;
 DROP FUNCTION IF EXISTS process_nps_from_chat_messages();
@@ -53,16 +58,14 @@ BEGIN
         LIMIT 1;
       END IF;
 
-      -- Insere o NPS na tabela de feedbacks
+      -- Insere o NPS na tabela de feedbacks (aparece no Dashboard imediatamente!)
       INSERT INTO nps_feedbacks (patient_id, appointment_id, score, comment)
       VALUES (v_patient_id, v_latest_appointment_id, v_score, NULL);
 
-      -- Fecha o ticket no banco imediatamente
-      UPDATE service_tickets
-      SET status = 'closed', last_message = NEW.message_body
-      WHERE id = v_ticket_id;
+      -- NOTA: O encerramento do ticket (status = 'closed') e o envio da mensagem de agradecimento
+      -- são gerenciados pelo n8n para garantir que a mensagem chegue no WhatsApp do cliente.
 
-      -- Altera o tipo de remetente para evitar que o chatbot IA responda a esta mensagem
+      -- Altera o tipo de remetente para evitar que a IA responda como conversa comum
       NEW.sender_type := 'customer_nps';
       
     ELSE

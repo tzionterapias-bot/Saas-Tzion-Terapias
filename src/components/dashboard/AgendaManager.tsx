@@ -34,6 +34,12 @@ export default function AgendaManager() {
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // New Patient State (Quick Add)
+  const [isCreatingPatient, setIsCreatingPatient] = useState(false);
+  const [newPatientData, setNewPatientData] = useState({ name: '', phone: '', email: '' });
+  const [savingPatient, setSavingPatient] = useState(false);
+
   
   const [newAppt, setNewAppt] = useState({
     patient_id: '',
@@ -191,6 +197,34 @@ export default function AgendaManager() {
        setAvailableSlots(freeSlots);
     }
   }, [newAppt.date, newAppt.therapist_id, appointments, wizardStep]);
+
+  const handleCreatePatient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPatientData.name.trim()) return;
+    setSavingPatient(true);
+    try {
+      const { data, error } = await supabase.from('patients').insert([{
+        name: newPatientData.name.trim(),
+        phone: newPatientData.phone.trim(),
+        email: newPatientData.email.trim(),
+        status: 'Ativo'
+      }]).select().single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        setPatients(prev => [...prev, { id: data.id, name: data.name }]);
+        setNewAppt(prev => ({ ...prev, patient_id: data.id }));
+        setIsCreatingPatient(false);
+        setNewPatientData({ name: '', phone: '', email: '' });
+      }
+    } catch (err) {
+      console.error('Erro ao criar paciente:', err);
+      setErrorMsg('Erro ao criar paciente. Verifique os dados.');
+    } finally {
+      setSavingPatient(false);
+    }
+  };
 
   const handleAddAppointment = async () => {
     try {
@@ -1317,15 +1351,63 @@ export default function AgendaManager() {
                {wizardStep === 3 && (
                   <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
                      <div className="space-y-4">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Identificação do Paciente</label>
-                        <select 
-                           className="w-full p-5 bg-white border-2 border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl outline-none font-bold text-slate-700 text-lg transition-all appearance-none"
-                           onChange={(e) => setNewAppt({...newAppt, patient_id: e.target.value})}
-                           value={newAppt.patient_id}
-                        >
-                           <option value="">Buscar paciente...</option>
-                           {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Identificação do Paciente</label>
+                          {!isCreatingPatient && (
+                            <button
+                              type="button"
+                              onClick={() => setIsCreatingPatient(true)}
+                              className="text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md"
+                            >
+                              + Novo Cliente
+                            </button>
+                          )}
+                        </div>
+
+                        {isCreatingPatient ? (
+                          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="text-sm font-bold text-slate-700">Cadastro Rápido</h4>
+                              <button type="button" onClick={() => setIsCreatingPatient(false)} className="text-slate-400 hover:text-slate-600">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <input 
+                              type="text" placeholder="Nome Completo *" required
+                              className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-500"
+                              value={newPatientData.name} onChange={e => setNewPatientData({...newPatientData, name: e.target.value})}
+                            />
+                            <div className="grid grid-cols-2 gap-3">
+                              <input 
+                                type="tel" placeholder="Telefone / WhatsApp"
+                                className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-500"
+                                value={newPatientData.phone} onChange={e => setNewPatientData({...newPatientData, phone: e.target.value})}
+                              />
+                              <input 
+                                type="email" placeholder="E-mail"
+                                className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-500"
+                                value={newPatientData.email} onChange={e => setNewPatientData({...newPatientData, email: e.target.value})}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleCreatePatient}
+                              disabled={savingPatient || !newPatientData.name.trim()}
+                              className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold disabled:opacity-50 hover:bg-indigo-700 transition-colors"
+                            >
+                              {savingPatient ? 'Salvando...' : 'Salvar e Selecionar'}
+                            </button>
+                          </div>
+                        ) : (
+                          <select 
+                             className="w-full p-5 bg-white border-2 border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl outline-none font-bold text-slate-700 text-lg transition-all appearance-none"
+                             onChange={(e) => setNewAppt({...newAppt, patient_id: e.target.value})}
+                             value={newAppt.patient_id}
+                          >
+                             <option value="">Buscar paciente...</option>
+                             {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        )}
                      </div>
 
                      {/* Sala de Atendimento */}

@@ -120,7 +120,12 @@ export default function TicketList({ activeTicketId, onSelectTicket, filterDeptI
     const instanceId = Math.random().toString(36).substring(2, 9);
     const ticketChannel = supabase
       .channel(`service_tickets_changes_${instanceId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_tickets' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_tickets' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          audio.volume = 0.5;
+          audio.play().catch(e => console.log('Audio block:', e));
+        }
         fetchTickets();
       })
       .subscribe();
@@ -130,10 +135,6 @@ export default function TicketList({ activeTicketId, onSelectTicket, filterDeptI
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         const newMsg = payload.new;
         if (newMsg.sender_type === 'customer') {
-          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-          audio.volume = 0.5;
-          audio.play().catch(e => console.log('Audio block:', e));
-          
           setTickets(prev => prev.map(t => {
             if (t.phone === newMsg.customer_phone || t.phone === newMsg.customer_phone?.split('@')[0]) {
                 const isUnread = t.id !== activeTicketId;
