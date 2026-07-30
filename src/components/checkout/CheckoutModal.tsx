@@ -52,7 +52,7 @@ export default function CheckoutModal({ isOpen, onClose, productName, price, dow
             .from('product_sales')
             .select('status')
             .eq('asaas_payment_id', paymentId)
-            .single();
+            .maybeSingle();
 
           if (data?.status === 'paid' || data?.status === 'confirmed') {
              setPaymentStatus('approved');
@@ -165,6 +165,7 @@ export default function CheckoutModal({ isOpen, onClose, productName, price, dow
         product_id: 'ebook_default',
         product_name: productName,
         product_url: downloadUrl,
+        patient_id: patient.id,
         customer_name: formData.name,
         customer_email: formData.email,
         customer_phone: cleanPhone,
@@ -182,13 +183,16 @@ export default function CheckoutModal({ isOpen, onClose, productName, price, dow
         type: 'income',
         category: 'Infoproduto',
         payment_method: 'pix',
+        patient_id: patient.id,
         description: `Venda E-book: ${productName} — ${formData.name}`,
         asaas_id: paymentId,
         installments: 1
       });
 
       if (dbError) {
-        console.error('Erro ao salvar venda:', dbError);
+        console.error('Erro CRÍTICO ao salvar venda na tabela product_sales:', dbError);
+        // O ideal seria abortar, mas como a cobrança no Asaas já foi gerada, deixamos seguir.
+        // O webhook pode falhar ao atualizar, mas o cliente já tem o Pix.
       }
 
       setPixData({

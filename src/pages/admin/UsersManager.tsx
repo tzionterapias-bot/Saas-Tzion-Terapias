@@ -44,9 +44,10 @@ export default function UsersManager() {
       }
 
       if (data) {
-        // Exibir membros da equipe (role !== paciente) OU qualquer usuário pendente de aprovação (status === pending)
-        const teamAndPending = data.filter((u: any) => u.role !== 'paciente' || u.status === 'pending');
-        setUsers(teamAndPending as UserProfile[]);
+        // Exibir apenas membros da equipe (qualquer cargo diferente de paciente)
+        // Pacientes (compradores de ebook, etc) não aparecem na listagem principal, apenas na busca para promoção
+        const teamOnly = data.filter((u: any) => u.role !== 'paciente');
+        setUsers(teamOnly as UserProfile[]);
       }
     } catch (e) {
       console.error("Erro ao buscar usuários", e);

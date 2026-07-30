@@ -169,7 +169,7 @@ export default function TicketList({ activeTicketId, onSelectTicket, filterDeptI
   );
 
   return (
-    <div className="w-full lg:w-[400px] bg-white border-r border-slate-200 flex flex-col h-full overflow-hidden relative z-10 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.05)]">
+    <div className="w-full lg:w-[300px] xl:w-[340px] bg-white border-r border-slate-200 flex flex-col h-full overflow-hidden relative z-10 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.05)]">
       <div className="p-5 space-y-4 bg-white border-b border-slate-100 z-20 sticky top-0">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-800 tracking-tight">Atendimentos</h2>

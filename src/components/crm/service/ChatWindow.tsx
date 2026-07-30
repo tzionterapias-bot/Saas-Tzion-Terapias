@@ -351,7 +351,7 @@ export default function ChatWindow({ ticket, onBack }: Props) {
   };
 
   return (
-    <div className="flex-1 flex h-full relative overflow-hidden bg-white">
+      <div className="flex-1 flex h-full relative overflow-hidden bg-white">
       <div className="flex-1 flex flex-col bg-white h-full relative overflow-hidden border-r border-slate-200">
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-200 flex flex-col sm:flex-row gap-3 sm:items-center justify-between bg-white z-20 shadow-sm">
         <div className="flex items-center gap-3.5 min-w-0 flex-1">
@@ -407,9 +407,24 @@ export default function ChatWindow({ ticket, onBack }: Props) {
         </div>
       </div>
 
+      {/* Inline Case Summary for < 2xl screens */}
+      {caseSummary && (
+        <div className="2xl:hidden bg-indigo-50/90 backdrop-blur-sm border-b border-indigo-100 p-3 sm:p-4 shrink-0 flex gap-3 items-start shadow-sm z-10 relative">
+          <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
+            <ClipboardList className="w-4 h-4 text-indigo-600" />
+          </div>
+          <div className="flex-1">
+            <h4 className="text-[10px] font-black text-indigo-800 uppercase tracking-widest mb-1">Resumo da Triagem (IA)</h4>
+            <p className="text-[13px] sm:text-sm text-indigo-950 leading-relaxed font-medium">
+              {caseSummary}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Messages List */}
       <div 
-        className="flex-1 overflow-y-auto p-6 space-y-4 bg-[#efeae2]" 
+        className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-[#efeae2]" 
         ref={scrollRef}
         style={{ backgroundImage: 'url("https://w0.peakpx.com/wallpaper/818/148/HD-wallpaper-whatsapp-background-cool-dark-green-light-pattern-texture.jpg")', backgroundBlendMode: 'soft-light', backgroundSize: '400px', opacity: 0.98 }}
       >
@@ -419,7 +434,7 @@ export default function ChatWindow({ ticket, onBack }: Props) {
             msg.sender === 'customer' ? "justify-start" : "justify-end"
           )}>
             <div className={cn(
-              "max-w-[75%] px-3.5 py-2 rounded-xl shadow-[0_1px_1px_rgba(0,0,0,0.1)] relative group",
+              "max-w-[85%] sm:max-w-[75%] px-3.5 py-2 rounded-xl shadow-[0_1px_1px_rgba(0,0,0,0.1)] relative group",
               msg.sender === 'customer' 
                 ? "bg-white text-slate-800 rounded-tl-sm border-none"
                 : msg.sender === 'bot' 
@@ -626,7 +641,7 @@ export default function ChatWindow({ ticket, onBack }: Props) {
       </div>
       {/* Right Sidebar for Case Summary */}
       {caseSummary && (
-        <div className="w-[320px] h-full bg-slate-50 flex flex-col shadow-inner hidden lg:flex shrink-0">
+        <div className="w-[240px] xl:w-[280px] h-full bg-slate-50 flex flex-col shadow-inner hidden 2xl:flex shrink-0 border-l border-slate-200">
           <div className="p-4 border-b border-slate-200 bg-white shadow-sm flex items-center gap-2">
             <ClipboardList className="w-5 h-5 text-indigo-600" />
             <h3 className="font-bold text-slate-800">Resumo do Caso</h3>

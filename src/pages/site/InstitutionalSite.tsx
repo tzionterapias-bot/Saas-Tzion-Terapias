@@ -25,7 +25,7 @@ const DEFAULT: any = {
     ctaSecondary: 'Ver Especialidades',
     stat: '+500',
     statLabel: 'Vidas transformadas',
-    imageUrl: 'https://images.unsplash.com/photo-1527137342181-19aab11a8ee1?auto=format&fit=crop&q=80&w=600',
+    imageUrl: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&q=80&w=600',
   },
   services: [
     { id: 's1', icon: 'Heart', title: 'Terapia Individual', desc: 'Foco no autoconhecimento e resolução de conflitos internos.' },
@@ -73,6 +73,7 @@ const DEFAULT: any = {
 
 export default function InstitutionalSite() {
   const [site, setSite] = useState<any>(DEFAULT);
+  const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<{title: string, price: number, downloadUrl?: string} | null>(null);
 
   useEffect(() => {
@@ -97,7 +98,10 @@ export default function InstitutionalSite() {
             services: data.value.services?.length ? data.value.services : DEFAULT.services,
           }));
         }
-      } catch (_) {}
+      } catch (_) {
+      } finally {
+        setLoading(false);
+      }
     }
     loadSite();
   }, []);
@@ -311,7 +315,7 @@ export default function InstitutionalSite() {
                 <div key={prod.id} className="flex flex-col md:flex-row bg-white rounded-[2.5rem] p-8 md:p-10 gap-8 shadow-2xl shadow-slate-200/50 border border-slate-100 hover:-translate-y-2 transition-transform duration-500">
                   <div className="w-full md:w-1/3 flex justify-center shrink-0">
                     {prod.coverUrl ? (
-                      <img src={prod.coverUrl} alt={prod.title} className="w-full max-w-[200px] h-auto rounded-lg shadow-xl" />
+                      <img src={prod.coverUrl} alt={prod.title} loading="lazy" className="w-full max-w-[200px] h-auto rounded-lg shadow-xl object-cover" />
                     ) : (
                       <div className="w-full max-w-[200px] aspect-[3/4] bg-indigo-600 rounded-lg shadow-xl flex flex-col items-center justify-center p-4 text-center text-white relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-4 opacity-10"><BookOpen className="w-24 h-24" /></div>
@@ -347,6 +351,39 @@ export default function InstitutionalSite() {
                       >
                         Comprar Agora <ChevronRight className="w-5 h-5" />
                       </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Skeleton Loading State for Ebooks */}
+      {loading && (
+        <section className="py-24 px-6 lg:px-20 bg-slate-50 relative overflow-hidden">
+          <div className="max-w-7xl mx-auto space-y-16 relative z-10">
+            <div className="flex justify-center">
+              <div className="w-64 h-12 bg-slate-200 rounded-2xl animate-pulse"></div>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+              {[1, 2].map((i) => (
+                <div key={i} className="flex flex-col md:flex-row bg-white rounded-[2.5rem] p-8 md:p-10 gap-8 shadow-2xl shadow-slate-200/50 border border-slate-100">
+                  <div className="w-full md:w-1/3 flex justify-center shrink-0">
+                    <div className="w-full max-w-[200px] aspect-[3/4] bg-slate-200 rounded-lg animate-pulse" />
+                  </div>
+                  <div className="w-full md:w-2/3 space-y-6 flex flex-col justify-center">
+                    <div className="w-24 h-6 bg-slate-200 rounded-full animate-pulse"></div>
+                    <div className="w-full h-8 bg-slate-200 rounded-xl animate-pulse"></div>
+                    <div className="w-3/4 h-8 bg-slate-200 rounded-xl animate-pulse"></div>
+                    <div className="space-y-2">
+                      <div className="w-full h-4 bg-slate-200 rounded-full animate-pulse"></div>
+                      <div className="w-full h-4 bg-slate-200 rounded-full animate-pulse"></div>
+                      <div className="w-2/3 h-4 bg-slate-200 rounded-full animate-pulse"></div>
+                    </div>
+                    <div className="pt-4 mt-auto">
+                      <div className="w-full h-14 bg-slate-200 rounded-2xl animate-pulse"></div>
                     </div>
                   </div>
                 </div>

@@ -94,7 +94,7 @@ export default function ServiceCenterPage() {
         </div>
 
         <div className="flex flex-1 overflow-hidden relative">
-          <div className={cn("h-full shrink-0", selectedTicket ? "hidden lg:block" : "flex-1 lg:flex-none lg:w-[400px]")}>
+          <div className={cn("h-full shrink-0 transition-all", selectedTicket ? "hidden lg:block" : "flex-1 lg:flex-none")}>
             <TicketList 
               filterDeptId={selectedDeptId}
               activeTicketId={selectedTicket?.id}

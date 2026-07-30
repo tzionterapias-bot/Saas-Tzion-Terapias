@@ -128,11 +128,11 @@ export default function DepartmentSidebar({ activeDept, onSelect, isMobileDrawer
       "flex flex-col h-full transition-all relative",
       isMobileDrawer 
         ? "w-full bg-white" 
-        : "w-20 lg:w-64 bg-white/60 backdrop-blur-3xl border-r border-slate-200/60"
+        : "w-20 lg:w-20 2xl:w-64 bg-white/60 backdrop-blur-3xl border-r border-slate-200/60"
     )}>
       <div className={cn(
         "p-6 border-b border-slate-200/50 bg-white/40 flex items-center justify-between",
-        isMobileDrawer ? "flex" : "hidden lg:flex"
+        isMobileDrawer ? "flex" : "hidden 2xl:flex"
       )}>
         <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Departamentos</h3>
         {isMobileDrawer && onClose && (
@@ -151,6 +151,7 @@ export default function DepartmentSidebar({ activeDept, onSelect, isMobileDrawer
             <div
               key={dept.id}
               onClick={() => onSelect(dept.id)}
+              title={dept.name}
               className={cn(
                 "w-full flex items-center gap-3 p-3 rounded-2xl transition-all group relative cursor-pointer",
                 activeDept === dept.id 
@@ -159,14 +160,14 @@ export default function DepartmentSidebar({ activeDept, onSelect, isMobileDrawer
               )}
             >
                 <div className={cn(
-                  "w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm duration-300",
+                  "w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm duration-300 mx-auto 2xl:mx-0 shrink-0",
                   activeDept === dept.id 
                     ? "bg-white shadow-indigo-100 scale-110" 
                     : "bg-white/60 border border-slate-100 group-hover:bg-white group-hover:shadow-md"
                 )}>
                   <dept.icon className="w-5 h-5" />
                 </div>
-                <div className={cn("flex-1 text-left", isMobileDrawer ? "block" : "hidden lg:block")}>
+                <div className={cn("flex-1 text-left", isMobileDrawer ? "block" : "hidden 2xl:block")}>
                   <p className={cn(
                     "font-bold text-sm leading-none transition-colors",
                     activeDept === dept.id ? "text-indigo-700" : "text-slate-600 group-hover:text-indigo-600"
@@ -176,7 +177,7 @@ export default function DepartmentSidebar({ activeDept, onSelect, isMobileDrawer
                 {activeDept === dept.id && (
                   <div className={cn(
                     "absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-8 bg-indigo-600 rounded-l-full shadow-[0_0_10px_rgba(79,70,229,0.5)]",
-                    isMobileDrawer ? "block" : "hidden lg:block"
+                    isMobileDrawer ? "block" : "hidden 2xl:block"
                   )} />
                 )}
                 
@@ -191,7 +192,7 @@ export default function DepartmentSidebar({ activeDept, onSelect, isMobileDrawer
                        "absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-rose-50 text-rose-500 rounded-lg scale-90 shadow-sm transition-all",
                        isMobileDrawer 
                          ? "flex" 
-                         : "opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white hidden lg:flex hover:scale-100"
+                         : "opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white hidden 2xl:flex hover:scale-100"
                      )}
                      title="Excluir Departamento"
                    >
@@ -203,7 +204,7 @@ export default function DepartmentSidebar({ activeDept, onSelect, isMobileDrawer
           </div>
         </div>
       
-      <div className={cn("p-4 border-t border-slate-50", isMobileDrawer ? "block" : "hidden lg:block")}>
+      <div className={cn("p-4 border-t border-slate-50", isMobileDrawer ? "block" : "hidden 2xl:block")}>
         <div className="bg-slate-900 rounded-2xl p-4 text-white space-y-3 relative overflow-hidden">
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Status do Sistema</p>
           <div className="flex items-center gap-2">

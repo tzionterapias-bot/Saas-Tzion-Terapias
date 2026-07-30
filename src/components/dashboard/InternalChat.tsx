@@ -123,9 +123,14 @@ export default function InternalChat() {
   }, [user, isMessageUnread, markChannelRead]);
 
   useEffect(() => {
-    supabase.from('profiles').select('id, name, role').neq('status', 'inativo').then(({ data }) => {
-      setTherapists(data || []);
-    });
+    supabase
+      .from('profiles')
+      .select('id, name, role')
+      .neq('status', 'inativo')
+      .in('role', ['admin', 'terapeuta', 'atendimento', 'financeiro', 'comercial'])
+      .then(({ data }) => {
+        setTherapists(data || []);
+      });
   }, []);
 
   const therapistContacts: Contact[] = useMemo(() => therapists.map(t => {
