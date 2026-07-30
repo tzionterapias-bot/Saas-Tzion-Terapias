@@ -407,9 +407,9 @@ export default function ChatWindow({ ticket, onBack }: Props) {
         </div>
       </div>
 
-      {/* Inline Case Summary for < 2xl screens */}
+      {/* Inline Case Summary */}
       {caseSummary && (
-        <div className="2xl:hidden bg-indigo-50/90 backdrop-blur-sm border-b border-indigo-100 p-3 sm:p-4 shrink-0 flex gap-3 items-start shadow-sm z-10 relative">
+        <div className="bg-indigo-50/90 backdrop-blur-sm border-b border-indigo-100 p-3 sm:p-4 shrink-0 flex gap-3 items-start shadow-sm z-10 relative">
           <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
             <ClipboardList className="w-4 h-4 text-indigo-600" />
           </div>
@@ -639,26 +639,6 @@ export default function ChatWindow({ ticket, onBack }: Props) {
         </div>
       )}
       </div>
-      {/* Right Sidebar for Case Summary */}
-      {caseSummary && (
-        <div className="w-[240px] xl:w-[280px] h-full bg-slate-50 flex flex-col shadow-inner hidden 2xl:flex shrink-0 border-l border-slate-200">
-          <div className="p-4 border-b border-slate-200 bg-white shadow-sm flex items-center gap-2">
-            <ClipboardList className="w-5 h-5 text-indigo-600" />
-            <h3 className="font-bold text-slate-800">Resumo do Caso</h3>
-          </div>
-          <div className="p-5 overflow-y-auto">
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-indigo-100 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-              <p className="text-[14px] text-slate-700 leading-relaxed whitespace-pre-wrap font-medium">
-                {caseSummary}
-              </p>
-            </div>
-            <p className="text-xs text-slate-400 mt-4 text-center px-4">
-              Este resumo foi gerado automaticamente pela Inteligência Artificial durante a triagem.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
