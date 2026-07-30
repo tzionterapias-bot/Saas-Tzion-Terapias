@@ -6,9 +6,10 @@ import { ShieldAlert } from 'lucide-react';
 interface RoleGuardProps {
   children: React.ReactNode;
   allowedRoles: Array<'admin' | 'terapeuta' | 'atendimento' | 'financeiro' | 'paciente'>;
+  allowedEmails?: string[];
 }
 
-export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
+export default function RoleGuard({ children, allowedRoles, allowedEmails }: RoleGuardProps) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
@@ -26,8 +27,11 @@ export default function RoleGuard({ children, allowedRoles }: RoleGuardProps) {
     return <>{children}</>;
   }
 
-  // Verifica se a role do usuário está na lista de roles permitidas
-  if (!allowedRoles.includes(user.role)) {
+  // Verifica se a role do usuário está na lista de roles permitidas ou se o email está permitido
+  const hasRole = allowedRoles.includes(user.role);
+  const hasEmail = allowedEmails ? allowedEmails.includes(user.email) : false;
+
+  if (!hasRole && !hasEmail) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-white p-10 rounded-[2rem] shadow-xl border border-rose-100 text-center space-y-4">

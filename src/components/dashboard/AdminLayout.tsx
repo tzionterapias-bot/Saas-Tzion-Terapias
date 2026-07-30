@@ -36,7 +36,7 @@ const menuCategories = [
       { icon: Trophy, label: 'Gamificação & Metas', path: '/admin/gamificacao', roles: ['admin', 'financeiro', 'terapeuta'] },
       { icon: Briefcase, label: 'Venda Rápida', path: '/admin/vendas', roles: ['admin', 'financeiro', 'atendimento'] },
       { icon: Package, label: 'Insumos & Estoque', path: '/admin/insumos', roles: ['admin', 'atendimento', 'financeiro'] },
-      { icon: CreditCard, label: 'Serviços & Preços', path: '/admin/servicos', roles: ['admin', 'atendimento'] },
+      { icon: CreditCard, label: 'Serviços & Preços', path: '/admin/servicos', roles: ['admin', 'financeiro'], emails: ['formacaoterapia@gmail.com'] },
       { icon: Headset, label: 'Central de Atendimento', path: '/admin/atendimento', roles: ['admin', 'atendimento'] },
       { icon: MessageSquare, label: 'CRM & Marketing', path: '/admin/crm', roles: ['admin', 'atendimento'] },
       { icon: Megaphone, label: 'Campanhas', path: '/admin/campanhas', roles: ['admin', 'atendimento'] },
@@ -475,9 +475,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           <nav className="flex-1 px-4 py-4 space-y-6 overflow-y-auto custom-scrollbar">
             {menuCategories.map((category, catIdx) => {
-              const visibleItems = category.items.filter(item => 
-                !item.roles || item.roles.includes(user?.role || '')
-              );
+              const visibleItems = category.items.filter((item: any) => {
+                const hasRole = !item.roles || item.roles.includes(user?.role || '');
+                const hasEmail = item.emails && user?.email && item.emails.includes(user.email);
+                return hasRole || hasEmail;
+              });
 
               if (visibleItems.length === 0) return null;
 
