@@ -85,8 +85,8 @@ export default function SuppliesPage() {
     setSaving(false);
 
     if (error) {
-      showToast('error', 'Erro ao salvar insumo. Verifique se a tabela foi criada.');
-      console.error(error);
+      showToast('error', `Erro ao salvar insumo: ${error.message || 'Verifique as permissões ou a tabela no Supabase.'}`);
+      console.error('Erro ao salvar insumo:', error);
       return;
     }
 

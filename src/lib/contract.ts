@@ -126,7 +126,7 @@ export function fillContractTemplate(template: string, data: {
 
   const totalSessions = pkg?.total_sessions || pkg?.sessions || 1;
   const extraSessions = pkg?.extension_sessions || pkg?.bonus_sessions || 0;
-  const priceVal = Number(pkg?.price || pkg?.total_price || pkg?.value || 0);
+  const priceVal = Number(pkg?.price || pkg?.total_price || pkg?.value || pkg?.amount || pkg?.services?.price || 0);
   const priceFormatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(priceVal);
 
   const replacements: Record<string, string> = {

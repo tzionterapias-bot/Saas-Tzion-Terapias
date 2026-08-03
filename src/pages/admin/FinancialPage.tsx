@@ -870,7 +870,7 @@ export default function FinancialPage() {
                 let rawTpl = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
                 const filledTpl = fillContractTemplate(rawTpl, {
                   patient,
-                  package: confirmingPayment
+                  package: pkg
                 });
 
                 const { data: contract } = await supabase.from('patient_contracts').insert({
