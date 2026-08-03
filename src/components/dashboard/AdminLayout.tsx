@@ -26,7 +26,7 @@ const menuCategories = [
       { icon: Calendar, label: 'Agendamentos', path: '/admin/agenda', roles: ['admin', 'terapeuta', 'atendimento'] },
       { icon: Users, label: 'Pacientes', path: '/admin/pacientes', roles: ['admin', 'atendimento', 'terapeuta'] },
       { icon: BookOpen, label: 'Registros de Sessão', path: '/admin/sessoes', roles: ['admin', 'terapeuta'] },
-      { icon: Award, label: 'Portal do Terapeuta', path: '/admin/portal-terapeuta', roles: ['admin', 'terapeuta'] },
+      { icon: Award, label: 'Portal do Terapeuta', path: '/admin/portal-terapeuta', roles: ['terapeuta'] },
     ]
   },
   {
@@ -446,21 +446,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   <img src={whiteLabel.logoUrl} alt="Logo" className="max-h-12 max-w-full object-contain" />
                 ) : (
                   <>
-                    <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100 shrink-0">
-                      <Heart className="w-6 h-6 text-white fill-white/20" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      {whiteLabel?.portalName ? (
-                        <h2 className="font-black text-base text-slate-900 leading-tight break-words">
-                          {whiteLabel.portalName}
-                        </h2>
-                      ) : (
-                        <>
-                          <h2 className="font-black text-xl text-slate-900 leading-none">TZION</h2>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Terapias</p>
-                        </>
-                      )}
-                    </div>
+                    <img src="/logo.png" alt="Tzion Terapias" className="max-h-12 max-w-full object-contain" />
                   </>
                 )}
               </div>

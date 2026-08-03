@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 270 65" fill="none">
+  <defs>
+    <linearGradient id="logo-dark-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5" />
+      <stop offset="100%" stop-color="#0D9488" />
+    </linearGradient>
+  </defs>
+
+  <!-- Dark background version -->
+  <g>
+    <!-- Outer Frame -->
+    <rect x="4" y="4" width="56" height="56" rx="16" fill="#0F172A" stroke="#334155" stroke-width="2.5" />
+    
+    <!-- Inner Gradient Box -->
+    <rect x="10" y="10" width="44" height="44" rx="12" fill="url(#logo-dark-grad)" />
+    
+    <!-- Stylized Leaf Vector -->
+    <path d="M42 22C42 22 24 24 24 42C24 42 42 40 42 22Z" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M24 42L35 31" stroke="white" stroke-width="2.5" stroke-linecap="round" />
+
+    <!-- Main Title: TZION (White for dark backgrounds) -->
+    <text x="74" y="36" font-family="'Inter', system-ui, -apple-system, sans-serif" font-weight="900" font-size="28" letter-spacing="2" fill="#FFFFFF">
+      TZION
+    </text>
+    
+    <!-- Subtitle: TERAPIAS INTEGRATIVAS (Teal-400 for contrast) -->
+    <text x="74" y="50" font-family="'Inter', system-ui, -apple-system, sans-serif" font-weight="800" font-size="8.5" letter-spacing="2.2" fill="#2DD4BF">
+      TERAPIAS INTEGRATIVAS
+    </text>
+  </g>
+</svg>

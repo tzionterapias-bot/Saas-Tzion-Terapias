@@ -71,49 +71,29 @@ export default function App() {
           {/* Anamnese (Pública) */}
           <Route path="/anamnese/:token" element={<PublicAnamnesisPage />} />
           
-          {/* Booking Interface */}
-          <Route path="/agenda" element={<div className="min-h-screen bg-slate-50 p-6 lg:p-20">
-            <div className="max-w-4xl mx-auto space-y-8">
-              <Link to="/" className="text-indigo-600 font-bold flex items-center gap-2">← Voltar ao Site</Link>
-              <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
-                <div className="bg-indigo-600 p-10 text-white">
-                  <h1 className="text-3xl font-bold">Agendamento Online</h1>
-                  <p className="opacity-90 mt-2">Escolha o profissional e o horário ideal para você.</p>
+          {/* Booking Interface -> Redireciona diretamente para o WhatsApp */}
+          <Route path="/agenda" element={
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
+              <div className="bg-white p-10 rounded-3xl shadow-xl max-w-md space-y-6 border border-slate-100">
+                <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto text-emerald-600">
+                  <span className="text-3xl">💬</span>
                 </div>
-                <div className="p-10 grid grid-cols-1 md:grid-cols-3 gap-10">
-                  <div className="col-span-2 space-y-6">
-                    <h3 className="font-bold text-xl flex items-center gap-2"><User className="w-5 h-5" /> 1. Escolha o Profissional</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {[
-                        { name: 'Dra. Ana Silva', role: 'Psicóloga Clínica' },
-                        { name: 'Dr. Roberto Costa', role: 'Terapeuta de Casal' }
-                      ].map((p, i) => (
-                        <button key={i} className="p-4 border-2 border-slate-100 rounded-2xl hover:border-indigo-600 text-left transition-all group">
-                          <p className="font-bold group-hover:text-indigo-600">{p.name}</p>
-                          <p className="text-sm text-slate-500">{p.role}</p>
-                        </button>
-                      ))}
-                    </div>
-
-                    <h3 className="font-bold text-xl flex items-center gap-2 pt-4"><CalendarIcon className="w-5 h-5" /> 2. Data e Horário</h3>
-                    <div className="p-10 text-center border-2 border-dashed border-slate-200 rounded-3xl text-sm text-slate-400">
-                      Calendário interativo será carregado aqui
-                    </div>
-                  </div>
-                  <div className="bg-slate-50 rounded-2xl p-6 h-fit space-y-6 border border-slate-200">
-                    <h3 className="font-bold text-lg">Resumo do Agendamento</h3>
-                    <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">Total</p>
-                    <p className="text-3xl font-bold text-slate-900">R$ 150,00</p>
-                    <div className="space-y-3 pt-4 border-t border-slate-200">
-                      <div className="flex items-center gap-2 text-sm text-slate-600"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Link Google Meet incluso</div>
-                      <div className="flex items-center gap-2 text-sm text-slate-600"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> Confirmação via WhatsApp</div>
-                    </div>
-                    <button disabled className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold opacity-50 cursor-not-allowed">Finalizar Reserva</button>
-                  </div>
+                <h2 className="text-2xl font-bold text-slate-900">Agendamento via WhatsApp</h2>
+                <p className="text-slate-600 text-sm">Clique no botão abaixo para conversar diretamente com a nossa equipe no WhatsApp e agendar a sua consulta.</p>
+                <a
+                  href={`https://wa.me/5563992530004?text=${encodeURIComponent('Olá! Gostaria de agendar uma consulta na Tzion Terapias.')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block w-full py-4 bg-emerald-600 text-white font-bold rounded-2xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
+                >
+                  Agendar pelo WhatsApp
+                </a>
+                <div>
+                  <Link to="/" className="text-xs text-slate-400 hover:text-slate-600 font-medium">← Voltar ao site principal</Link>
                 </div>
               </div>
             </div>
-          </div>} />
+          } />
           <Route path="/portal" element={<RoleGuard allowedRoles={['paciente']}><PatientLayout><PatientDashboard /></PatientLayout></RoleGuard>} />
           <Route path="/portal/sessoes" element={<RoleGuard allowedRoles={['paciente']}><PatientLayout><PatientSessionsPage /></PatientLayout></RoleGuard>} />
           <Route path="/portal/financeiro" element={<RoleGuard allowedRoles={['paciente']}><PatientLayout><PatientFinancialPage /></PatientLayout></RoleGuard>} />
@@ -133,7 +113,7 @@ export default function App() {
           <Route path="/admin/sessoes" element={<RoleGuard allowedRoles={['admin', 'terapeuta']}><AdminLayout><SessionLogger /></AdminLayout></RoleGuard>} />
           <Route path="/admin/config" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><ConfigPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/servicos" element={<RoleGuard allowedRoles={['admin', 'financeiro']} allowedEmails={['formacaoterapia@gmail.com']}><AdminLayout><ServicesPage /></AdminLayout></RoleGuard>} />
-          <Route path="/admin/portal-terapeuta" element={<RoleGuard allowedRoles={['admin', 'terapeuta']}><AdminLayout><TherapistPage /></AdminLayout></RoleGuard>} />
+          <Route path="/admin/portal-terapeuta" element={<RoleGuard allowedRoles={['terapeuta']}><AdminLayout><TherapistPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/usuarios" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><UsersManager /></AdminLayout></RoleGuard>} />
           <Route path="/admin/terapeutas" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><TherapistsManagementPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/gamificacao" element={<RoleGuard allowedRoles={['admin', 'financeiro', 'terapeuta']}><AdminLayout><GamificationView /></AdminLayout></RoleGuard>} />

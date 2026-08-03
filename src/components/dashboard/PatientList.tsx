@@ -76,18 +76,51 @@ export default function PatientList() {
 
   const fetchPatients = async () => {
     setLoading(true);
+    let myTId = therapistId;
+    if (user?.role === 'terapeuta' && !myTId && user?.id) {
+      const { data: tData } = await supabase
+        .from('therapists')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (tData?.id) {
+        myTId = tData.id;
+        setTherapistId(tData.id);
+      }
+    }
+
     const { data, error } = await supabase.from('patients').select(`
       *,
       patient_anamnesis ( id ),
       patient_contracts ( status )
     `).order('created_at', { ascending: false });
-    if (!error && data) setPatients(data);
+
+    if (!error && data) {
+      const nonLeads = data.filter((p: any) => p.status?.toLowerCase() !== 'lead');
+      if (user?.role === 'terapeuta' && myTId) {
+        const { data: appts } = await supabase
+          .from('appointments')
+          .select('patient_id')
+          .eq('therapist_id', myTId);
+
+        const allowedPatientIds = new Set((appts || []).map((a: any) => a.patient_id).filter(Boolean));
+
+        const filtered = nonLeads.filter((p: any) => 
+          allowedPatientIds.has(p.id) || 
+          p.therapist_id === myTId || 
+          p.responsible_therapist_id === myTId
+        );
+        setPatients(filtered);
+      } else {
+        setPatients(nonLeads);
+      }
+    }
     setLoading(false);
   };
 
   useEffect(() => {
     fetchPatients();
-  }, []);
+  }, [user, therapistId]);
 
   useEffect(() => {
     if (selectedPatient?.id) {

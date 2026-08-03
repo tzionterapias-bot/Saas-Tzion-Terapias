@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
+import { useAuth } from '@/src/contexts/AuthContext';
 
 interface Appointment {
   id: string;
@@ -18,10 +19,13 @@ interface Appointment {
 }
 
 export default function AgendaManager() {
+  const { user } = useAuth();
   const [showModal, setShowModal] = useState(false);
   const [selectedDateAppointments, setSelectedDateAppointments] = useState<{date: Date, appts: Appointment[]} | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [patients, setPatients] = useState<{id: string, name: string}[]>([]);
+  const [patients, setPatients] = useState<{id: string, name: string, cpf?: string}[]>([]);
+  const [patientSearchTerm, setPatientSearchTerm] = useState('');
+  const [isPatientDropdownOpen, setIsPatientDropdownOpen] = useState(false);
   const [therapists, setTherapists] = useState<{id: string, name: string, room_id?: string}[]>([]);
   const [rooms, setRooms] = useState<{id: string, name: string, color: string}[]>([]);
   const [patientPackages, setPatientPackages] = useState<any[]>([]);
@@ -73,16 +77,32 @@ export default function AgendaManager() {
       const startStr = start.toISOString().split('T')[0] + 'T00:00:00';
       const endStr = end.toISOString().split('T')[0] + 'T23:59:59';
 
+      let myTherapistId = '';
+      if (user?.role === 'terapeuta' && user?.id) {
+        const { data: tData } = await supabase
+          .from('therapists')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (tData?.id) myTherapistId = tData.id;
+      }
+
+      let apptQuery = supabase.from('appointments')
+        .select('*, patients(name), therapists(name)')
+        .gte('start_time', startStr)
+        .lte('start_time', endStr)
+        .order('start_time', { ascending: true });
+
+      if (user?.role === 'terapeuta' && myTherapistId) {
+        apptQuery = apptQuery.eq('therapist_id', myTherapistId);
+      }
+
       const promises: Promise<any>[] = [
-        Promise.resolve(supabase.from('appointments')
-          .select('*, patients(name), therapists(name)')
-          .gte('start_time', startStr)
-          .lte('start_time', endStr)
-          .order('start_time', { ascending: true }))
+        Promise.resolve(apptQuery)
       ];
 
       if (loadStatic) {
-        promises.push(Promise.resolve(supabase.from('patients').select('id, name')));
+        promises.push(Promise.resolve(supabase.from('patients').select('id, name, cpf, status')));
         promises.push(Promise.resolve(supabase.from('therapists').select('id, name, room_id').eq('active', true)));
         promises.push(Promise.resolve(supabase.from('patient_packages').select('*, services(name), patient_package_items(*, services(name))').eq('status', 'active')));
         promises.push(Promise.resolve(supabase.from('rooms').select('id, name, color').eq('status', 'active')));
@@ -100,8 +120,17 @@ export default function AgendaManager() {
         const packagesRes = results[3];
         const roomsRes = results[4];
 
-        currentPatients = patientsRes?.data || [];
-        currentTherapists = therapistsRes?.data || [];
+        let rawPats = (patientsRes?.data || []).filter((p: any) => p.status?.toLowerCase() !== 'lead');
+        let rawTherapists = therapistsRes?.data || [];
+
+        if (user?.role === 'terapeuta' && myTherapistId) {
+          rawTherapists = rawTherapists.filter((t: any) => t.id === myTherapistId);
+          const apptPIds = new Set((apptsRes?.data || []).map((a: any) => a.patient_id).filter(Boolean));
+          rawPats = rawPats.filter((p: any) => apptPIds.has(p.id));
+        }
+
+        currentPatients = rawPats;
+        currentTherapists = rawTherapists;
         
         setPatients(currentPatients);
         setTherapists(currentTherapists);
@@ -1399,14 +1428,114 @@ export default function AgendaManager() {
                             </button>
                           </div>
                         ) : (
-                          <select 
-                             className="w-full p-5 bg-white border-2 border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl outline-none font-bold text-slate-700 text-lg transition-all appearance-none"
-                             onChange={(e) => setNewAppt({...newAppt, patient_id: e.target.value})}
-                             value={newAppt.patient_id}
-                          >
-                             <option value="">Buscar paciente...</option>
-                             {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
+                          <div className="relative">
+                            <div className="relative">
+                              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
+                              <input
+                                type="text"
+                                placeholder="Buscar paciente por nome ou CPF..."
+                                value={
+                                  newAppt.patient_id && !isPatientDropdownOpen
+                                    ? (patients.find(p => p.id === newAppt.patient_id)?.name || patientSearchTerm)
+                                    : patientSearchTerm
+                                }
+                                onFocus={() => setIsPatientDropdownOpen(true)}
+                                onChange={(e) => {
+                                  setPatientSearchTerm(e.target.value);
+                                  setNewAppt({ ...newAppt, patient_id: '' });
+                                  setIsPatientDropdownOpen(true);
+                                }}
+                                className="w-full pl-12 pr-10 py-4 bg-white border-2 border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl outline-none font-bold text-slate-800 text-base transition-all"
+                              />
+                              {newAppt.patient_id && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setNewAppt({ ...newAppt, patient_id: '' });
+                                    setPatientSearchTerm('');
+                                    setIsPatientDropdownOpen(true);
+                                  }}
+                                  className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-rose-600 rounded-full hover:bg-rose-50 transition-colors"
+                                  title="Limpar seleção"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Dropdown com os resultados da pesquisa */}
+                            {isPatientDropdownOpen && (
+                              <>
+                                <div 
+                                  className="fixed inset-0 z-10" 
+                                  onClick={() => setIsPatientDropdownOpen(false)} 
+                                />
+
+                                <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl z-20 max-h-60 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-150">
+                                  {(() => {
+                                    const searchLower = patientSearchTerm.toLowerCase().trim();
+                                    const searchDigits = searchLower.replace(/\D/g, '');
+
+                                    const filtered = patients.filter(p => {
+                                      if (!searchLower) return true;
+                                      const nameMatch = p.name?.toLowerCase().includes(searchLower);
+                                      const cpfRaw = p.cpf ? p.cpf.replace(/\D/g, '') : '';
+                                      const cpfMatch = searchDigits.length > 0 && cpfRaw.includes(searchDigits);
+                                      return nameMatch || cpfMatch;
+                                    });
+
+                                    if (filtered.length === 0) {
+                                      return (
+                                        <div className="p-5 text-center text-slate-400 text-sm font-medium">
+                                          Nenhum paciente encontrado para "{patientSearchTerm}"
+                                        </div>
+                                      );
+                                    }
+
+                                    return filtered.map(p => (
+                                      <button
+                                        key={p.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setNewAppt({ ...newAppt, patient_id: p.id });
+                                          setPatientSearchTerm(p.name);
+                                          setIsPatientDropdownOpen(false);
+                                        }}
+                                        className={cn(
+                                          "w-full text-left px-5 py-3.5 hover:bg-indigo-50/70 transition-colors flex items-center justify-between group",
+                                          newAppt.patient_id === p.id && "bg-indigo-50/90"
+                                        )}
+                                      >
+                                        <div className="flex items-center gap-3">
+                                          <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-black text-sm shrink-0">
+                                            {p.name?.charAt(0).toUpperCase() || 'P'}
+                                          </div>
+                                          <div>
+                                            <div className="font-bold text-slate-800 group-hover:text-indigo-600 text-sm">
+                                              {p.name}
+                                            </div>
+                                            {p.cpf ? (
+                                              <div className="text-xs text-slate-400 font-medium">
+                                                CPF: {p.cpf}
+                                              </div>
+                                            ) : (
+                                              <div className="text-xs text-slate-300 italic">
+                                                CPF não informado
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {newAppt.patient_id === p.id && (
+                                          <CheckCircle2 className="w-5 h-5 text-indigo-600 shrink-0" />
+                                        )}
+                                      </button>
+                                    ));
+                                  })()}
+                                </div>
+                              </>
+                            )}
+                          </div>
                         )}
                      </div>
 

@@ -3,8 +3,10 @@ import { PlayCircle, Clock, Save, FileText, User, Search, CheckCircle2, AlertCir
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useActiveSession } from '@/src/contexts/ActiveSessionContext';
+import { useAuth } from '@/src/contexts/AuthContext';
 
 export default function SessionLogger() {
+  const { user } = useAuth();
   const { activeSession, startActiveSession, clearActiveSession } = useActiveSession();
 
   const [sessionActive, setSessionActive] = useState(false);
@@ -40,13 +42,29 @@ export default function SessionLogger() {
       setLoading(true);
       const today = new Date().toISOString().split('T')[0];
       
+      let myTherapistId = '';
+      if (user?.role === 'terapeuta' && user?.id) {
+        const { data: tData } = await supabase
+          .from('therapists')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (tData?.id) myTherapistId = tData.id;
+      }
+
+      let apptQuery = supabase
+        .from('appointments')
+        .select('*')
+        .gte('start_time', `${today}T00:00:00`)
+        .lte('start_time', `${today}T23:59:59`)
+        .order('start_time', { ascending: true });
+
+      if (user?.role === 'terapeuta' && myTherapistId) {
+        apptQuery = apptQuery.eq('therapist_id', myTherapistId);
+      }
+
       const [apptsRes, patientsRes, therapistsRes] = await Promise.all([
-        supabase
-          .from('appointments')
-          .select('*')
-          .gte('start_time', `${today}T00:00:00`)
-          .lte('start_time', `${today}T23:59:59`)
-          .order('start_time', { ascending: true }),
+        apptQuery,
         supabase.from('patients').select('id, name'),
         supabase.from('therapists').select('id, name')
       ]);

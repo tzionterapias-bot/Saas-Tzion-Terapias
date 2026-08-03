@@ -5,7 +5,7 @@ import {
   Clock, CheckCircle2, ChevronRight, Plus, Search,
   TrendingUp, Star, Award, Settings, Bell, MessageSquare, X, Save, FileText as FileIcon,
   Image as ImageIcon, MapPin, Video, MonitorSmartphone, Filter, History, Trash2, AlertCircle,
-  Receipt, Percent, Loader2, Camera, PlayCircle
+  Receipt, Percent, Loader2, Camera, PlayCircle, Lock
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -85,6 +85,7 @@ export default function TherapistPage() {
   // Profile Modal State
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profilePatient, setProfilePatient] = useState<any>(null);
+  const [isActiveTherapist, setIsActiveTherapist] = useState<boolean | null>(null);
 
   const fetchData = async (loadStatic = false) => {
     setLoading(true);
@@ -92,44 +93,30 @@ export default function TherapistPage() {
       let therapistId = defaultTherapistId;
       let therapistInfo = currentTherapist;
 
-      // 1. Tentar buscar primeiro o cadastro de terapeuta vinculado ao usuário logado
+      // 1. Buscar obrigatoriamente se o usuário logado possui cadastro de terapeuta ATIVO
       let myTherapist = null;
       if (user?.id) {
         const { data } = await supabase
           .from('therapists')
-          .select('id, name, user_id, commission_rate_clinic, commission_rate_self, photo_url, professional_registration, bio, specialties, attendance_modes')
+          .select('id, name, user_id, active, commission_rate_clinic, commission_rate_self, photo_url, professional_registration, bio, specialties, attendance_modes')
           .eq('user_id', user.id)
+          .eq('active', true)
           .maybeSingle();
         myTherapist = data;
       }
 
-      if (myTherapist) {
-        therapistId = myTherapist.id;
-        therapistInfo = myTherapist;
-        if (defaultTherapistId !== myTherapist.id) {
-          setDefaultTherapistId(myTherapist.id);
-          setCurrentTherapist(myTherapist);
-        }
-      } else {
-        // Se o usuário não possui perfil próprio de terapeuta (ex: admin puro), carrega o primeiro ativo
-        if (loadStatic || allTherapists.length === 0) {
-          const { data: allActive } = await supabase
-            .from('therapists')
-            .select('id, name, user_id, commission_rate_clinic, commission_rate_self, photo_url, professional_registration, bio, specialties, attendance_modes')
-            .eq('active', true)
-            .order('name');
-          
-          const list = allActive || [];
-          setAllTherapists(list);
-
-          if (!therapistId && list.length > 0) {
-            therapistId = list[0].id;
-            therapistInfo = list[0];
-            setCurrentTherapist(list[0]);
-            setDefaultTherapistId(list[0].id);
-          }
-        }
+      if (!myTherapist) {
+        // Usuário não possui perfil ativo de terapeuta -> Bloquear acesso total
+        setIsActiveTherapist(false);
+        setLoading(false);
+        return;
       }
+
+      setIsActiveTherapist(true);
+      therapistId = myTherapist.id;
+      therapistInfo = myTherapist;
+      setDefaultTherapistId(myTherapist.id);
+      setCurrentTherapist(myTherapist);
 
       // Se temos o ID do terapeuta, mas os detalhes dele não estão carregados
       if (therapistId && (!therapistInfo || !therapistInfo.bio)) {
@@ -200,7 +187,17 @@ export default function TherapistPage() {
         const profRes = results[6];
         const roomsRes = results[7];
 
-        setAssignedPatients(patRes?.data || []);
+        const allPats = (patRes?.data || []).filter((p: any) => p.status?.toLowerCase() !== 'lead');
+        if (user?.role === 'terapeuta' || therapistId) {
+          const apptPatientIds = new Set((appRes?.data || []).map((a: any) => a.patient_id).filter(Boolean));
+          const filteredPats = allPats.filter((p: any) => 
+            apptPatientIds.has(p.id) || p.therapist_id === therapistId || p.responsible_therapist_id === therapistId
+          );
+          setAssignedPatients(filteredPats);
+        } else {
+          setAssignedPatients(allPats);
+        }
+
         if (roomsRes?.data) setRooms(roomsRes.data);
         
         const pData = profRes?.data || {};
@@ -1195,6 +1192,28 @@ export default function TherapistPage() {
      }
   };
 
+  if (!loading && isActiveTherapist === false) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center space-y-6 animate-in fade-in">
+        <div className="w-20 h-20 rounded-3xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shadow-xl shadow-rose-100">
+          <Lock className="w-10 h-10" />
+        </div>
+        <div className="max-w-md space-y-2">
+          <h2 className="text-2xl font-black text-slate-900">Acesso Restrito ao Portal</h2>
+          <p className="text-slate-500 text-sm leading-relaxed">
+            O Portal do Terapeuta é de acesso individual e confidencial, reservado exclusivamente a terapeutas com cadastro ativo na clínica.
+          </p>
+        </div>
+        <button
+          onClick={() => navigate('/admin')}
+          className="px-6 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+        >
+          Voltar ao Dashboard Geral
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-10 animate-in fade-in duration-500 pb-20">
       {/* Modals */}
@@ -1266,8 +1285,10 @@ export default function TherapistPage() {
             </label>
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight truncate">Olá, {currentTherapist?.name?.split(' ')[0] || 'Terapeuta'}</h2>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight truncate">
+                Olá, {currentTherapist?.name?.split(' ')[0] || 'Terapeuta'}
+              </h2>
             </div>
             <p className="text-xs sm:text-sm text-slate-500 font-medium leading-relaxed mt-1">
               <span>Você tem {appointments.length} atendimentos agendados para hoje.</span>
