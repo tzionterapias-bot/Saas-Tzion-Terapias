@@ -70,14 +70,14 @@ const DEFAULT: any = {
         name: 'Jhonantan de Santana Bezerra',
         role: 'Terapeuta Integrativo',
         bio: 'Especialista em saúde emocional, equilíbrio mente-corpo e processos de cura integrativa.',
-        photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300'
+        photoUrl: ''
       },
       {
         id: 't2',
         name: 'Marcos',
         role: 'Terapeuta Clínico & Gestor',
         bio: 'Especializado em atendimentos presenciais e online focados em libertação emocional e bem-estar.',
-        photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300'
+        photoUrl: ''
       }
     ] 
   },
