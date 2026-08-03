@@ -4,6 +4,8 @@ import { ActiveSessionProvider } from '@/src/contexts/ActiveSessionContext';
 import RoleGuard from '@/src/components/auth/RoleGuard';
 import AdminLayout from '@/src/components/dashboard/AdminLayout';
 import InstitutionalSite from '@/src/pages/site/InstitutionalSite';
+import PrivacyPolicy from '@/src/pages/site/PrivacyPolicy';
+import TermsOfUse from '@/src/pages/site/TermsOfUse';
 import NpsFeedbackPage from '@/src/pages/public/NpsFeedbackPage';
 import TicketNpsPage from '@/src/pages/public/TicketNpsPage';
 import PublicContractPage from '@/src/pages/public/PublicContractPage';
@@ -60,6 +62,8 @@ export default function App() {
 
           {/* Institutional Site */}
           <Route path="/" element={<InstitutionalSite />} />
+          <Route path="/politica-de-privacidade" element={<PrivacyPolicy />} />
+          <Route path="/termos-de-uso" element={<TermsOfUse />} />
           
           {/* Avaliação NPS (Pública) */}
           <Route path="/avaliacao/:id" element={<NpsFeedbackPage />} />

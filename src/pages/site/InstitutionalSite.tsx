@@ -1009,8 +1009,8 @@ export default function InstitutionalSite() {
         <div className="max-w-7xl mx-auto pt-12 mt-16 border-t border-slate-900 text-xs flex flex-col md:flex-row items-center justify-between gap-4 text-slate-500">
           <p>{footer.copyright}</p>
           <div className="flex gap-6">
-            <a href="#" className="hover:text-slate-400">Política de Privacidade</a>
-            <a href="#" className="hover:text-slate-400">Termos de Uso</a>
+            <Link to="/politica-de-privacidade" className="hover:text-slate-400 transition-colors">Política de Privacidade</Link>
+            <Link to="/termos-de-uso" className="hover:text-slate-400 transition-colors">Termos de Uso</Link>
           </div>
         </div>
       </footer>

@@ -82,7 +82,10 @@ export default function InternalChat() {
   }, [user?.id]);
 
   const markChannelRead = useCallback((channelId: string) => {
-    readTimestampsRef.current[channelId] = new Date().toISOString();
+    // Adiciona 1 minuto ao tempo atual para evitar problemas de fuso/delay do relógio do banco de dados
+    const futureDate = new Date();
+    futureDate.setMinutes(futureDate.getMinutes() + 1);
+    readTimestampsRef.current[channelId] = futureDate.toISOString();
     saveReadTimestamps();
     setContactUnreadMap(prev => {
       const count = prev[channelId] || 0;
@@ -231,8 +234,6 @@ export default function InternalChat() {
       }
     };
     fetchMessages();
-    const interval = setInterval(fetchMessages, 5000);
-    return () => clearInterval(interval);
   }, [activeContact]);
 
   useEffect(() => {
@@ -283,13 +284,7 @@ export default function InternalChat() {
     if (!newMessage.trim() || !user || !activeContact) return;
     const content = newMessage.trim();
     setNewMessage('');
-    const tempMsg: Message = {
-      id: `temp-${Date.now()}`, sender_id: user.id,
-      sender_name: user.name || 'Usuario', sender_role: user.role || 'Membro',
-      content, channel: activeContact.id, created_at: new Date().toISOString()
-    };
-    setMessages(prev => [...prev, tempMsg]);
-    processedMsgIds.current.add(tempMsg.id);
+
     const { error } = await supabase.from('internal_messages').insert({
       sender_id: user.id, sender_name: user.name || 'Usuario',
       sender_role: user.role || 'Membro', content, channel: activeContact.id,
