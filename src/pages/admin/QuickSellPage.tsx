@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   CreditCard, DollarSign, CheckCircle2, AlertCircle, Loader2, X, Save, 
-  Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus
+  Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus, Search, ChevronDown, Check
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -20,6 +20,18 @@ interface Therapist {
 const fmt = (v: number) =>
   v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const parseCurrency = (val: string) => {
+  if (!val) return 0;
+  return parseFloat(val.replace(/\./g, '').replace(',', '.'));
+};
+
+const formatCurrencyInput = (val: string) => {
+  let v = val.replace(/\D/g, '');
+  if (!v) return '';
+  const num = parseInt(v, 10) / 100;
+  return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
 const PAYMENT_METHODS = [
   { value: 'asaas_pix', label: 'PIX (Gerar QR Code - Asaas)' },
   { value: 'asaas_credit', label: 'Cartão de Crédito Online (Enviar WhatsApp - Asaas)' },
@@ -33,6 +45,21 @@ const PAYMENT_METHODS = [
 const CATEGORIES_INCOME = ['Sessão', 'Consulta', 'Pacote', 'Avaliação', 'Outros'];
 const CATEGORIES_EXPENSE = ['Aluguel', 'Insumos', 'Marketing', 'Comissão', 'Impostos', 'Outros'];
 
+interface CartItem {
+  id: string;
+  isCustomEntry: boolean;
+  customTitle: string;
+  customPrice: string;
+  customSessions: string;
+  service_id: string | null;
+  catalogPrice: string;
+  catalogSessions: string;
+  service_name: string;
+  service_type?: string;
+  priceNum: number;
+  sessionsNum: number;
+}
+
 export default function QuickSellPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -44,14 +71,21 @@ export default function QuickSellPage() {
 
   const emptySell = { patient_id: '', service_id: '', payment_method: 'asaas_pix', therapist_id: '', referral_source: 'therapist' as const };
   const [sellData, setSellData] = useState(emptySell);
+  
+  const [patientSearch, setPatientSearch] = useState('');
+  const [isPatientDropdownOpen, setIsPatientDropdownOpen] = useState(false);
   const [recentPayments, setRecentPayments] = useState<any[]>([]);
   const [cardFeeRateInput, setCardFeeRateInput] = useState('0');
-  const [multimodalItems, setMultimodalItems] = useState<{ service_id: string; sessions: number }[]>([]);
+  
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
   
   const [isCustomEntry, setIsCustomEntry] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [customSessions, setCustomSessions] = useState('1');
+
+  const [catalogPrice, setCatalogPrice] = useState<string>('');
+  const [catalogSessions, setCatalogSessions] = useState<string>('');
 
   // Modal Novo Lançamento (Identico ao Financeiro)
   const [showEntryModal, setShowEntryModal] = useState(false);
@@ -125,13 +159,14 @@ export default function QuickSellPage() {
 
       const therapistsRes = await supabase
         .from('therapists')
-        .select('id, name, phone, pix_key, commission_rate_clinic, commission_rate_self, user_id')
+        .select('id, name, phone, pix_key, commission_rate_clinic, commission_rate_self, user_id, active')
+        .eq('active', true)
         .order('name');
       
       if (!therapistsRes.error) {
         setTherapists((therapistsRes.data || []) as Therapist[]);
       } else {
-        const fallback = await supabase.from('therapists').select('id, name, user_id').order('name');
+        const fallback = await supabase.from('therapists').select('id, name, user_id').eq('active', true).order('name');
         setTherapists(((fallback.data || []).map((t: any) => ({
           ...t,
           phone: null, pix_key: null,
@@ -191,12 +226,7 @@ export default function QuickSellPage() {
 
   const selectedSvc = services.find(s => s.id === sellData.service_id);
 
-  const handleSellService = async () => {
-    if (!sellData.patient_id) {
-      showToast('Selecione o paciente.', 'error');
-      return;
-    }
-
+  const handleAddToCart = () => {
     if (isCustomEntry) {
       if (!customTitle.trim()) {
         showToast('Digite a descrição do lançamento avulso.', 'error');
@@ -213,31 +243,65 @@ export default function QuickSellPage() {
       }
     }
 
+    const service = !isCustomEntry ? services.find(s => s.id === sellData.service_id) : null;
+
+    const price = isCustomEntry 
+      ? (parseCurrency(customPrice) || 0) 
+      : (catalogPrice !== '' ? parseCurrency(catalogPrice) : (service?.price || 0)) || 0;
+
+    const description = isCustomEntry ? customTitle.trim() : (service?.name || 'Serviço');
+
+    let totalSessions = isCustomEntry 
+      ? (parseInt(customSessions) || 1) 
+      : (catalogSessions !== '' ? parseInt(catalogSessions) : (service?.sessions_count || 1)) || 1;
+
+    const newItem: CartItem = {
+      id: Math.random().toString(36).substring(7),
+      isCustomEntry,
+      customTitle,
+      customPrice,
+      customSessions,
+      service_id: sellData.service_id,
+      catalogPrice,
+      catalogSessions,
+      service_name: description,
+      service_type: service?.type,
+      priceNum: price,
+      sessionsNum: totalSessions
+    };
+
+    setCartItems([...cartItems, newItem]);
+    
+    setSellData({ ...sellData, service_id: '' });
+    setCustomTitle('');
+    setCustomPrice('');
+    setCustomSessions('1');
+    setCatalogPrice('');
+    setCatalogSessions('');
+    showToast('Item adicionado à venda!');
+  };
+
+  const handleFinalizeSale = async () => {
+    if (!sellData.patient_id) {
+      showToast('Selecione o paciente.', 'error');
+      return;
+    }
+
+    if (cartItems.length === 0) {
+      showToast('Adicione pelo menos um item à venda.', 'error');
+      return;
+    }
+
     setSaving(true);
 
     const patient = patients.find(p => p.id === sellData.patient_id);
     const therapist = therapists.find(t => t.id === sellData.therapist_id);
-    const service = !isCustomEntry ? services.find(s => s.id === sellData.service_id) : null;
 
     if (!patient) { setSaving(false); return; }
 
-    const price = isCustomEntry ? (parseFloat(customPrice) || 0) : (service?.price || 0);
-    const description = isCustomEntry ? customTitle.trim() : (service?.name || 'Serviço');
-    const totalSessions = isCustomEntry ? (parseInt(customSessions) || 1) : (service?.sessions_count || 1);
-
-    if (!isCustomEntry && service?.type === 'pacote') {
-      const totalAssigned = multimodalItems.reduce((acc, curr) => acc + (curr.sessions || 0), 0);
-      if (totalAssigned !== service.sessions_count) {
-        showToast(`A soma das sessões distribuídas (${totalAssigned}) deve ser exatamente igual ao total do pacote (${service.sessions_count}).`, 'error');
-        setSaving(false);
-        return;
-      }
-      if (multimodalItems.some(item => !item.service_id)) {
-        showToast('Selecione o serviço para todos os itens distribuídos do pacote.', 'error');
-        setSaving(false);
-        return;
-      }
-    }
+    const totalPrice = cartItems.reduce((sum, item) => sum + item.priceNum, 0);
+    const itemNames = cartItems.map(i => i.service_name).join(' + ');
+    const description = `${itemNames} — ${patient.name}${therapist ? ` (${therapist.name})` : ''}`;
 
     let asaasId: string | null = null;
     let asaasLink: string | null = null;
@@ -250,9 +314,9 @@ export default function QuickSellPage() {
         const { data: result, error: fnError } = await supabase.functions.invoke('asaas-integration/checkout', {
           method: 'POST',
           body: {
-            valor: price,
+            valor: totalPrice,
             pacienteId: sellData.patient_id,
-            description: `${description} — Tzion Terapias`,
+            description: `Venda Múltipla — Tzion Terapias`,
             billingType: isAsaasPix ? 'PIX' : 'CREDIT_CARD'
           }
         });
@@ -276,14 +340,14 @@ export default function QuickSellPage() {
     const rate = (sellData.payment_method === 'credit_card' || sellData.payment_method === 'debit_card')
       ? (parseFloat(cardFeeRateInput) || 0)
       : 0;
-    const feeVal = price * (rate / 100);
-    const netVal = price - feeVal;
+    const feeVal = totalPrice * (rate / 100);
+    const netVal = totalPrice - feeVal;
 
     const { data: payData, error: payErr } = await supabase.from('payments').insert([{
-      amount: price,
+      amount: totalPrice,
       type: 'income',
       status: 'pending',
-      description: `${description} — ${patient.name}${therapist ? ` (${therapist.name})` : ''}`,
+      description,
       category: 'Serviço',
       payment_method: isAsaas ? 'asaas' : sellData.payment_method,
       patient_id: sellData.patient_id,
@@ -303,30 +367,19 @@ export default function QuickSellPage() {
       return; 
     }
 
-    // Criar pacote de sessões como 'pending'
-    const { data: pkgData, error: pkgErr } = await supabase.from('patient_packages').insert([{
-      patient_id: sellData.patient_id,
-      service_id: !isCustomEntry ? sellData.service_id : null,
-      total_sessions: totalSessions,
-      used_sessions: 0,
-      status: 'pending',
-    }]).select().single();
+    for (const item of cartItems) {
+      const { data: pkgData, error: pkgErr } = await supabase.from('patient_packages').insert([{
+        patient_id: sellData.patient_id,
+        service_id: !item.isCustomEntry ? item.service_id : null,
+        total_sessions: item.sessionsNum,
+        used_sessions: 0,
+        status: 'pending',
+      }]).select().single();
 
-    if (pkgErr) {
-      console.error('Erro ao criar pacote:', pkgErr);
-      showToast('Erro ao registrar pacote no banco.', 'error');
-      setSaving(false);
-      return;
-    }
-
-    if (!isCustomEntry && service?.type === 'pacote' && pkgData && multimodalItems.length > 0) {
-      const itemsToInsert = multimodalItems.map(item => ({
-        package_id: pkgData.id,
-        service_id: item.service_id,
-        total_sessions: item.sessions,
-        used_sessions: 0
-      }));
-      await supabase.from('patient_package_items').insert(itemsToInsert);
+      if (pkgErr) {
+        console.error('Erro ao criar pacote:', pkgErr);
+        continue;
+      }
     }
 
     if (isAsaasPix && asaasId) {
@@ -340,7 +393,7 @@ export default function QuickSellPage() {
           setCreatedPixQrCode({
             encodedImage: qrData.encodedImage,
             payload: qrData.payload,
-            amount: service.price,
+            amount: totalPrice,
             patientName: patient.name,
             paymentId: payData.id
           });
@@ -355,17 +408,16 @@ export default function QuickSellPage() {
     } else if (sellData.payment_method === 'asaas_credit' && asaasLink) {
       setCreatedAsaasPayment({
         url: asaasLink,
-        amount: service.price,
+        amount: totalPrice,
         patientName: patient.name,
         phone: patient.phone,
         paymentId: payData.id
       });
 
-      // Enviar cobrança automaticamente se tiver telefone
       if (patient.phone) {
         try {
           const firstName = patient.name.split(' ')[0];
-          const msg = `Olá, *${firstName}*! ✨\n\nSegue o link para pagamento do seu pacote/serviço *${service.name}* na Tzion Terapias:\n\n🔗 ${asaasLink}\n\n💳 Você pode parcelar no Cartão de Crédito em até 12x, ou pagar via PIX/Boleto.\n\nQualquer dúvida, estamos à disposição! 💙`;
+          const msg = `Olá, *${firstName}*! ✨\n\nSegue o link para pagamento da sua compra na Tzion Terapias:\n\n🔗 ${asaasLink}\n\n💳 Você pode parcelar no Cartão de Crédito em até 12x, ou pagar via PIX/Boleto.\n\nQualquer dúvida, estamos à disposição! 💙`;
           await sendWhatsAppMessage(patient.id, patient.phone, msg, 'payment_link_sent');
           showToast('Cobrança gerada e enviada via WhatsApp!');
         } catch (err) {
@@ -378,7 +430,7 @@ export default function QuickSellPage() {
     } else {
       showToast('Venda registrada com sucesso!');
       setSellData(emptySell);
-      setMultimodalItems([]);
+      setCartItems([]);
     }
 
     setSaving(false);
@@ -389,7 +441,7 @@ export default function QuickSellPage() {
       {toast && (
         <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[300] animate-in slide-in-from-top-4 fade-in duration-300">
           <div className={cn(
-            "px-8 py-4 rounded-[2rem] shadow-2xl font-bold flex items-center gap-3",
+            "px-8 py-4 rounded-xl shadow-2xl font-bold flex items-center gap-3",
             toast.type === 'success' ? "bg-slate-900 text-white" : "bg-rose-600 text-white"
           )}>
             {toast.type === 'success'
@@ -400,14 +452,14 @@ export default function QuickSellPage() {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto pb-10 animate-in fade-in duration-500 relative grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="w-full pb-4 animate-in fade-in duration-500 relative grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* Lado Esquerdo: Formulário */}
-        <div className="lg:col-span-7 space-y-6">
+        <div className="lg:col-span-7 space-y-4">
           {/* Header card */}
-          <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="bg-white p-6 sm:p-8 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="p-4 bg-emerald-500 text-white rounded-3xl shadow-lg shadow-emerald-100 shrink-0">
+              <div className="p-4 bg-emerald-500 text-white rounded-lg shadow-lg shadow-emerald-100 shrink-0">
                 <Briefcase className="w-8 h-8" />
               </div>
               <div>
@@ -419,14 +471,14 @@ export default function QuickSellPage() {
             <button
               type="button"
               onClick={() => setShowEntryModal(true)}
-              className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-md shadow-indigo-200 transition-all flex items-center gap-2 shrink-0 cursor-pointer"
+              className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-md shadow-indigo-200 transition-all flex items-center gap-2 shrink-0 cursor-pointer"
             >
               + Lançamento Avulso
             </button>
           </div>
 
           {/* Form card */}
-          <div className="bg-white border border-slate-200 rounded-[2.5rem] shadow-sm overflow-hidden p-6 sm:p-8 space-y-6">
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden p-6 sm:p-6 space-y-5">
             {loading ? (
               <div className="flex flex-col items-center justify-center py-20 space-y-4">
                 <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
@@ -435,21 +487,99 @@ export default function QuickSellPage() {
             ) : (
               <>
                 {/* Paciente */}
-                <div className="space-y-2">
+                <div className="space-y-2 relative">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Paciente *</label>
-                  <select 
-                    value={sellData.patient_id} 
-                    onChange={e => setSellData({ ...sellData, patient_id: e.target.value })}
-                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
+                  <div className="relative">
+                    <div 
+                      className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 hover:border-indigo-400 transition-all cursor-pointer text-sm flex items-center justify-between"
+                      onClick={() => setIsPatientDropdownOpen(!isPatientDropdownOpen)}
+                    >
+                      <span className="truncate">
+                        {sellData.patient_id 
+                          ? patients.find(p => p.id === sellData.patient_id)?.name || 'Selecione o paciente...'
+                          : 'Selecione o paciente...'}
+                      </span>
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    </div>
+                    
+                    {isPatientDropdownOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setIsPatientDropdownOpen(false)}></div>
+                        <div className="absolute top-full mt-2 left-0 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden">
+                          <div className="p-3 border-b border-slate-100 flex items-center gap-2">
+                            <Search className="w-4 h-4 text-slate-400" />
+                            <input 
+                              type="text"
+                              autoFocus
+                              placeholder="Buscar por nome ou CPF..."
+                              value={patientSearch}
+                              onChange={e => setPatientSearch(e.target.value)}
+                              className="w-full text-sm font-medium text-slate-700 outline-none"
+                            />
+                          </div>
+                          <div className="max-h-60 overflow-y-auto p-2 space-y-1">
+                            {patients.filter(p => 
+                              p.name?.toLowerCase().includes(patientSearch.toLowerCase()) || 
+                              (p.cpf && p.cpf.replace(/\D/g, '').includes(patientSearch.replace(/\D/g, '')))
+                            ).length === 0 ? (
+                              <div className="p-4 text-center text-sm text-slate-400 font-medium">Nenhum paciente encontrado.</div>
+                            ) : (
+                              patients.filter(p => 
+                                p.name?.toLowerCase().includes(patientSearch.toLowerCase()) || 
+                                (p.cpf && p.cpf.replace(/\D/g, '').includes(patientSearch.replace(/\D/g, '')))
+                              ).map(p => (
+                                <div 
+                                  key={p.id}
+                                  onClick={() => {
+                                    setSellData({ ...sellData, patient_id: p.id });
+                                    setIsPatientDropdownOpen(false);
+                                    setPatientSearch('');
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-between",
+                                    sellData.patient_id === p.id ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50"
+                                  )}
+                                >
+                                  <div>
+                                    <div>{p.name}</div>
+                                    {p.cpf && <div className="text-[10px] font-medium text-slate-400 mt-0.5">CPF: {p.cpf}</div>}
+                                  </div>
+                                  {sellData.patient_id === p.id && <Check className="w-4 h-4" />}
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4 mb-2">
+                  <span className="text-xs font-black text-indigo-600 uppercase tracking-widest bg-indigo-100 px-3 py-1 rounded-full">Passo 1</span>
+                  <span className="text-sm font-bold text-slate-500 uppercase tracking-widest">Adicionar Itens</span>
+                </div>
+
+                <div className="flex items-center gap-4 mb-4 mt-2">
+                  <button 
+                    type="button"
+                    onClick={() => setIsCustomEntry(false)}
+                    className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all", !isCustomEntry ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
                   >
-                    <option value="">Selecione o paciente...</option>
-                    {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                    Do Catálogo
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setIsCustomEntry(true)}
+                    className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all", isCustomEntry ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200")}
+                  >
+                    Avulso Manual
+                  </button>
                 </div>
 
                 {/* Modo Lançamento Avulso vs Serviço do Catálogo */}
                 {isCustomEntry ? (
-                  <div className="p-6 bg-indigo-50/50 border border-indigo-100 rounded-[2rem] space-y-4 animate-in fade-in duration-300">
+                  <div className="p-6 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-4 animate-in fade-in duration-300">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">
                         ✨ Lançamento Avulso Personalizado
@@ -466,7 +596,7 @@ export default function QuickSellPage() {
                         value={customTitle}
                         onChange={e => setCustomTitle(e.target.value)}
                         placeholder="Ex: Sessão Especial de Hipnose, Produto, Avaliação..."
-                        className="w-full px-5 py-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 text-sm shadow-sm"
+                        className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg outline-none font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 text-sm shadow-sm"
                       />
                     </div>
 
@@ -474,13 +604,11 @@ export default function QuickSellPage() {
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Valor do Lançamento (R$) *</label>
                         <input
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          type="text"
                           value={customPrice}
-                          onChange={e => setCustomPrice(e.target.value)}
-                          placeholder="0.00"
-                          className="w-full px-5 py-4 bg-white border border-slate-200 rounded-2xl outline-none font-black text-indigo-600 text-base shadow-sm"
+                          onChange={e => setCustomPrice(formatCurrencyInput(e.target.value))}
+                          placeholder="0,00"
+                          className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg outline-none font-black text-indigo-600 text-base shadow-sm"
                         />
                       </div>
 
@@ -492,107 +620,97 @@ export default function QuickSellPage() {
                           value={customSessions}
                           onChange={e => setCustomSessions(e.target.value)}
                           placeholder="1"
-                          className="w-full px-5 py-4 bg-white border border-slate-200 rounded-2xl outline-none font-bold text-slate-800 text-center text-sm shadow-sm"
+                          className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg outline-none font-bold text-slate-800 text-left text-sm shadow-sm"
                         />
                       </div>
                     </div>
                   </div>
                 ) : (
                   /* Serviço do Catálogo */
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Serviço ou Pacote *</label>
-                    <select 
-                      value={sellData.service_id} 
-                      onChange={e => {
-                        const svcId = e.target.value;
-                        setSellData({ ...sellData, service_id: svcId });
-                        const svc = services.find(s => s.id === svcId);
-                        if (svc && svc.type === 'pacote') {
-                          setMultimodalItems([{ service_id: '', sessions: svc.sessions_count }]);
-                        } else {
-                          setMultimodalItems([]);
-                        }
-                      }}
-                      className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
-                    >
-                      <option value="">Selecione o serviço...</option>
-                      {services.map(s => <option key={s.id} value={s.id}>{s.name} — R$ {fmt(s.price)} ({s.type === 'pacote' ? `${s.sessions_count} sessões` : 'Avulso'})</option>)}
-                    </select>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Serviço ou Pacote *</label>
+                      <select 
+                        value={sellData.service_id} 
+                        onChange={e => {
+                          const svcId = e.target.value;
+                          setSellData({ ...sellData, service_id: svcId });
+                          const svc = services.find(s => s.id === svcId);
+                          if (svc) {
+                            setCatalogPrice(formatCurrencyInput(svc.price.toFixed(2)));
+                            setCatalogSessions(String(svc.sessions_count || 1));
+                          } else {
+                            setCatalogPrice('');
+                            setCatalogSessions('');
+                          }
+                        }}
+                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
+                      >
+                        <option value="">Selecione o serviço...</option>
+                        {services.map(s => <option key={s.id} value={s.id}>{s.name} — R$ {fmt(s.price)} ({s.type === 'pacote' ? `${s.sessions_count} sessões` : 'Avulso'})</option>)}
+                      </select>
+                    </div>
+
+                    {sellData.service_id && (
+                      <div className="grid grid-cols-2 gap-4 p-5 bg-indigo-50/50 border border-indigo-100 rounded-lg animate-in fade-in">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Personalizar Valor Total (R$)</label>
+                          <input
+                            type="text"
+                            value={catalogPrice}
+                            onChange={e => setCatalogPrice(formatCurrencyInput(e.target.value))}
+                            className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none font-black text-indigo-700 text-sm shadow-sm focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Qtd. Sessões / Créditos</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={catalogSessions}
+                            onChange={e => setCatalogSessions(e.target.value)}
+                            className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none font-bold text-indigo-900 text-sm shadow-sm focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
-            {/* Distribuição de Sessões para Pacote Multimodal */}
-            {selectedSvc?.type === 'pacote' && (
-              <div className="p-6 bg-slate-50 border border-slate-200 rounded-[2rem] space-y-4">
-                <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
-                    Distribuição Multimodal ({selectedSvc.sessions_count} sessões)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setMultimodalItems([...multimodalItems, { service_id: '', sessions: 1 }])}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    + Add Serviço
-                  </button>
-                </div>
+            {/* Botão Adicionar ao Carrinho */}
+            <button
+              onClick={handleAddToCart}
+              className="w-full py-4 bg-slate-800 text-white rounded-lg font-black shadow-lg shadow-slate-200 hover:bg-slate-900 transition-all flex items-center justify-center gap-2"
+            >
+              <Plus className="w-5 h-5" /> Adicionar à Venda
+            </button>
 
-                <div className="space-y-3">
-                  {multimodalItems.map((item, idx) => (
-                    <div key={idx} className="flex gap-2 items-center">
-                      <select
-                        value={item.service_id}
-                        onChange={(e) => {
-                          const newItems = [...multimodalItems];
-                          newItems[idx].service_id = e.target.value;
-                          setMultimodalItems(newItems);
-                        }}
-                        className="flex-1 p-3 bg-white border border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none appearance-none cursor-pointer"
-                      >
-                        <option value="">Selecione o serviço...</option>
-                        {services.filter(s => s.type !== 'pacote').map(s => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        min="1"
-                        max={selectedSvc.sessions_count}
-                        value={item.sessions}
-                        onChange={(e) => {
-                          const newItems = [...multimodalItems];
-                          newItems[idx].sessions = parseInt(e.target.value) || 0;
-                          setMultimodalItems(newItems);
-                        }}
-                        className="w-16 p-3 bg-white border border-slate-200 rounded-xl font-black text-xs text-slate-700 text-center outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newItems = multimodalItems.filter((_, i) => i !== idx);
-                          setMultimodalItems(newItems);
-                        }}
-                        className="p-3 text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+            {/* Carrinho UI */}
+            {cartItems.length > 0 && (
+              <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-4 animate-in fade-in">
+                <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
+                  🛒 Itens na Venda ({cartItems.length})
+                </h4>
+                <div className="space-y-2">
+                  {cartItems.map(item => (
+                    <div key={item.id} className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">{item.service_name}</p>
+                        <p className="text-xs text-slate-500 font-medium">{item.sessionsNum} {item.sessionsNum === 1 ? 'Sessão/Unid' : 'Sessões/Unids'}</p>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="font-black text-indigo-600">R$ {fmt(item.priceNum)}</span>
+                        <button onClick={() => setCartItems(cartItems.filter(i => i.id !== item.id))} className="text-rose-500 hover:text-rose-700 p-1 bg-rose-50 rounded-lg hover:bg-rose-100 transition-colors">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
-
-                {(() => {
-                  const totalAssigned = multimodalItems.reduce((acc, curr) => acc + curr.sessions, 0);
-                  const diff = selectedSvc.sessions_count - totalAssigned;
-                  return (
-                    <div className="flex justify-between items-center text-xs font-bold pt-2 border-t border-slate-200">
-                      <span className="text-slate-500">Total Distribuído:</span>
-                      <span className={cn(diff === 0 ? "text-emerald-600" : "text-rose-500")}>
-                        {totalAssigned} de {selectedSvc.sessions_count} sessões
-                        {diff !== 0 && ` (${diff > 0 ? `faltam ${diff}` : `excedeu ${Math.abs(diff)}`})`}
-                      </span>
-                    </div>
-                  );
-                })()}
+                <div className="flex justify-between items-center pt-4 border-t border-slate-200/60">
+                  <span className="font-black text-slate-600 text-sm">TOTAL</span>
+                  <span className="font-black text-slate-900 text-xl">R$ {fmt(cartItems.reduce((acc, curr) => acc + curr.priceNum, 0))}</span>
+                </div>
               </div>
             )}
 
@@ -610,7 +728,7 @@ export default function QuickSellPage() {
                     setSellData({ ...sellData, payment_method: method });
                     setCardFeeRateInput(defaultRate);
                   }}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
                 >
                   {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
@@ -621,7 +739,7 @@ export default function QuickSellPage() {
                 <select 
                   value={sellData.therapist_id} 
                   onChange={e => setSellData({ ...sellData, therapist_id: e.target.value })}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
                 >
                   <option value="">Sem terapeuta</option>
                   {therapists.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -631,7 +749,7 @@ export default function QuickSellPage() {
 
             {/* Taxa da Maquininha (cartões) */}
             {(sellData.payment_method === 'credit_card' || sellData.payment_method === 'debit_card') && (
-              <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+              <div className="p-5 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Taxa da Maquininha (%)</label>
                   <input
@@ -646,9 +764,9 @@ export default function QuickSellPage() {
                 </div>
                 {(() => {
                   const rate = parseFloat(cardFeeRateInput) || 0;
-                  const price = selectedSvc?.price ?? 0;
-                  const feeVal = price * (rate / 100);
-                  const netVal = price - feeVal;
+                  const totalPrice = cartItems.reduce((acc, curr) => acc + curr.priceNum, 0);
+                  const feeVal = totalPrice * (rate / 100);
+                  const netVal = totalPrice - feeVal;
                   return (
                     <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 font-medium pt-2.5 border-t border-slate-200/60">
                       <div>Taxa Cobrada: <strong className="text-slate-800">R$ {fmt(feeVal)}</strong></div>
@@ -671,7 +789,7 @@ export default function QuickSellPage() {
                       key={src} 
                       type="button" 
                       onClick={() => setSellData({ ...sellData, referral_source: src })}
-                      className={cn("p-4 rounded-2xl border-2 font-bold text-sm flex flex-col items-center gap-2 transition-all cursor-pointer",
+                      className={cn("p-4 rounded-lg border-2 font-bold text-sm flex flex-col items-center gap-2 transition-all cursor-pointer",
                         sellData.referral_source === src
                           ? src === 'clinic' ? "bg-indigo-50/50 border-indigo-500 text-indigo-700" : "bg-emerald-50/50 border-emerald-500 text-emerald-700"
                           : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
@@ -690,14 +808,14 @@ export default function QuickSellPage() {
               </div>
 
               {/* Preview de comissão */}
-              {sellData.service_id && (() => {
+              {cartItems.length > 0 && (() => {
                 const th = therapists.find(t => t.id === sellData.therapist_id);
-                if (!selectedSvc) return null;
                 const rate = sellData.referral_source === 'clinic' ? (th?.commission_rate_clinic ?? 50) : (th?.commission_rate_self ?? 25);
-                const clinicAmt = selectedSvc.price * (rate / 100);
-                const therapistAmt = selectedSvc.price - clinicAmt;
+                const totalPrice = cartItems.reduce((acc, curr) => acc + curr.priceNum, 0);
+                const clinicAmt = totalPrice * (rate / 100);
+                const therapistAmt = totalPrice - clinicAmt;
                 return (
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/60 grid grid-cols-2 gap-4 text-center">
+                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200/60 grid grid-cols-2 gap-4 text-left">
                     <div>
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Clínica recebe</p>
                       <p className="text-lg font-black text-indigo-600">R$ {fmt(clinicAmt)}</p>
@@ -715,11 +833,11 @@ export default function QuickSellPage() {
 
             {/* Confirm button */}
             <button 
-              onClick={handleSellService} 
-              disabled={saving}
-              className="w-full py-5 bg-emerald-500 text-white rounded-[2rem] font-black text-lg shadow-xl shadow-emerald-100 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              onClick={handleFinalizeSale} 
+              disabled={saving || cartItems.length === 0}
+              className="w-full py-5 bg-emerald-500 text-white rounded-xl font-black text-lg shadow-xl shadow-emerald-100 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
             >
-              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />} Confirmar Venda
+              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />} Confirmar Venda {cartItems.length > 0 && `(R$ ${fmt(cartItems.reduce((acc, curr) => acc + curr.priceNum, 0))})`}
             </button>
           </>
         )}
@@ -729,10 +847,10 @@ export default function QuickSellPage() {
         {/* Lado Direito: Últimas Vendas */}
         <div className="lg:col-span-5 sticky top-6">
           {/* ÚLTIMAS VENDAS (ACOMPANHAMENTO PARA A RECEPÇÃO) */}
-          <div className="bg-white rounded-[3rem] p-8 shadow-sm border border-slate-100">
-            <div className="flex items-center justify-between mb-8">
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-4">
-              <div className="p-4 bg-slate-50 text-slate-400 rounded-3xl">
+              <div className="p-4 bg-slate-50 text-slate-400 rounded-lg">
                 <DollarSign className="w-6 h-6" />
               </div>
               <div>
@@ -740,7 +858,7 @@ export default function QuickSellPage() {
                 <p className="text-sm text-slate-500 font-medium">Acompanhe o status das vendas recentes</p>
               </div>
             </div>
-            <button onClick={fetchData} className="p-3 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-2xl transition-colors">
+            <button onClick={fetchData} className="p-3 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-lg transition-colors">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             </button>
           </div>
@@ -750,7 +868,7 @@ export default function QuickSellPage() {
               <p className="text-center text-slate-400 py-4 font-medium">Nenhuma venda recente.</p>
             ) : (
               recentPayments.map(payment => (
-                <div key={payment.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <div key={payment.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-100">
                   <div className="flex items-center gap-4">
                     <div className={cn(
                       "w-12 h-12 rounded-xl flex items-center justify-center",
@@ -788,7 +906,7 @@ export default function QuickSellPage() {
           <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden">
             <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-indigo-600 text-white rounded-2xl"><DollarSign className="w-6 h-6" /></div>
+                <div className="p-3 bg-indigo-600 text-white rounded-lg"><DollarSign className="w-6 h-6" /></div>
                 <div>
                   <h3 className="text-2xl font-black text-slate-900">Pagamento PIX</h3>
                   <p className="text-sm text-slate-500 font-medium">Escaneie o QR Code abaixo</p>
@@ -797,7 +915,7 @@ export default function QuickSellPage() {
               <button onClick={() => setCreatedPixQrCode(null)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 cursor-pointer"><X className="w-6 h-6" /></button>
             </div>
             
-            <div className="p-8 space-y-6 text-center">
+            <div className="p-8 space-y-6 text-left">
               <div className="space-y-2">
                 <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Paciente</p>
                 <p className="text-lg font-black text-slate-800">{createdPixQrCode.patientName}</p>
@@ -809,7 +927,7 @@ export default function QuickSellPage() {
                 <img 
                   src={`data:image/png;base64,${createdPixQrCode.encodedImage}`} 
                   alt="QR Code PIX" 
-                  className="w-56 h-56 rounded-3xl border border-slate-200 p-3 bg-white shadow-inner" 
+                  className="w-56 h-56 rounded-lg border border-slate-200 p-3 bg-white shadow-inner" 
                 />
               </div>
 
@@ -832,14 +950,14 @@ export default function QuickSellPage() {
                       showToast("Erro ao copiar código.", "error");
                     }
                   }}
-                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+                  className="w-full py-4 bg-slate-900 text-white rounded-lg font-bold shadow-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
                 >
                   <Save className="w-5 h-5" /> Copiar Código PIX
                 </button>
 
                 <button 
                   onClick={() => setCreatedPixQrCode(null)}
-                  className="w-full py-3 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all cursor-pointer text-sm"
+                  className="w-full py-3 bg-slate-100 text-slate-600 rounded-lg font-bold hover:bg-slate-200 transition-all cursor-pointer text-sm"
                 >
                   Fechar Janela
                 </button>
@@ -855,7 +973,7 @@ export default function QuickSellPage() {
           <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden">
             <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-indigo-600 text-white rounded-2xl"><CreditCard className="w-6 h-6" /></div>
+                <div className="p-3 bg-indigo-600 text-white rounded-lg"><CreditCard className="w-6 h-6" /></div>
                 <div>
                   <h3 className="text-2xl font-black text-slate-900">Cobrança Asaas</h3>
                   <p className="text-sm text-slate-500 font-medium">Link de pagamento online gerado!</p>
@@ -866,11 +984,11 @@ export default function QuickSellPage() {
             
             <div className="p-8 space-y-6">
               <div className="space-y-4">
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 space-y-1">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Paciente</p>
                   <p className="text-lg font-black text-slate-800">{createdAsaasPayment.patientName}</p>
                 </div>
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
+                <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 space-y-1">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor da Cobrança</p>
                   <p className="text-2xl font-black text-indigo-600">R$ {fmt(createdAsaasPayment.amount)}</p>
                 </div>
@@ -886,7 +1004,7 @@ export default function QuickSellPage() {
                       showToast("Erro ao copiar link.", "error");
                     }
                   }}
-                  className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold shadow-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+                  className="w-full py-4 bg-slate-900 text-white rounded-lg font-bold shadow-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
                 >
                   <Save className="w-5 h-5" /> Copiar Link de Pagamento
                 </button>
@@ -898,7 +1016,7 @@ export default function QuickSellPage() {
                     )}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 text-center block cursor-pointer text-sm"
+                    className="w-full py-4 bg-emerald-500 text-white rounded-lg font-bold shadow-lg hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 text-center block cursor-pointer text-sm"
                   >
                     Enviar Link via WhatsApp Manual
                   </a>
@@ -906,7 +1024,7 @@ export default function QuickSellPage() {
 
                 <button 
                   onClick={() => setCreatedAsaasPayment(null)}
-                  className="w-full py-3 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all cursor-pointer text-sm"
+                  className="w-full py-3 bg-slate-100 text-slate-600 rounded-lg font-bold hover:bg-slate-200 transition-all cursor-pointer text-sm"
                 >
                   Fechar Janela
                 </button>
@@ -922,7 +1040,7 @@ export default function QuickSellPage() {
           <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden">
             <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-md"><DollarSign className="w-6 h-6" /></div>
+                <div className="p-3 bg-indigo-600 text-white rounded-lg shadow-md"><DollarSign className="w-6 h-6" /></div>
                 <h3 className="text-2xl font-black text-slate-900">Novo Lançamento</h3>
               </div>
               <button onClick={() => setShowEntryModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><X className="w-6 h-6" /></button>
@@ -931,7 +1049,7 @@ export default function QuickSellPage() {
               <div className="grid grid-cols-2 gap-4">
                 {(['income', 'expense'] as const).map(t => (
                   <button key={t} onClick={() => setNewEntry({ ...newEntry, type: t })}
-                    className={cn("py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all cursor-pointer",
+                    className={cn("py-4 rounded-lg font-bold flex items-center justify-center gap-2 border-2 transition-all cursor-pointer",
                       newEntry.type === t
                         ? t === 'income' ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-rose-50 border-rose-500 text-rose-600"
                         : "bg-slate-50 border-transparent text-slate-400 hover:border-slate-200"
@@ -943,18 +1061,18 @@ export default function QuickSellPage() {
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">VALOR (R$) *</label>
                 <input type="number" step="0.01" value={newEntry.amount} onChange={e => setNewEntry({ ...newEntry, amount: e.target.value })}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-2xl font-black text-slate-700 focus:ring-2 focus:ring-indigo-500/20" placeholder="0,00" autoFocus />
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none text-2xl font-black text-slate-700 focus:ring-2 focus:ring-indigo-500/20" placeholder="0,00" autoFocus />
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">DESCRIÇÃO *</label>
                 <input value={newEntry.description} onChange={e => setNewEntry({ ...newEntry, description: e.target.value })}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20" placeholder="Ex: Aluguel da Sala" />
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20" placeholder="Ex: Aluguel da Sala" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CATEGORIA</label>
                   <select value={newEntry.category} onChange={e => setNewEntry({ ...newEntry, category: e.target.value })}
-                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none cursor-pointer">
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 appearance-none cursor-pointer">
                     {(newEntry.type === 'income' ? CATEGORIES_INCOME : CATEGORIES_EXPENSE).map(c => (
                       <option key={c} value={c}>{c}</option>
                     ))}
@@ -963,7 +1081,7 @@ export default function QuickSellPage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">STATUS</label>
                   <select value={newEntry.status} onChange={e => setNewEntry({ ...newEntry, status: e.target.value as any })}
-                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none cursor-pointer">
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 appearance-none cursor-pointer">
                     <option value="paid">Pago / Recebido</option>
                     <option value="pending">Pendente</option>
                   </select>
@@ -973,7 +1091,7 @@ export default function QuickSellPage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">MÉTODO DE PAGAMENTO</label>
                   <select value={newEntry.payment_method} onChange={e => setNewEntry({ ...newEntry, payment_method: e.target.value })}
-                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none cursor-pointer">
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 appearance-none cursor-pointer">
                     <option value="pix">PIX</option>
                     <option value="credit_card">Cartão de Crédito</option>
                     <option value="debit_card">Cartão de Débito</option>
@@ -984,12 +1102,12 @@ export default function QuickSellPage() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">DATA DE VENCIMENTO</label>
                   <input type="date" value={newEntry.due_date} onChange={e => setNewEntry({ ...newEntry, due_date: e.target.value })}
-                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700" />
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700" />
                 </div>
               </div>
               
               {newEntry.type === 'expense' && (
-                <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
+                <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-100 rounded-lg">
                   <input type="checkbox" id="is_fixed_qs" checked={newEntry.is_fixed} onChange={e => setNewEntry({ ...newEntry, is_fixed: e.target.checked })}
                     className="w-5 h-5 rounded border-rose-300 text-rose-600 focus:ring-rose-500 cursor-pointer" />
                   <label htmlFor="is_fixed_qs" className="text-sm font-bold text-rose-700 cursor-pointer select-none">
@@ -999,7 +1117,7 @@ export default function QuickSellPage() {
               )}
 
               <button onClick={handleCreateEntry} disabled={saving}
-                className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">
+                className="w-full py-5 bg-indigo-600 text-white rounded-lg font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">
                 {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Salvar Lançamento
               </button>
             </div>

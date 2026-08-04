@@ -248,6 +248,8 @@ export default function FinancialPage() {
   // ── Form State ──────────────────────────────────────────────────────────────
   const emptyEntry = { amount: '', description: '', type: 'income' as const, status: 'paid' as const, category: 'Sessão', payment_method: 'pix', due_date: '', is_fixed: false };
   const [newEntry, setNewEntry] = useState(emptyEntry);
+  const [showEditModal, setShowEditModal] = useState<Payment | null>(null);
+  const [editEntry, setEditEntry] = useState(emptyEntry);
   const emptySell = { patient_id: '', service_id: '', payment_method: 'asaas_pix', therapist_id: '', referral_source: 'therapist' as const };
   const [sellData, setSellData] = useState(emptySell);
   const [cardFeeRateInput, setCardFeeRateInput] = useState('0');
@@ -577,7 +579,8 @@ export default function FinancialPage() {
       showToast('Preencha o valor e a descrição.', 'error');
       return;
     }
-    if (Number(newEntry.amount) <= 0) {
+    const amountVal = Number(newEntry.amount.toString().replace(',', '.'));
+    if (isNaN(amountVal) || amountVal <= 0) {
       showToast('O valor deve ser maior que zero.', 'error');
       return;
     }
@@ -587,7 +590,7 @@ export default function FinancialPage() {
     }
     setSaving(true);
     const { error } = await supabase.from('payments').insert([{
-      amount: Number(newEntry.amount),
+      amount: amountVal,
       type: newEntry.type,
       status: newEntry.status,
       description: newEntry.description,
@@ -602,6 +605,38 @@ export default function FinancialPage() {
       showToast('Lançamento salvo com sucesso!');
       setShowEntryModal(false);
       setNewEntry(emptyEntry);
+      fetchAll();
+    }
+    setSaving(false);
+  };
+
+  const handleUpdateEntry = async () => {
+    if (!editEntry.amount || !editEntry.description || !showEditModal) {
+      showToast('Preencha o valor e a descrição.', 'error');
+      return;
+    }
+    const amountVal = Number(editEntry.amount.toString().replace(',', '.'));
+    if (isNaN(amountVal) || amountVal <= 0) {
+      showToast('O valor deve ser maior que zero.', 'error');
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from('payments').update({
+      amount: amountVal,
+      type: editEntry.type,
+      status: editEntry.status,
+      description: editEntry.description,
+      category: editEntry.category,
+      payment_method: editEntry.payment_method,
+      due_date: editEntry.due_date || null,
+      is_fixed: editEntry.is_fixed,
+    }).eq('id', showEditModal.id);
+
+    if (error) { showToast('Erro ao atualizar lançamento.', 'error'); }
+    else {
+      showToast('Lançamento atualizado com sucesso!');
+      setShowEditModal(null);
+      setEditEntry(emptyEntry);
       fetchAll();
     }
     setSaving(false);
@@ -622,8 +657,8 @@ export default function FinancialPage() {
     // Validação de pacote multimodal se for do tipo 'pacote'
     if (service.type === 'pacote') {
       const totalAssigned = multimodalItems.reduce((acc, curr) => acc + (curr.sessions || 0), 0);
-      if (totalAssigned !== service.sessions_count) {
-        showToast(`A soma das sessões distribuídas (${totalAssigned}) deve ser exatamente igual ao total do pacote (${service.sessions_count}).`, 'error');
+      if (totalAssigned <= 0) {
+        showToast(`Distribua pelo menos uma sessão para o pacote.`, 'error');
         setSaving(false);
         return;
       }
@@ -699,7 +734,9 @@ export default function FinancialPage() {
     const { data: pkgData, error: pkgErr } = await supabase.from('patient_packages').insert([{
       patient_id: sellData.patient_id,
       service_id: sellData.service_id,
-      total_sessions: service.sessions_count || 1,
+      total_sessions: service.type === 'pacote' 
+        ? multimodalItems.reduce((acc, curr) => acc + (curr.sessions || 0), 0)
+        : (service.sessions_count || 1),
       used_sessions: 0,
       status: 'pending',
     }]).select().single();
@@ -1427,7 +1464,7 @@ export default function FinancialPage() {
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Descrição</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Categoria</th>
                   <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor</th>
-                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Método</th>
+                  <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Método / Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -1455,7 +1492,40 @@ export default function FinancialPage() {
                     <td className={cn("px-8 py-5 font-black", p.type === 'income' ? "text-emerald-600" : "text-rose-600")}>
                       {p.type === 'income' ? '+' : '-'} R$ {fmt(Math.abs(p.amount))}
                     </td>
-                    <td className="px-8 py-5 text-right text-slate-400 font-medium text-xs uppercase">{getMethodLabel(p.payment_method || 'pix')}</td>
+                    <td className="px-8 py-5 text-right text-slate-400 font-medium text-xs uppercase">
+                      <div className="flex items-center justify-end gap-3">
+                        <span>{getMethodLabel(p.payment_method || 'pix')}</span>
+                        <button
+                          onClick={() => {
+                            setShowEditModal(p);
+                            
+                            let validCategory = p.category;
+                            const isValid = p.type === 'income' 
+                              ? CATEGORIES_INCOME.includes(p.category) 
+                              : CATEGORIES_EXPENSE.includes(p.category);
+                              
+                            if (!isValid || !validCategory) {
+                              validCategory = p.type === 'income' ? CATEGORIES_INCOME[0] : CATEGORIES_EXPENSE[0];
+                            }
+
+                            setEditEntry({
+                              amount: String(Math.abs(p.amount)).replace('.', ','),
+                              description: p.description,
+                              type: p.type,
+                              status: p.status,
+                              category: validCategory,
+                              payment_method: p.payment_method || 'pix',
+                              due_date: p.due_date || '',
+                              is_fixed: p.is_fixed || false,
+                            });
+                          }}
+                          className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-indigo-100 hover:text-indigo-600 transition-colors"
+                          title="Editar"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {paidPayments.length === 0 && (
@@ -1550,6 +1620,35 @@ export default function FinancialPage() {
                         <td className="px-8 py-5 font-black text-slate-900">R$ {fmt(Math.abs(p.amount))}</td>
                         <td className="px-8 py-5 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setShowEditModal(p);
+                                
+                                let validCategory = p.category;
+                                const isValid = p.type === 'income' 
+                                  ? CATEGORIES_INCOME.includes(p.category) 
+                                  : CATEGORIES_EXPENSE.includes(p.category);
+                                  
+                                if (!isValid || !validCategory) {
+                                  validCategory = p.type === 'income' ? CATEGORIES_INCOME[0] : CATEGORIES_EXPENSE[0];
+                                }
+
+                                setEditEntry({
+                                  amount: String(Math.abs(p.amount)).replace('.', ','),
+                                  description: p.description,
+                                  type: p.type,
+                                  status: p.status,
+                                  category: validCategory,
+                                  payment_method: p.payment_method || 'pix',
+                                  due_date: p.due_date || '',
+                                  is_fixed: p.is_fixed || false,
+                                });
+                              }}
+                              className="p-1.5 bg-slate-50 text-slate-400 rounded-lg hover:bg-indigo-100 hover:text-indigo-600 transition-colors"
+                              title="Editar"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
                             <button
                               onClick={() => {
                                 setConfirmingPayment(p);
@@ -2160,7 +2259,7 @@ export default function FinancialPage() {
             <div className="p-8 space-y-5">
               <div className="grid grid-cols-2 gap-4">
                 {(['income', 'expense'] as const).map(t => (
-                  <button key={t} onClick={() => setNewEntry({ ...newEntry, type: t })}
+                  <button key={t} onClick={() => setNewEntry({ ...newEntry, type: t, category: t === 'income' ? CATEGORIES_INCOME[0] : CATEGORIES_EXPENSE[0] })}
                     className={cn("py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all",
                       newEntry.type === t
                         ? t === 'income' ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-rose-50 border-rose-500 text-rose-600"
@@ -2172,8 +2271,11 @@ export default function FinancialPage() {
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor (R$) *</label>
-                <input type="number" value={newEntry.amount} onChange={e => setNewEntry({ ...newEntry, amount: e.target.value })}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-2xl font-black text-slate-700 focus:ring-2 focus:ring-indigo-500/20" placeholder="0,00" />
+                <div className="relative">
+                  <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-400">R$</span>
+                  <input type="text" value={newEntry.amount} onChange={e => setNewEntry({ ...newEntry, amount: e.target.value.replace(/[^0-9.,]/g, '') })}
+                    className="w-full pl-16 pr-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-2xl font-black text-slate-700 focus:ring-2 focus:ring-indigo-500/20" placeholder="0,00" />
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descrição *</label>
@@ -2227,6 +2329,98 @@ export default function FinancialPage() {
               <button onClick={handleCreateEntry} disabled={saving}
                 className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
                 {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Salvar Lançamento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* MODAL: EDITAR LANÇAMENTO                                                 */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-600 text-white rounded-2xl"><Pencil className="w-6 h-6" /></div>
+                <h3 className="text-2xl font-black text-slate-900">Editar Lançamento</h3>
+              </div>
+              <button onClick={() => setShowEditModal(null)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X className="w-6 h-6" /></button>
+            </div>
+            <div className="p-8 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                {(['income', 'expense'] as const).map(t => (
+                  <button key={t} onClick={() => setEditEntry({ ...editEntry, type: t, category: t === 'income' ? CATEGORIES_INCOME[0] : CATEGORIES_EXPENSE[0] })}
+                    className={cn("py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all",
+                      editEntry.type === t
+                        ? t === 'income' ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-rose-50 border-rose-500 text-rose-600"
+                        : "bg-slate-50 border-transparent text-slate-400 hover:border-slate-200"
+                    )}>
+                    {t === 'income' ? <><ArrowUpRight className="w-5 h-5" /> Receita</> : <><ArrowDownRight className="w-5 h-5" /> Despesa</>}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Valor (R$) *</label>
+                <div className="relative">
+                  <span className="absolute left-5 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-400">R$</span>
+                  <input type="text" value={editEntry.amount} onChange={e => setEditEntry({ ...editEntry, amount: e.target.value.replace(/[^0-9.,]/g, '') })}
+                    className="w-full pl-16 pr-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none text-2xl font-black text-slate-700 focus:ring-2 focus:ring-indigo-500/20" placeholder="0,00" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Descrição *</label>
+                <input value={editEntry.description} onChange={e => setEditEntry({ ...editEntry, description: e.target.value })}
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500/20" placeholder="Ex: Aluguel da Sala" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Categoria</label>
+                  <select value={editEntry.category} onChange={e => setEditEntry({ ...editEntry, category: e.target.value })}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none">
+                    {(editEntry.type === 'income' ? CATEGORIES_INCOME : CATEGORIES_EXPENSE).map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Status</label>
+                  <select value={editEntry.status} onChange={e => setEditEntry({ ...editEntry, status: e.target.value as any })}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none">
+                    <option value="paid">Pago / Recebido</option>
+                    <option value="pending">Pendente</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Método de Pagamento</label>
+                  <select value={editEntry.payment_method} onChange={e => setEditEntry({ ...editEntry, payment_method: e.target.value })}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none">
+                    {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Data de Vencimento</label>
+                  <input type="date" value={editEntry.due_date} onChange={e => setEditEntry({ ...editEntry, due_date: e.target.value })}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700" />
+                </div>
+              </div>
+              
+              {editEntry.type === 'expense' && (
+                <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
+                  <input type="checkbox" id="edit_is_fixed" checked={editEntry.is_fixed} onChange={e => setEditEntry({ ...editEntry, is_fixed: e.target.checked })}
+                    className="w-5 h-5 rounded border-rose-300 text-rose-600 focus:ring-rose-500 cursor-pointer" />
+                  <label htmlFor="edit_is_fixed" className="text-sm font-bold text-rose-700 cursor-pointer select-none">
+                    Marcar como Despesa Fixa (Recorrente)
+                  </label>
+                </div>
+              )}
+
+              <button onClick={handleUpdateEntry} disabled={saving}
+                className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+                {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Atualizar Lançamento
               </button>
             </div>
           </div>
@@ -2334,13 +2528,11 @@ export default function FinancialPage() {
 
                   {(() => {
                     const totalAssigned = multimodalItems.reduce((acc, curr) => acc + curr.sessions, 0);
-                    const diff = selectedSvc.sessions_count - totalAssigned;
                     return (
                       <div className="flex justify-between items-center text-xs font-bold pt-2 border-t border-slate-200">
-                        <span className="text-slate-500">Total Distribuído:</span>
-                        <span className={cn(diff === 0 ? "text-emerald-600" : "text-rose-500")}>
-                          {totalAssigned} de {selectedSvc.sessions_count} sessões
-                          {diff !== 0 && ` (${diff > 0 ? `faltam ${diff}` : `excedeu ${Math.abs(diff)}`})`}
+                        <span className="text-slate-500">Total Personalizado:</span>
+                        <span className="text-indigo-600">
+                          {totalAssigned} {totalAssigned === 1 ? 'sessão' : 'sessões'}
                         </span>
                       </div>
                     );

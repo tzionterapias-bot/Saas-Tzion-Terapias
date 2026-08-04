@@ -11,7 +11,10 @@ import { useAuth } from '@/src/contexts/AuthContext';
 export default function PatientList() {
   const [patients, setPatients] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [sendWelcomeMsg, setSendWelcomeMsg] = useState(true);
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'info' | 'anamnesis' | 'history' | 'docs' | 'timeline' | 'homecare'>('info');
   const [loading, setLoading] = useState(true);
@@ -476,11 +479,13 @@ export default function PatientList() {
       }
 
       // 7. Notificar via WhatsApp
-      const firstName = newPatient.name.split(' ')[0] || 'Paciente';
-      const baseUrl = await getSystemBaseUrl();
-      const msgText = `Olá, *${firstName}*! ✨ Bem-vindo(a) à Tzion Terapias.\n\nSua conta de paciente foi criada com sucesso! Para acessar o seu portal, utilize os dados abaixo:\n\n📧 *E-mail:* ${newPatient.email}\n🔑 *Senha Temporária:* ${tempPassword}\n\n🔗 *Acesse:* ${baseUrl}/login\n\n⚠️ *Importante:* Por segurança, você deve alterar sua senha provisória já no primeiro acesso.\n\nQualquer dúvida, estamos à disposição! 💙`;
-      
-      await sendWhatsAppMessage(userId, newPatient.phone, msgText, 'patient_welcome');
+      if (sendWelcomeMsg) {
+        const firstName = newPatient.name.split(' ')[0] || 'Paciente';
+        const baseUrl = await getSystemBaseUrl();
+        const msgText = `Olá, *${firstName}*! ✨ Bem-vindo(a) à Tzion Terapias.\n\nSua conta de paciente foi criada com sucesso! Para acessar o seu portal, utilize os dados abaixo:\n\n📧 *E-mail:* ${newPatient.email}\n🔑 *Senha Temporária:* ${tempPassword}\n\n🔗 *Acesse:* ${baseUrl}/login\n\n⚠️ *Importante:* Por segurança, você deve alterar sua senha provisória já no primeiro acesso.\n\nQualquer dúvida, estamos à disposição! 💙`;
+        
+        await sendWhatsAppMessage(userId, newPatient.phone, msgText, 'patient_welcome');
+      }
 
       setShowModal(false);
       setNewPatient({
@@ -489,7 +494,7 @@ export default function PatientList() {
         gender: '', birth_date: '', profession: '', marital_status: '', guardian_name: '', guardian_cpf: ''
       });
       fetchPatients();
-      setToastMessage("Paciente cadastrado e notificado com sucesso!");
+      setToastMessage(sendWelcomeMsg ? "Paciente cadastrado e notificado com sucesso!" : "Paciente cadastrado com sucesso!");
     } catch (e: any) {
       console.error(e);
       setToastMessage(`Erro inesperado: ${e.message}`);
@@ -942,12 +947,26 @@ export default function PatientList() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm]);
+  }, [searchTerm, filterStatus]);
 
-  const filteredPatients = patients.filter(p => 
-    p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    p.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredPatients = patients.filter(p => {
+    const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          p.email?.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!matchesSearch) return false;
+
+    if (filterStatus === 'ativo') return p.status === 'Ativo';
+    if (filterStatus === 'inativo') return p.status !== 'Ativo';
+    
+    if (filterStatus === 'anamnese_pendente') {
+      return !(Array.isArray(p.patient_anamnesis) ? p.patient_anamnesis.length > 0 : !!p.patient_anamnesis);
+    }
+    
+    if (filterStatus === 'contrato_pendente') {
+      return !(Array.isArray(p.patient_contracts) ? p.patient_contracts.some((c: any) => c.status === 'signed') : p.patient_contracts?.status === 'signed');
+    }
+
+    return true;
+  });
 
   const totalPages = Math.ceil(filteredPatients.length / itemsPerPage);
   const paginatedPatients = filteredPatients.slice(
@@ -991,11 +1010,28 @@ export default function PatientList() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <div className="flex items-center gap-2">
-              <button className="flex items-center gap-2 px-5 py-3 border border-slate-200 bg-white rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">
+            <div className="flex items-center gap-2 relative">
+              <button 
+                onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                className="flex items-center gap-2 px-5 py-3 border border-slate-200 bg-white rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer"
+              >
                 <Filter className="w-4 h-4" />
                 Filtrar
+                {filterStatus !== 'all' && <span className="w-2 h-2 rounded-full bg-indigo-500 ml-1"></span>}
               </button>
+
+              {showFilterDropdown && (
+                <div className="absolute top-full mt-2 right-0 w-56 bg-white rounded-xl border border-slate-200 shadow-xl z-50 overflow-hidden text-left">
+                  <div className="p-2 space-y-1">
+                    <button onClick={() => { setFilterStatus('all'); setShowFilterDropdown(false); }} className={cn("w-full text-left px-4 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer", filterStatus === 'all' ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50")}>Todos</button>
+                    <button onClick={() => { setFilterStatus('ativo'); setShowFilterDropdown(false); }} className={cn("w-full text-left px-4 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer", filterStatus === 'ativo' ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50")}>Ativos</button>
+                    <button onClick={() => { setFilterStatus('inativo'); setShowFilterDropdown(false); }} className={cn("w-full text-left px-4 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer", filterStatus === 'inativo' ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50")}>Inativos</button>
+                    <div className="h-px bg-slate-100 my-1" />
+                    <button onClick={() => { setFilterStatus('anamnese_pendente'); setShowFilterDropdown(false); }} className={cn("w-full text-left px-4 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer", filterStatus === 'anamnese_pendente' ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50")}>Anamnese Pendente</button>
+                    <button onClick={() => { setFilterStatus('contrato_pendente'); setShowFilterDropdown(false); }} className={cn("w-full text-left px-4 py-2 text-sm font-bold rounded-lg transition-colors cursor-pointer", filterStatus === 'contrato_pendente' ? "bg-indigo-50 text-indigo-700" : "text-slate-600 hover:bg-slate-50")}>Contrato Pendente</button>
+                  </div>
+                </div>
+              )}
               <button 
                 onClick={() => setShowModal(true)}
                 className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 active:scale-95"
@@ -1136,10 +1172,10 @@ export default function PatientList() {
               </div>
             )}
             
-            {!loading && totalPages > 1 && (
+            {!loading && filteredPatients.length > 0 && (
               <div className="px-8 py-5 border-t border-slate-100 flex items-center justify-between bg-slate-50/30">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Página {currentPage} de {totalPages} ({filteredPatients.length} pacientes)
+                  Página {currentPage} de {Math.max(1, totalPages)} ({filteredPatients.length} pacientes)
                 </p>
                 <div className="flex gap-2">
                   <button
@@ -2148,6 +2184,19 @@ export default function PatientList() {
                      </div>
                   </div>
                </div>
+
+              <div className="pt-4 border-t border-slate-100">
+                <label className="flex items-center gap-3 cursor-pointer group w-fit">
+                  <div className={cn(
+                    "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all",
+                    sendWelcomeMsg ? "bg-emerald-500 border-emerald-500 text-white" : "bg-slate-50 border-slate-300 text-transparent group-hover:border-indigo-400"
+                  )}>
+                    <CheckCircle2 className="w-4 h-4" />
+                  </div>
+                  <span className="text-sm font-bold text-slate-700 select-none">Enviar WhatsApp de Boas Vindas com acesso ao portal</span>
+                  <input type="checkbox" className="hidden" checked={sendWelcomeMsg} onChange={(e) => setSendWelcomeMsg(e.target.checked)} />
+                </label>
+              </div>
 
               <div className="pt-6 flex gap-4">
                 <button 

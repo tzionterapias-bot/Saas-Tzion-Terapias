@@ -26,6 +26,101 @@ const EMPTY_FORM = {
   sessions_count: '1',
 };
 
+const InputField = ({ label, value, onChange, type = 'text', placeholder = '', autoFocus = false, amber = false }: any) => (
+  <div className="space-y-1.5">
+    <label className={cn("text-[10px] font-bold uppercase tracking-widest ml-1", amber ? "text-amber-500" : "text-indigo-400")}>{label}</label>
+    <input
+      autoFocus={autoFocus}
+      type={type}
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
+      className={cn(
+        "w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 font-bold placeholder:opacity-40 shadow-sm transition-all",
+        amber ? "focus:ring-amber-500 text-amber-900 border-2 border-amber-200" : "focus:ring-indigo-500 text-indigo-900"
+      )}
+    />
+  </div>
+);
+
+const ServiceForm = ({ f, setF, onSave, onCancel, savingLabel, saving }: any) => (
+  <div className="p-5 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl flex flex-col gap-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+    <InputField label="Nome do Serviço / Pacote" value={f.name} onChange={(v: string) => setF((p: any) => ({ ...p, name: v }))} placeholder="Ex: Sessão de Psicologia, Pacote Premium..." autoFocus />
+
+    <div className={cn("grid gap-3", f.type === 'pacote' ? "grid-cols-2 md:grid-cols-4" : "grid-cols-1 md:grid-cols-3")}>
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Tipo</label>
+        <select
+          value={f.type}
+          onChange={e => setF((p: any) => ({ ...p, type: e.target.value }))}
+          className="w-full bg-white pl-3 pr-8 py-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 text-sm cursor-pointer shadow-sm"
+        >
+          <option value="sessão avulsa">Sessão Avulsa</option>
+          <option value="pacote">Pacote</option>
+          <option value="produto">Produto</option>
+        </select>
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Preço (R$)</label>
+        <input
+          type="number"
+          value={f.price}
+          onChange={e => setF((p: any) => ({ ...p, price: e.target.value }))}
+          placeholder="0.00"
+          className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 shadow-sm"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Tempo (min)</label>
+        <input
+          type="number"
+          value={f.duration_minutes}
+          onChange={e => setF((p: any) => ({ ...p, duration_minutes: e.target.value }))}
+          placeholder="60"
+          className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 text-center shadow-sm"
+        />
+      </div>
+      {f.type === 'pacote' && (
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest ml-1">Qtd. Sessões</label>
+          <input
+            type="number"
+            value={f.sessions_count}
+            onChange={e => setF((p: any) => ({ ...p, sessions_count: e.target.value }))}
+            placeholder="1"
+            className="w-full bg-white p-4 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 font-black text-amber-900 placeholder:text-amber-300 text-center border-2 border-amber-300 shadow-sm"
+          />
+        </div>
+      )}
+    </div>
+
+    <div className="space-y-1.5">
+      <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Descritivo (Opcional)</label>
+      <textarea
+        value={f.description}
+        onChange={e => setF((p: any) => ({ ...p, description: e.target.value }))}
+        placeholder="O que está incluso neste serviço ou pacote?"
+        rows={2}
+        className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 resize-none shadow-sm"
+      />
+    </div>
+
+    <div className="flex gap-2 mt-1">
+      <button onClick={onCancel} className="flex-1 py-3.5 bg-white hover:bg-slate-50 text-slate-500 font-bold rounded-xl transition-colors shadow-sm border border-slate-200">
+        Cancelar
+      </button>
+      <button
+        onClick={onSave}
+        disabled={saving || !f.name.trim()}
+        className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+      >
+        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+        {savingLabel}
+      </button>
+    </div>
+  </div>
+);
+
 export default function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,99 +245,7 @@ export default function ServicesPage() {
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
   const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const InputField = ({ label, value, onChange, type = 'text', placeholder = '', autoFocus = false, amber = false }: any) => (
-    <div className="space-y-1.5">
-      <label className={cn("text-[10px] font-bold uppercase tracking-widest ml-1", amber ? "text-amber-500" : "text-indigo-400")}>{label}</label>
-      <input
-        autoFocus={autoFocus}
-        type={type}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={cn(
-          "w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 font-bold placeholder:opacity-40 shadow-sm transition-all",
-          amber ? "focus:ring-amber-500 text-amber-900 border-2 border-amber-200" : "focus:ring-indigo-500 text-indigo-900"
-        )}
-      />
-    </div>
-  );
 
-  const ServiceForm = ({ f, setF, onSave, onCancel, savingLabel }: any) => (
-    <div className="p-5 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl flex flex-col gap-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
-      <InputField label="Nome do Serviço / Pacote" value={f.name} onChange={(v: string) => setF((p: any) => ({ ...p, name: v }))} placeholder="Ex: Sessão de Psicologia, Pacote Premium..." autoFocus />
-
-      <div className={cn("grid gap-3", f.type === 'pacote' ? "grid-cols-2 md:grid-cols-4" : "grid-cols-1 md:grid-cols-3")}>
-        <div className="space-y-1.5">
-          <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Tipo</label>
-          <select
-            value={f.type}
-            onChange={e => setF((p: any) => ({ ...p, type: e.target.value }))}
-            className="w-full bg-white pl-3 pr-8 py-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 text-sm cursor-pointer shadow-sm"
-          >
-            <option value="sessão avulsa">Sessão Avulsa</option>
-            <option value="pacote">Pacote</option>
-          </select>
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Preço (R$)</label>
-          <input
-            type="number"
-            value={f.price}
-            onChange={e => setF((p: any) => ({ ...p, price: e.target.value }))}
-            placeholder="0.00"
-            className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 shadow-sm"
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Tempo (min)</label>
-          <input
-            type="number"
-            value={f.duration_minutes}
-            onChange={e => setF((p: any) => ({ ...p, duration_minutes: e.target.value }))}
-            placeholder="60"
-            className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 text-center shadow-sm"
-          />
-        </div>
-        {f.type === 'pacote' && (
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest ml-1">Qtd. Sessões</label>
-            <input
-              type="number"
-              value={f.sessions_count}
-              onChange={e => setF((p: any) => ({ ...p, sessions_count: e.target.value }))}
-              placeholder="1"
-              className="w-full bg-white p-4 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 font-black text-amber-900 placeholder:text-amber-300 text-center border-2 border-amber-300 shadow-sm"
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest ml-1">Descritivo (Opcional)</label>
-        <textarea
-          value={f.description}
-          onChange={e => setF((p: any) => ({ ...p, description: e.target.value }))}
-          placeholder="O que está incluso neste serviço ou pacote?"
-          rows={2}
-          className="w-full bg-white p-4 rounded-xl border-none outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-indigo-900 placeholder:text-indigo-300 resize-none shadow-sm"
-        />
-      </div>
-
-      <div className="flex gap-2 mt-1">
-        <button onClick={onCancel} className="flex-1 py-3.5 bg-white hover:bg-slate-50 text-slate-500 font-bold rounded-xl transition-colors shadow-sm border border-slate-200">
-          Cancelar
-        </button>
-        <button
-          onClick={onSave}
-          disabled={saving || !f.name.trim()}
-          className="flex-1 py-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
-        >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          {savingLabel}
-        </button>
-      </div>
-    </div>
-  );
 
   return (
     <div className="min-h-full bg-gradient-to-br from-slate-50 via-white to-indigo-50/30 p-4 md:p-8 relative">
@@ -337,6 +340,7 @@ export default function ServicesPage() {
               onSave={handleAdd}
               onCancel={() => { setShowForm(false); setForm(EMPTY_FORM); }}
               savingLabel="Cadastrar Serviço"
+              saving={saving}
             />
           </div>
         )}
@@ -372,6 +376,7 @@ export default function ServicesPage() {
                     onSave={handleSaveEdit}
                     onCancel={() => setEditingId(null)}
                     savingLabel="Salvar Alterações"
+                    saving={saving}
                   />
                 ) : (
                   <div className="group flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:border-indigo-100 transition-all duration-200">
@@ -388,13 +393,13 @@ export default function ServicesPage() {
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <p className="font-black text-slate-900 text-base leading-tight">{s.name}</p>
                           <span className={cn(
-                            "px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wide",
-                            s.type === 'pacote'
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-indigo-100 text-indigo-700"
-                          )}>
-                            {s.type === 'pacote' ? `Pacote ${s.sessions_count || 1}x` : 'Sessão'}
-                          </span>
+                          "px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-widest",
+                          s.type === 'pacote' ? "bg-amber-100 text-amber-700" : 
+                          s.type === 'produto' ? "bg-emerald-100 text-emerald-700" :
+                          "bg-indigo-100 text-indigo-700"
+                        )}>
+                          {s.type === 'pacote' ? `${s.sessions_count || 1} SESSÕES` : s.type === 'produto' ? 'PRODUTO' : 'AVULSO'}
+                        </span>
                         </div>
                         {s.description && (
                           <p className="text-sm text-slate-500 font-medium mb-1.5 leading-relaxed truncate md:whitespace-normal">{s.description}</p>
