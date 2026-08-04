@@ -184,6 +184,7 @@ export default function InstitutionalSite() {
   const [selectedProduct, setSelectedProduct] = useState<{title: string, price: number, downloadUrl?: string} | null>(null);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [expandedBioId, setExpandedBioId] = useState<string | null>(null);
+  const [expandedProdId, setExpandedProdId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadSite() {
@@ -814,7 +815,26 @@ export default function InstitutionalSite() {
                         </span>
                       )}
                       <h3 className="text-2xl font-bold text-slate-900">{prod.title}</h3>
-                      <p className="text-slate-600 text-sm leading-relaxed">{prod.description}</p>
+                      {(() => {
+                        const isExpanded = expandedProdId === prod.id;
+                        const desc = prod.description || '';
+                        const isLong = desc.length > 200;
+                        return (
+                          <div className="space-y-2">
+                            <p className="text-slate-600 text-sm leading-relaxed text-justify hyphens-auto">
+                              {isExpanded || !isLong ? desc : `${desc.slice(0, 200)}...`}
+                            </p>
+                            {isLong && (
+                              <button
+                                onClick={() => setExpandedProdId(isExpanded ? null : prod.id)}
+                                className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors"
+                              >
+                                {isExpanded ? 'Ver menos ▴' : 'Ver descrição completa ▾'}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                     
                     <div className="pt-4 border-t border-slate-100">

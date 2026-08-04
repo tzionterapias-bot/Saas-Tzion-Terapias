@@ -1524,7 +1524,7 @@ async function executeFinancialSync() {
     }
   }
   const isMock = !apiKey || apiKey === "your-asaas-key";
-  const isProduction = process.env.ASAAS_ENV === "production";
+  const isProduction = (apiKey && apiKey.startsWith('$aact_prod_')) ? true : process.env.ASAAS_ENV === "production";
   const asaasBaseUrl = isProduction ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
 
   for (const pay of (pendingAsaasPayments || [])) {

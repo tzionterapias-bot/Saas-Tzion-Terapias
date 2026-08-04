@@ -48,7 +48,7 @@ serve(async (req) => {
       }
     }
 
-    const isProduction = Deno.env.get('ASAAS_ENV') === "production";
+    const isProduction = (asaasApiKey && asaasApiKey.startsWith('$aact_prod_')) ? true : Deno.env.get('ASAAS_ENV') === "production";
     const asaasBaseUrl = isProduction ? "https://api.asaas.com/v3" : "https://sandbox.asaas.com/api/v3";
 
     // ROUTE: POST /checkout (gerar-cobranca)

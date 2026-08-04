@@ -441,14 +441,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="flex flex-col h-full">
           <div className="p-8">
             <div className="flex items-center justify-between gap-4">
-              <div className={cn("flex items-center", whiteLabel?.logoUrl ? "justify-center w-full" : "gap-3")}>
-                {whiteLabel?.logoUrl ? (
-                  <img src={whiteLabel.logoUrl} alt="Logo" className="max-h-12 max-w-full object-contain" />
-                ) : (
-                  <>
-                    <img src="/logo.png" alt="Tzion Terapias" className="max-h-12 max-w-full object-contain" />
-                  </>
-                )}
+              <div className="flex items-center justify-center w-full">
+                <img src="/logo.png" alt="Tzion Terapias" className="max-h-12 max-w-full object-contain" />
               </div>
               <button 
                 className="lg:hidden p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl"

@@ -47,17 +47,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', authUserId)
         .maybeSingle();
 
-      const timeoutPromise = new Promise<{ data: any; error: any }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: null }), 2000)
+      const timeoutPromise = new Promise<{ data: any; error: any; timeout: boolean }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: null, timeout: true }), 8000)
       );
 
-      const res = await Promise.race([queryPromise, timeoutPromise]);
+      const res = await Promise.race([queryPromise, timeoutPromise]) as any;
+      
+      if (res?.timeout) {
+        console.warn("AuthContext: loadProfile query timed out after 8s for user", authUserId);
+      }
+
       const data = res?.data;
 
-      if (data && data.name) {
+      if (data) {
         return {
           id: data.id,
-          name: data.name,
+          name: data.name || email?.split('@')[0] || 'Usuário',
           email: data.email || email || '',
           role: (data.role || 'admin') as User['role'],
           status: data.status,
