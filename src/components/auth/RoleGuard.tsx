@@ -27,6 +27,34 @@ export default function RoleGuard({ children, allowedRoles, allowedEmails }: Rol
     return <>{children}</>;
   }
 
+  // Verifica se o terapeuta está ativo
+  if (user.role === 'terapeuta' && user.status !== 'active') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white p-10 rounded-[2rem] shadow-xl border border-amber-100 text-center space-y-4">
+          <div className="w-20 h-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert className="w-10 h-10" />
+          </div>
+          <h2 className="text-2xl font-black text-slate-900">Acesso Restrito</h2>
+          <p className="text-slate-500 font-medium pb-6">
+            Seu cadastro como terapeuta está <strong>{user.status === 'pending' ? 'em análise' : 'inativo'}</strong>.
+            Aguarde a aprovação da administração ou entre em contato com o suporte para liberar o seu acesso.
+          </p>
+          <button 
+            onClick={() => {
+              // Limpa a sessão e volta para o login
+              localStorage.removeItem('@tzion:user');
+              window.location.href = '/login';
+            }}
+            className="w-full py-4 bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold rounded-xl transition-colors"
+          >
+            Voltar para o Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Verifica se a role do usuário está na lista de roles permitidas ou se o email está permitido
   const hasRole = allowedRoles.includes(user.role);
   const hasEmail = allowedEmails ? allowedEmails.includes(user.email) : false;

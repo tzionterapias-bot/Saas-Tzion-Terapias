@@ -257,7 +257,15 @@ async function startServer() {
         method: 'DELETE',
         headers: { 'apikey': apiKey }
       });
-      const data = await response.json();
+      
+      const text = await response.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (e) {
+        data = { message: text };
+      }
+      
       res.status(response.status).json(data);
     } catch (err: any) {
       console.error("Error deleting instance:", err);
@@ -275,7 +283,15 @@ async function startServer() {
         method: 'DELETE',
         headers: { 'apikey': apiKey }
       });
-      const data = await response.json();
+      
+      const text = await response.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (e) {
+        data = { message: text };
+      }
+      
       res.status(response.status).json(data);
     } catch (err: any) {
       console.error("Error logging out instance:", err);

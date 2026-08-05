@@ -26,7 +26,7 @@ const menuCategories = [
       { icon: Calendar, label: 'Agendamentos', path: '/admin/agenda', roles: ['admin', 'terapeuta', 'atendimento'] },
       { icon: Users, label: 'Pacientes', path: '/admin/pacientes', roles: ['admin', 'atendimento', 'terapeuta'] },
       { icon: BookOpen, label: 'Registros de Sessão', path: '/admin/sessoes', roles: ['admin', 'terapeuta'] },
-      { icon: Award, label: 'Portal do Terapeuta', path: '/admin/portal-terapeuta', roles: ['terapeuta'] },
+      { icon: Award, label: 'Portal do Terapeuta', path: '/admin/portal-terapeuta', roles: ['admin', 'terapeuta'] },
     ]
   },
   {

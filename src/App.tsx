@@ -117,7 +117,7 @@ export default function App() {
           <Route path="/admin/sessoes" element={<RoleGuard allowedRoles={['admin', 'terapeuta']}><AdminLayout><SessionLogger /></AdminLayout></RoleGuard>} />
           <Route path="/admin/config" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><ConfigPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/servicos" element={<RoleGuard allowedRoles={['admin', 'financeiro']} allowedEmails={['formacaoterapia@gmail.com']}><AdminLayout><ServicesPage /></AdminLayout></RoleGuard>} />
-          <Route path="/admin/portal-terapeuta" element={<RoleGuard allowedRoles={['terapeuta']}><AdminLayout><TherapistPage /></AdminLayout></RoleGuard>} />
+          <Route path="/admin/portal-terapeuta" element={<RoleGuard allowedRoles={['admin', 'terapeuta']}><AdminLayout><TherapistPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/usuarios" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><UsersManager /></AdminLayout></RoleGuard>} />
           <Route path="/admin/terapeutas" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><TherapistsManagementPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/gamificacao" element={<RoleGuard allowedRoles={['admin', 'financeiro', 'terapeuta']}><AdminLayout><GamificationView /></AdminLayout></RoleGuard>} />
