@@ -1192,7 +1192,18 @@ export default function TherapistPage() {
      }
   };
 
-  if (!loading && isActiveTherapist === false) {
+  if (isActiveTherapist === null) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
+          <p className="text-slate-500 text-sm font-medium animate-pulse">Verificando permissões de acesso...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isActiveTherapist === false) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center space-y-6 animate-in fade-in">
         <div className="w-20 h-20 rounded-3xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shadow-xl shadow-rose-100">

@@ -79,46 +79,54 @@ export default function PatientList() {
 
   const fetchPatients = async () => {
     setLoading(true);
-    let myTId = therapistId;
-    if (user?.role === 'terapeuta' && !myTId && user?.id) {
-      const { data: tData } = await supabase
-        .from('therapists')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (tData?.id) {
-        myTId = tData.id;
-        setTherapistId(tData.id);
+    try {
+      let myTId = therapistId;
+      if (user?.role === 'terapeuta' && !myTId && user?.id) {
+        const { data: tData } = await supabase
+          .from('therapists')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (tData?.id) {
+          myTId = tData.id;
+          setTherapistId(tData.id);
+        }
       }
-    }
 
-    const { data, error } = await supabase.from('patients').select(`
-      *,
-      patient_anamnesis ( id ),
-      patient_contracts ( status )
-    `).order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('patients').select(`
+        *,
+        patient_anamnesis ( id ),
+        patient_contracts ( status )
+      `).neq('status', 'Lead').order('created_at', { ascending: false });
 
-    if (!error && data) {
-      const nonLeads = data.filter((p: any) => p.status?.toLowerCase() !== 'lead');
-      if (user?.role === 'terapeuta' && myTId) {
-        const { data: appts } = await supabase
-          .from('appointments')
-          .select('patient_id')
-          .eq('therapist_id', myTId);
-
-        const allowedPatientIds = new Set((appts || []).map((a: any) => a.patient_id).filter(Boolean));
-
-        const filtered = nonLeads.filter((p: any) => 
-          allowedPatientIds.has(p.id) || 
-          p.therapist_id === myTId || 
-          p.responsible_therapist_id === myTId
-        );
-        setPatients(filtered);
-      } else {
-        setPatients(nonLeads);
+      if (error) {
+        console.error("Error fetching patients:", error);
       }
+
+      if (!error && data) {
+        if (user?.role === 'terapeuta' && myTId) {
+          const { data: appts } = await supabase
+            .from('appointments')
+            .select('patient_id')
+            .eq('therapist_id', myTId);
+
+          const allowedPatientIds = new Set((appts || []).map((a: any) => a.patient_id).filter(Boolean));
+
+          const filtered = data.filter((p: any) => 
+            allowedPatientIds.has(p.id) || 
+            p.therapist_id === myTId || 
+            p.responsible_therapist_id === myTId
+          );
+          setPatients(filtered);
+        } else {
+          setPatients(data);
+        }
+      }
+    } catch (err) {
+      console.error("Exception fetching patients:", err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {

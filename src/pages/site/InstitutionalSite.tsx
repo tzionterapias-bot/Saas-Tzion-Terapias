@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Calendar, Heart, Shield, Clock, MessageCircle, MapPin, Phone, Instagram, Facebook, 
   Users, Globe, BookOpen, ChevronRight, ChevronLeft, CheckCircle2, Star, ChevronDown, Sparkles, 
-  ArrowRight, ShieldCheck, UserCheck, Zap, Lock, Headphones, Building, Briefcase
+  ArrowRight, ShieldCheck, UserCheck, Zap, Lock, Headphones, Building, Briefcase, Menu, X
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/src/lib/supabase';
@@ -185,6 +185,7 @@ export default function InstitutionalSite() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [expandedBioId, setExpandedBioId] = useState<string | null>(null);
   const [expandedProdId, setExpandedProdId] = useState<string | null>(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     async function loadSite() {
@@ -298,6 +299,39 @@ export default function InstitutionalSite() {
             <MessageCircle className="w-4 h-4 fill-white/20" /> {nav.ctaLabel || 'Agendar no WhatsApp'}
           </a>
         </div>
+
+        {/* Mobile menu toggle */}
+        <button
+          className="flex lg:hidden p-2 text-slate-600 hover:text-indigo-600 bg-slate-100 rounded-xl relative z-50 ml-auto"
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        >
+          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+
+        {/* Mobile Navigation Menu */}
+        {isMobileMenuOpen && (
+          <div className="absolute top-full left-0 right-0 bg-white lg:hidden overflow-y-auto max-h-[calc(100vh-80px)] border-b border-slate-200 shadow-xl animate-in fade-in slide-in-from-top-4 duration-200">
+            <div className="flex flex-col px-6 py-6 gap-6 text-lg font-semibold text-slate-600">
+              <a href="#inicio" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-indigo-600 transition-colors border-b border-slate-100 pb-4">Início</a>
+              <a href="#como-funciona" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-indigo-600 transition-colors border-b border-slate-100 pb-4">Como Funciona</a>
+              <a href="#especialidades" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-indigo-600 transition-colors border-b border-slate-100 pb-4">Especialidades</a>
+              <a href="#diferenciais" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-indigo-600 transition-colors border-b border-slate-100 pb-4">Diferenciais</a>
+              {team?.enabled && <a href="#equipe" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-indigo-600 transition-colors border-b border-slate-100 pb-4">Equipe</a>}
+              <a href="#faq" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-indigo-600 transition-colors border-b border-slate-100 pb-4">Dúvidas</a>
+              <a href="#contato" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-indigo-600 transition-colors border-b border-slate-100 pb-4">Contato</a>
+              <Link to="/login" onClick={() => setIsMobileMenuOpen(false)} className="hover:text-indigo-600 font-bold text-slate-500 border-b border-slate-100 pb-4">Portal Equipe</Link>
+              <a
+                href={getWhatsAppUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="mt-2 px-6 py-4 text-white rounded-2xl font-bold text-center bg-emerald-600 hover:bg-emerald-500 transition-all shadow-md flex items-center justify-center gap-2"
+              >
+                <MessageCircle className="w-5 h-5 fill-white/20" /> {nav.ctaLabel || 'Agendar no WhatsApp'}
+              </a>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* ─── Hero Section ─────────────────────────────────────────────────────── */}

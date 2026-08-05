@@ -5,7 +5,7 @@ import {
   FileText, CheckCircle2, AlertCircle, Loader2, Link as LinkIcon, X, Save,
   Users, Briefcase, PieChart, Wallet, Clock, UserCheck, Percent,
   MessageCircle, ChevronLeft, ChevronRight, Ban, Receipt, BarChart2, Settings,
-  Award, Check, Pencil
+  Award, Check, Pencil, Trash2
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -1071,6 +1071,19 @@ export default function FinancialPage() {
     setSaving(false);
   };
 
+  const handleDeleteStaff = async (id: string) => {
+    if (!window.confirm('Remover este colaborador?')) return;
+    setSaving(true);
+    const { error } = await supabase.from('staff').delete().eq('id', id);
+    if (error) {
+      showToast('Erro ao remover colaborador: ' + error.message, 'error');
+    } else {
+      showToast('Colaborador removido.');
+      fetchAll();
+    }
+    setSaving(false);
+  };
+
   // ── Bônus da Equipe Administrativa ──────────────────────────────────────
 
   // Cálculo da receita líquida da clínica para o mês selecionado na aba Equipe
@@ -1874,6 +1887,13 @@ export default function FinancialPage() {
                               title="Editar Colaborador"
                             >
                               <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteStaff(s.id)}
+                              className="p-2 bg-slate-50 text-slate-400 rounded-xl hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                              title="Remover Colaborador"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
                         </td>
