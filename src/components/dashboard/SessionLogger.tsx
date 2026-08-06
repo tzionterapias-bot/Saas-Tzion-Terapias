@@ -28,6 +28,7 @@ export default function SessionLogger() {
   // Persist notes and guidance in sessionStorage to survive page refresh
   const [notes, setNotes] = useState(() => sessionStorage.getItem('@tzion:session-logger:notes') || '');
   const [guidance, setGuidance] = useState(() => sessionStorage.getItem('@tzion:session-logger:guidance') || '');
+  const [secretaryNote, setSecretaryNote] = useState(() => sessionStorage.getItem('@tzion:session-logger:secretary-note') || '');
 
   useEffect(() => {
     sessionStorage.setItem('@tzion:session-logger:notes', notes);
@@ -36,6 +37,10 @@ export default function SessionLogger() {
   useEffect(() => {
     sessionStorage.setItem('@tzion:session-logger:guidance', guidance);
   }, [guidance]);
+
+  useEffect(() => {
+    sessionStorage.setItem('@tzion:session-logger:secretary-note', secretaryNote);
+  }, [secretaryNote]);
 
   const fetchData = async () => {
     try {
@@ -92,27 +97,35 @@ export default function SessionLogger() {
   };
 
   const fetchPatientHistory = async (patientId: string) => {
-    const { data } = await supabase
-      .from('patient_evolutions')
-      .select(`
-        id,
-        notes,
-        type,
-        created_at,
-        therapists (name)
-      `)
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false });
+    const [evolutionsRes, recordsRes] = await Promise.all([
+      supabase
+        .from('patient_evolutions')
+        .select(`id, notes, type, created_at, therapists (name)`)
+        .eq('patient_id', patientId),
+      supabase
+        .from('medical_records')
+        .select(`id, content, type, created_at, therapists (name)`)
+        .eq('patient_id', patientId)
+    ]);
 
-    const formatted = (data || []).map((r: any) => ({
-      id: r.id,
+    const evolutions = (evolutionsRes.data || []).map((r: any) => ({
+      id: `evo-${r.id}`,
       date: r.created_at,
-      content: r.notes,
+      content: r.notes || '(Sem anotações)',
       therapist: Array.isArray(r.therapists) ? (r.therapists[0]?.name || 'Terapeuta') : (r.therapists?.name || 'Terapeuta'),
       type: r.type || 'Evolução'
     }));
 
-    setHistory(formatted);
+    const records = (recordsRes.data || []).map((r: any) => ({
+      id: `rec-${r.id}`,
+      date: r.created_at,
+      content: r.content?.text || '(Sem anotações)',
+      therapist: Array.isArray(r.therapists) ? (r.therapists[0]?.name || 'Terapeuta') : (r.therapists?.name || 'Terapeuta'),
+      type: r.type === 'evolution' ? 'Evolução Clínica' : 'Anamnese'
+    }));
+
+    const combined = [...evolutions, ...records].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    setHistory(combined);
   };
 
   // Sync state with activeSession global context (resilience to page refresh)
@@ -165,6 +178,7 @@ export default function SessionLogger() {
     });
     setNotes('');
     setGuidance('');
+    setSecretaryNote('');
     setWorkspaceTab('evolution');
   };
 
@@ -243,13 +257,15 @@ export default function SessionLogger() {
         .update({ 
             status: 'completed',
             completed_at: new Date().toISOString(),
-            nps_sent: false
+            nps_sent: false,
+            notes: secretaryNote
         })
         .eq('id', selectedPatient.id);
 
       clearActiveSession();
       setNotes('');
       setGuidance('');
+      setSecretaryNote('');
       setPrescriptionItems([{ type: 'floral', name: '', usage: '' }]);
       setWorkspaceTab('evolution');
       setToastMessage(`Sessão finalizada! Registro salvo no prontuário de ${selectedPatient?.patient}.`);
@@ -383,11 +399,19 @@ export default function SessionLogger() {
             {workspaceTab === 'evolution' ? (
               <div className="space-y-6">
                 <textarea 
-                  rows={12}
+                  rows={8}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Descreva a evolução do paciente, principais dores e intervenções realizadas na sessão de hoje (Apenas uso interno)..."
                   className="w-full p-8 text-slate-700 bg-slate-50/50 border border-slate-100 rounded-[2rem] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-xl leading-relaxed placeholder:text-slate-300 shadow-inner"
+                ></textarea>
+
+                <textarea 
+                  rows={3}
+                  value={secretaryNote}
+                  onChange={(e) => setSecretaryNote(e.target.value)}
+                  placeholder="Observação para a secretária (Ex: Agendar retorno em 15 dias, paciente solicitou remarcação...)"
+                  className="w-full p-6 text-slate-700 bg-amber-50/50 border border-amber-100 rounded-[1.5rem] focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition-all text-base leading-relaxed placeholder:text-amber-300 shadow-inner"
                 ></textarea>
 
                 {/* Indicadores Clínicos / Emocionais */}
@@ -569,15 +593,17 @@ export default function SessionLogger() {
                    setToastMessage('Alterações salvas temporariamente no rascunho.');
                    setTimeout(() => setToastMessage(null), 3500);
                 }}
-                className="w-full sm:flex-1 py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-95"
+                disabled={loading}
+                className="w-full sm:flex-1 py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Save className="w-5 h-5" /> Salvar Evolução
               </button>
               <button 
                 onClick={handleFinishSession}
-                className="w-full sm:w-auto px-12 py-5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-[1.5rem] font-bold hover:bg-emerald-100 transition-all active:scale-95 flex gap-2 items-center"
+                disabled={loading}
+                className="w-full sm:w-auto px-12 py-5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-[1.5rem] font-bold hover:bg-emerald-100 transition-all active:scale-95 flex gap-2 items-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <CheckCircle2 className="w-5 h-5" /> Finalizar e Encerrar
+                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />} Finalizar e Encerrar
               </button>
             </div>
           </div>

@@ -96,7 +96,8 @@ export default function PatientList() {
       const { data, error } = await supabase.from('patients').select(`
         *,
         patient_anamnesis ( id ),
-        patient_contracts ( status )
+        patient_contracts ( status ),
+        appointments ( notes, start_time )
       `).neq('status', 'Lead').order('created_at', { ascending: false });
 
       if (error) {
@@ -104,6 +105,19 @@ export default function PatientList() {
       }
 
       if (!error && data) {
+        const enrichedData = data.map((p: any) => {
+          let lastNote = null;
+          if (p.appointments && p.appointments.length > 0) {
+            const sorted = [...p.appointments]
+              .filter((a: any) => a.notes && a.notes.trim() !== '')
+              .sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+            if (sorted.length > 0) {
+              lastNote = sorted[0].notes;
+            }
+          }
+          return { ...p, last_note: lastNote };
+        });
+
         if (user?.role === 'terapeuta' && myTId) {
           const { data: appts } = await supabase
             .from('appointments')
@@ -112,14 +126,14 @@ export default function PatientList() {
 
           const allowedPatientIds = new Set((appts || []).map((a: any) => a.patient_id).filter(Boolean));
 
-          const filtered = data.filter((p: any) => 
+          const filtered = enrichedData.filter((p: any) => 
             allowedPatientIds.has(p.id) || 
             p.therapist_id === myTId || 
             p.responsible_therapist_id === myTId
           );
           setPatients(filtered);
         } else {
-          setPatients(data);
+          setPatients(enrichedData);
         }
       }
     } catch (err) {
@@ -1147,6 +1161,15 @@ export default function PatientList() {
                           )}>
                             Contrato: {(Array.isArray(patient.patient_contracts) ? patient.patient_contracts.some((c: any) => c.status === 'signed') : patient.patient_contracts?.status === 'signed') ? 'Assinado' : 'Pendente'}
                           </span>
+                          {patient.last_note && (
+                            <div className="mt-1 flex items-start gap-1 p-2 bg-amber-50 border border-amber-200/50 rounded-lg max-w-[200px]">
+                              <MessageCircle className="w-3 h-3 text-amber-600 mt-0.5 shrink-0" />
+                              <p className="text-[10px] font-bold text-amber-800 leading-tight line-clamp-2" title={patient.last_note}>
+                                <span className="opacity-70 mr-1 text-amber-600 uppercase tracking-widest text-[8px]">Última obs:</span>
+                                {patient.last_note}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="px-8 py-5 text-right">

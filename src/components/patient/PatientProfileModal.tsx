@@ -31,9 +31,10 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
     if (!patient?.id) return;
     setLoading(true);
     try {
-      const [appRes, recRes, payRes, packRes, conRes] = await Promise.all([
+      const [appRes, recRes, evoRes, payRes, packRes, conRes] = await Promise.all([
         supabase.from('appointments').select('*, therapists(name)').eq('patient_id', patient.id),
         supabase.from('medical_records').select('*, therapists(name)').eq('patient_id', patient.id),
+        supabase.from('patient_evolutions').select('*, therapists(name)').eq('patient_id', patient.id),
         supabase.from('payments').select('*').eq('patient_id', patient.id).order('created_at', { ascending: false }),
         supabase.from('patient_packages').select('*, services(name, price, type)').eq('patient_id', patient.id),
         supabase.from('patient_contracts').select('*').eq('patient_id', patient.id).order('created_at', { ascending: false })
@@ -41,6 +42,7 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
 
       const appointments = appRes.data || [];
       const records = recRes.data || [];
+      const evolutions = evoRes.data || [];
       const payments = payRes.data || [];
       const pkgs = packRes.data || [];
       const contracts = conRes.data || [];
@@ -69,8 +71,20 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
               type: 'record',
               date: new Date(rec.created_at),
               title: rec.type === 'evolution' ? 'Evolução Clínica' : 'Anamnese',
-              description: `Anotação feita por ${rec.therapists?.name || 'Terapeuta'}. ${rec.content?.text ? rec.content.text.substring(0, 50) + '...' : ''}`,
+              description: `Anotação feita por ${rec.therapists?.name || 'Terapeuta'}. ${rec.content?.text ? rec.content.text.substring(0, 150) + '...' : ''}`,
               rawContent: rec.content?.text
+          });
+      });
+
+      // 2.5 Patient Evolutions (from session logger)
+      evolutions.forEach(evo => {
+          events.push({
+              id: `evo-${evo.id}`,
+              type: 'record',
+              date: new Date(evo.created_at),
+              title: evo.type || 'Sessão Regular',
+              description: `Anotação feita por ${evo.therapists?.name || 'Terapeuta'}. ${evo.notes ? evo.notes.substring(0, 150) + '...' : ''}`,
+              rawContent: evo.notes
           });
       });
 

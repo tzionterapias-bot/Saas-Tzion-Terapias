@@ -326,12 +326,23 @@ export default function TherapistPage() {
         }
         setIsResponsible(isResp);
 
-        const [recordsRes, pkgsRes, anamnesisRes] = await Promise.all([
+        const [recordsRes, evoRes, pkgsRes, anamnesisRes] = await Promise.all([
           supabase.from('medical_records').select('*').eq('patient_id', selectedPatient.id).order('created_at', { ascending: false }),
+          supabase.from('patient_evolutions').select('*').eq('patient_id', selectedPatient.id).order('created_at', { ascending: false }),
           supabase.from('patient_packages').select('*, services(name)').eq('patient_id', selectedPatient.id).eq('status', 'active'),
           supabase.from('patient_anamnesis').select('*').eq('patient_id', selectedPatient.id).maybeSingle()
         ]);
-        setPatientRecords(recordsRes.data || []);
+        
+        const records = recordsRes.data || [];
+        const evolutions = (evoRes.data || []).map((r: any) => ({
+          id: `evo-${r.id}`,
+          type: 'evolution',
+          content: { text: r.notes || '(Sem anotações)' },
+          created_at: r.created_at
+        }));
+        
+        const combined = [...records, ...evolutions].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setPatientRecords(combined);
         setPatientPackages(pkgsRes.data || []);
         
         const anaData = anamnesisRes?.data;
@@ -466,8 +477,19 @@ export default function TherapistPage() {
       setNewRecord({ type: 'evolution', content: '' });
       // Refresh details
       const fetchPatientDetails = async () => {
-        const { data } = await supabase.from('medical_records').select('*').eq('patient_id', selectedPatient.id).order('created_at', { ascending: false });
-        setPatientRecords(data || []);
+        const [recordsRes, evoRes] = await Promise.all([
+          supabase.from('medical_records').select('*').eq('patient_id', selectedPatient.id).order('created_at', { ascending: false }),
+          supabase.from('patient_evolutions').select('*').eq('patient_id', selectedPatient.id).order('created_at', { ascending: false })
+        ]);
+        const records = recordsRes.data || [];
+        const evolutions = (evoRes.data || []).map((r: any) => ({
+          id: `evo-${r.id}`,
+          type: 'evolution',
+          content: { text: r.notes || '(Sem anotações)' },
+          created_at: r.created_at
+        }));
+        const combined = [...records, ...evolutions].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setPatientRecords(combined);
       };
       fetchPatientDetails();
       fetchData();
@@ -1386,24 +1408,33 @@ export default function TherapistPage() {
                         <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                      </button>
                   )}
-                  {app.status !== 'completed' && app.status !== 'cancelled' && (
-                     <div className="flex gap-1">
-                      <button 
-                        onClick={() => handleOpenRescheduleModal(app)}
-                        title="Reagendar Sessão"
-                        className="p-3 hover:bg-slate-100 hover:text-indigo-600 rounded-xl transition-colors text-slate-300"
-                      >
-                        <Calendar className="w-5 h-5" />
-                      </button>
-                      <button 
-                        onClick={() => handleCancelAppointment(app)}
-                        title="Desmarcar Sessão"
-                        className="p-3 hover:bg-slate-100 hover:text-rose-600 rounded-xl transition-colors text-slate-300"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                     </div>
-                  )}
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => { setSelectedPatient({ id: app.patient_id, name: app.patients?.name || app.patient_name || 'Paciente' }); setShowRecordModal(true); }}
+                      title="Prontuário Rápido"
+                      className="p-3 hover:bg-slate-100 hover:text-indigo-600 rounded-xl transition-colors text-slate-300"
+                    >
+                      <ClipboardList className="w-5 h-5" />
+                    </button>
+                    {app.status !== 'completed' && app.status !== 'cancelled' && (
+                      <>
+                        <button 
+                          onClick={() => handleOpenRescheduleModal(app)}
+                          title="Reagendar Sessão"
+                          className="p-3 hover:bg-slate-100 hover:text-indigo-600 rounded-xl transition-colors text-slate-300"
+                        >
+                          <Calendar className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => handleCancelAppointment(app)}
+                          title="Desmarcar Sessão"
+                          className="p-3 hover:bg-slate-100 hover:text-rose-600 rounded-xl transition-colors text-slate-300"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -1533,6 +1564,7 @@ export default function TherapistPage() {
                             <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Data / Hora</th>
                             <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Paciente</th>
                             <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Serviço</th>
+                            <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Observação (Sec.)</th>
                             <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Status</th>
                         </tr>
                     </thead>
@@ -1545,6 +1577,16 @@ export default function TherapistPage() {
                                 </td>
                                 <td className="px-10 py-6 font-bold text-slate-900">{app.patients?.name || 'Paciente'}</td>
                                 <td className="px-10 py-6 text-slate-500 font-medium">{app.service_type || 'Terapia'}</td>
+                                <td className="px-10 py-6">
+                                  {app.notes ? (
+                                    <div className="flex items-start gap-1.5 p-2 bg-amber-50 rounded-xl text-[10px] text-amber-700 font-bold border border-amber-200 max-w-[200px]" title={app.notes}>
+                                      <MessageSquare className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                                      <span className="line-clamp-2">{app.notes}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-300 text-xs font-medium">—</span>
+                                  )}
+                                </td>
                                 <td className="px-10 py-6 text-right">
                                    <span className={cn(
                                        "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
@@ -1561,7 +1603,7 @@ export default function TherapistPage() {
                         ))}
                         {filteredHistory.length === 0 && (
                             <tr>
-                                <td colSpan={4} className="py-20 text-center text-slate-400 font-medium">Nenhum atendimento encontrado neste período.</td>
+                                <td colSpan={5} className="py-20 text-center text-slate-400 font-medium">Nenhum atendimento encontrado neste período.</td>
                             </tr>
                         )}
                     </tbody>

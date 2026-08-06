@@ -15,6 +15,7 @@ interface Appointment {
   type: string;
   meet_link?: string;
   status?: string;
+  notes?: string;
   google_event_id?: string;
 }
 
@@ -154,7 +155,8 @@ export default function AgendaManager() {
         end_time: a.end_time,
         type: a.type || 'Presencial',
         meet_link: a.meet_link,
-        status: a.status
+        status: a.status,
+        notes: a.notes
       }));
 
       setAppointments(formatted);
@@ -1093,6 +1095,12 @@ export default function AgendaManager() {
                      </div>
                      <h4 className="font-bold text-slate-900 text-xs sm:text-sm leading-tight truncate">{appt.patient_name}</h4>
                      <p className="text-[10px] sm:text-xs text-slate-500 font-medium truncate">Com {appt.therapist_name}</p>
+                     {appt.notes && (
+                       <div className="mt-0.5 flex items-start gap-1 p-1 bg-amber-100/50 rounded text-[9px] text-amber-700 font-bold border border-amber-200" title={appt.notes}>
+                         <MessageCircle className="w-2.5 h-2.5 shrink-0 mt-0.5" />
+                         <span className="line-clamp-2">{appt.notes}</span>
+                       </div>
+                     )}
                    </div>
                  ))}
               </div>
@@ -1149,6 +1157,12 @@ export default function AgendaManager() {
                   <div className="min-w-0 flex-1">
                     <h4 className="font-bold text-base sm:text-lg text-slate-900 group-hover:text-indigo-600 transition-colors truncate">{event.patient_name}</h4>
                     <p className="text-xs sm:text-sm text-slate-500 font-medium truncate">Com {event.therapist_name}</p>
+                    {event.notes && (
+                      <div className="mt-2 flex items-start gap-1.5 p-2 bg-amber-50 rounded-xl text-[11px] text-amber-700 font-bold border border-amber-200 shadow-sm max-w-sm">
+                        <MessageCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                        <span>{event.notes}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 sm:gap-4 flex-wrap w-full sm:w-auto justify-end border-t border-slate-100 sm:border-0 pt-3 sm:pt-0">
