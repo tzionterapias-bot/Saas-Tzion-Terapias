@@ -943,7 +943,10 @@ export default function TherapistPage() {
       // 1. Resize to 500x500 square canvas
       const img = new Image();
       img.src = URL.createObjectURL(file);
-      await new Promise((resolve) => (img.onload = resolve));
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error('Falha ao carregar a imagem.'));
+      });
 
       const canvas = document.createElement('canvas');
       canvas.width = 500;
@@ -1296,7 +1299,10 @@ export default function TherapistPage() {
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) handleUploadPhoto(file);
+                if (file) {
+                  handleUploadPhoto(file);
+                  e.target.value = '';
+                }
               }}
             />
             <label htmlFor="header-therapist-photo-input" className="cursor-pointer block relative">
@@ -2105,7 +2111,10 @@ export default function TherapistPage() {
                                 accept="image/*"
                                 onChange={(e) => {
                                     const file = e.target.files?.[0];
-                                    if (file) handleUploadPhoto(file);
+                                    if (file) {
+                                      handleUploadPhoto(file);
+                                      e.target.value = '';
+                                    }
                                 }}
                                 className="hidden"
                                 id="avatar-upload"

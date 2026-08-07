@@ -214,7 +214,7 @@ function CurrencyInput({ value, onChange, label }: { value: number, onChange: (v
 }
 
 // ─── Image Upload Helper ──────────────────────────────────────────────────────
-const handleImageUpload = (file: File, callback: (base64: string) => void) => {
+const processImageFile = (file: File, callback: (base64: string) => void) => {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -243,8 +243,10 @@ const handleImageUpload = (file: File, callback: (base64: string) => void) => {
       ctx?.drawImage(img, 0, 0, width, height);
       callback(canvas.toDataURL('image/jpeg', 0.8));
     };
+    img.onerror = () => alert('Falha ao processar a imagem. Tente outro arquivo.');
     img.src = e.target?.result as string;
   };
+  reader.onerror = () => alert('Erro ao ler o arquivo.');
   reader.readAsDataURL(file);
 };
 
@@ -535,10 +537,11 @@ export default function SiteEditorPage() {
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (file) {
-                                  handleImageUpload(file, (base64) => {
+                                  processImageFile(file, (base64) => {
                                     const newItems = content.products.items.map(p => p.id === prod.id ? { ...p, coverUrl: base64 } : p);
                                     update('products', { ...content.products, items: newItems });
                                   });
+                                  e.target.value = '';
                                 }
                               }}
                             />
