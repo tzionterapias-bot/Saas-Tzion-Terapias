@@ -11,10 +11,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
       "position": [
-        1168,
-        272
+        2768,
+        5216
       ],
-      "id": "24c0247c-cbce-403d-89cd-1581462bbee5",
+      "id": "b2516b74-680a-47dd-ae8b-17bad69c88e9",
       "name": "AI Agent"
     },
     {
@@ -28,10 +28,10 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
       "typeVersion": 1,
       "position": [
-        1152,
-        416
+        2752,
+        5360
       ],
-      "id": "fb583edc-619d-457b-a8d3-b555b13ad44d",
+      "id": "bb1eb9d2-a257-405f-b630-74cce2ae3ce8",
       "name": "OpenRouter Chat Model",
       "credentials": {
         "openRouterApi": {
@@ -43,16 +43,16 @@
     {
       "parameters": {
         "sessionIdType": "customKey",
-        "sessionKey": "={{ $('Inicio').first().json.body?.data?.key?.remoteJid }}_teste",
+        "sessionKey": "={{ $('Inicio').first().json.body?.data?.key?.remoteJid === 'status@broadcast' ? $('Inicio').first().json.body?.data?.participant : $('Inicio').first().json.body?.data?.key?.remoteJid }}_v12",
         "contextWindowLength": 10
       },
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.4,
       "position": [
-        1280,
-        576
+        2880,
+        5520
       ],
-      "id": "2a8f068d-e6c4-405d-8757-a3158ae09bf1",
+      "id": "d0d48b5f-2cbc-458b-ad47-a081a95db3dd",
       "name": "Simple Memory"
     },
     {
@@ -71,37 +71,10 @@
                   {
                     "id": "4f7d6f53-21f1-4fd9-a67e-4ed831885b3b",
                     "leftValue": "={{ $json.output }}",
-                    "rightValue": "[RESUMO_FINAL:",
-                    "operator": {
-                      "type": "string",
-                      "operation": "contains"
-                    }
-                  },
-                  {
-                    "id": "4f7d6f53-21f1-4fd9-a67e-4ed831885b3c",
-                    "leftValue": "={{ $json.output }}",
                     "rightValue": "[LEAD:QUENTE]",
                     "operator": {
                       "type": "string",
                       "operation": "contains"
-                    }
-                  },
-                  {
-                    "id": "prevent-question-u6yc9kyyt",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "?",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "prevent-adefinir-pici3u7ta",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "(a definir)",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
                     }
                   }
                 ],
@@ -120,37 +93,10 @@
                   {
                     "id": "ac9fbd88-b880-4ca8-8355-aa3d6c110733",
                     "leftValue": "={{ $json.output }}",
-                    "rightValue": "[RESUMO_FINAL:",
-                    "operator": {
-                      "type": "string",
-                      "operation": "contains"
-                    }
-                  },
-                  {
-                    "id": "ac9fbd88-b880-4ca8-8355-aa3d6c110734",
-                    "leftValue": "={{ $json.output }}",
                     "rightValue": "[STATUS:INFORMATIVO]",
                     "operator": {
                       "type": "string",
                       "operation": "contains"
-                    }
-                  },
-                  {
-                    "id": "prevent-question-f3x12e1b8",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "?",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "prevent-adefinir-88dl029d8",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "(a definir)",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
                     }
                   }
                 ],
@@ -169,37 +115,10 @@
                   {
                     "id": "0dfeb4b5-72a9-4063-a2b7-47a1b8263c5f",
                     "leftValue": "={{ $json.output }}",
-                    "rightValue": "[RESUMO_FINAL:",
-                    "operator": {
-                      "type": "string",
-                      "operation": "contains"
-                    }
-                  },
-                  {
-                    "id": "0dfeb4b5-72a9-4063-a2b7-47a1b8263c60",
-                    "leftValue": "={{ $json.output }}",
                     "rightValue": "[STATUS:OPORTUNIDADE]",
                     "operator": {
                       "type": "string",
                       "operation": "contains"
-                    }
-                  },
-                  {
-                    "id": "prevent-question-v5yqbfdet",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "?",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "prevent-adefinir-eal3oqs8i",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "(a definir)",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
                     }
                   }
                 ],
@@ -223,24 +142,6 @@
                       "type": "string",
                       "operation": "contains"
                     }
-                  },
-                  {
-                    "id": "prevent-question-3rjigb0pf",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "?",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "prevent-adefinir-tym4rwfa5",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "(a definir)",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
                   }
                 ],
                 "combinator": "and"
@@ -253,10 +154,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        1552,
-        208
+        3152,
+        5152
       ],
-      "id": "165b0e86-3bab-4ad1-af3b-9a36a45faac3",
+      "id": "491dd571-d0d7-4139-b82b-fc7a5d70e1bf",
       "name": "Switch"
     },
     {
@@ -289,7 +190,7 @@
             },
             {
               "name": "customer_phone",
-              "value": "={{ $('Inicio').item.json.body.data.key.remoteJid }}"
+              "value": "={{ $('Inicio').item.json.body.data.key.remoteJid === 'status@broadcast' ? $('Inicio').item.json.body.data.participant : $('Inicio').item.json.body.data.key.remoteJid }}"
             },
             {
               "name": "department_id",
@@ -301,7 +202,7 @@
             },
             {
               "name": "last_message",
-              "value": "={{ $('AI Agent').item.json.output.match(/\\[RESUMO_FINAL:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO_FINAL:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output }}"
+              "value": "={{ $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output }}"
             },
             {
               "name": "instance_id",
@@ -314,10 +215,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2112,
-        -16
+        3712,
+        4928
       ],
-      "id": "a68c1102-92f4-4fa4-ba57-243ed8441101",
+      "id": "1a3ae137-dc1e-4c53-886a-1a661c26cef6",
       "name": "Criar Ticket Financeiro"
     },
     {
@@ -338,25 +239,21 @@
             {
               "name": "Content-Type",
               "value": "application/json"
-            },
-            {
-              "name": "Prefer",
-              "value": "return=representation"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{\n  JSON.stringify({\n    \"customer_phone\": $('Inicio').item.json.body.data?.key?.remoteJid?.replace(\"@s.whatsapp.net\", \"\")?.replace(/^55/, \"\"),\n    \"message_body\": $('Inicio').item.json.body.data?.message?.conversation || $('Inicio').item.json.body.data?.message?.extendedTextMessage?.text || $('Inicio').item.json.body.data?.message?.imageMessage?.caption || $('Inicio').item.json.body.data?.message?.documentMessage?.fileName || \"[Arquivo/Áudio]\",\n    \"sender_type\": \"customer\",\n    \"instance_id\": \"tzion_terapias\",\n    \"message_type\": String($('Inicio').item.json.body.data?.messageType).includes('audio') ? 'audio' : String($('Inicio').item.json.body.data?.messageType).includes('image') ? 'image' : String($('Inicio').item.json.body.data?.messageType).includes('document') ? 'document' : 'text',\n    \"media_url\": $('Inicio').item.json.body.data?.message?.base64 || $('Inicio').item.json.body.data?.base64 || $('Inicio').item.json.body.data?.message?.audioMessage?.base64 || $('Inicio').item.json.body.data?.message?.imageMessage?.base64 || \"\"\n  })\n}}\n",
+        "jsonBody": "={{\n  JSON.stringify({\n    \"customer_phone\": ($('Inicio').item.json.body.data?.key?.remoteJid === 'status@broadcast' ? $('Inicio').item.json.body.data?.participant : $('Inicio').item.json.body.data?.key?.remoteJid)?.replace(\"@s.whatsapp.net\", \"\")?.replace(/^55/, \"\"),\n    \"message_body\": $('Inicio').item.json.body.data?.message?.conversation || $('Inicio').item.json.body.data?.message?.extendedTextMessage?.text || $('Inicio').item.json.body.data?.message?.imageMessage?.caption || $('Inicio').item.json.body.data?.message?.documentMessage?.fileName || \"[Arquivo/Áudio]\",\n    \"sender_type\": \"customer\",\n    \"instance_id\": \"tzion_terapias\",\n    \"message_type\": String($('Inicio').item.json.body.data?.messageType).includes('audio') ? 'audio' : String($('Inicio').item.json.body.data?.messageType).includes('image') ? 'image' : String($('Inicio').item.json.body.data?.messageType).includes('document') ? 'document' : 'text',\n    \"media_url\": $('Inicio').item.json.body.data?.message?.base64 || $('Inicio').item.json.body.data?.base64 || $('Inicio').item.json.body.data?.message?.audioMessage?.base64 || $('Inicio').item.json.body.data?.message?.imageMessage?.base64 || \"\"\n  })\n}}\n",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -144,
-        288
+        1456,
+        5232
       ],
-      "id": "a554f8ae-a6ca-44ed-a125-01d30f6cce5a",
+      "id": "7ed86b27-2c98-4945-a085-345f58d2996c",
       "name": "Salvar Msg Cliente"
     },
     {
@@ -385,7 +282,7 @@
           "parameters": [
             {
               "name": "customer_phone",
-              "value": "={{ $('Inicio').first().json.body?.data?.key?.remoteJid }}"
+              "value": "={{ $('Inicio').first().json.body?.data?.key?.remoteJid === 'status@broadcast' ? $('Inicio').first().json.body?.data?.participant : $('Inicio').first().json.body?.data?.key?.remoteJid }}"
             },
             {
               "name": "message_body",
@@ -406,10 +303,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1424,
-        672
+        3024,
+        5616
       ],
-      "id": "906d3026-8a72-4fa9-a8a8-24d75b5b0421",
+      "id": "7a09931e-75a8-458a-91b9-0f709e61d26c",
       "name": "Salvar Msg Bot"
     },
     {
@@ -430,7 +327,7 @@
           "parameters": [
             {
               "name": "number",
-              "value": "={{ $('Inicio').first().json.body.data.key.remoteJid.replace(\"@s.whatsapp.net\", \"\") }}"
+              "value": "={{ ($('Inicio').first().json.body.data.key.remoteJid === 'status@broadcast' ? $('Inicio').first().json.body.data.participant : $('Inicio').first().json.body.data.key.remoteJid).replace(\"@s.whatsapp.net\", \"\") }}"
             },
             {
               "name": "text",
@@ -443,10 +340,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2112,
-        640
+        3712,
+        5584
       ],
-      "id": "6df33ea5-64d0-4de9-b054-50d20da98df1",
+      "id": "e4cffe21-6bce-4bfb-9212-92f9f7a4d435",
       "name": "WHATASPP"
     },
     {
@@ -466,10 +363,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1792,
-        624
+        3392,
+        5568
       ],
-      "id": "edaa2b49-c63c-4f26-a8cc-484dd3087d4d",
+      "id": "e2c3d1c6-2e06-4aaf-bfa3-90dd1fe2c78c",
       "name": "fILTRO DE tAG"
     },
     {
@@ -488,10 +385,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        16,
-        288
+        1616,
+        5232
       ],
-      "id": "0bcef4e9-da80-452a-a5aa-c41361c184cf",
+      "id": "1d6295cc-6b55-49ab-9d37-841cc872c12d",
       "name": "COMANDO BD",
       "credentials": {
         "supabaseApi": {
@@ -521,10 +418,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        720,
-        64
+        2320,
+        5008
       ],
-      "id": "8be57215-9602-476c-90e9-f362fe886d5c",
+      "id": "2a5304bc-0de4-4bf8-b8d2-1eb2dc27e81e",
       "name": "HTTP Request"
     },
     {
@@ -564,6 +461,15 @@
                 "operation": "false",
                 "singleValue": true
               }
+            },
+            {
+              "id": "new-condition-for-status",
+              "leftValue": "={{ $json.body.data.key.remoteJid }}",
+              "rightValue": "status@broadcast",
+              "operator": {
+                "type": "string",
+                "operation": "notEqual"
+              }
             }
           ],
           "combinator": "and"
@@ -573,10 +479,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -368,
-        304
+        1232,
+        5248
       ],
-      "id": "39ac7418-ad00-49ca-86f1-baaf10196f7e",
+      "id": "7fe1f896-9132-4153-a972-0dbd1979df95",
       "name": "FILTRO DE REAÇÕES E GRUPOS"
     },
     {
@@ -590,10 +496,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -112,
-        64
+        1488,
+        5008
       ],
-      "id": "29ffd4b7-ed23-40ff-8b7e-aeb42934e717",
+      "id": "6bda6219-ae62-4bc6-9f47-a7288d342f38",
       "name": "ATENDIMENTO DASHIBOARD",
       "webhookId": "34ca7f6a-4bf7-4d37-9ea7-059eb36267d8"
     },
@@ -609,7 +515,7 @@
             {
               "keyName": "=customer_phone",
               "condition": "like",
-              "keyValue": "=%{{ $('Inicio').first().json.body?.data?.key?.remoteJid?.replace('@s.whatsapp.net', '') }}%"
+              "keyValue": "=%{{ ($('Inicio').first().json.body?.data?.key?.remoteJid === 'status@broadcast' ? $('Inicio').first().json.body?.data?.participant : $('Inicio').first().json.body?.data?.key?.remoteJid)?.replace('@s.whatsapp.net', '') }}%"
             },
             {
               "keyName": "=status",
@@ -622,10 +528,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        176,
-        288
+        1776,
+        5232
       ],
-      "id": "e19be43c-9100-46ff-b4d9-66c03a204c29",
+      "id": "1a355893-5ba4-4c3a-aa4c-e0f8dde09512",
       "name": "Radar de Tickets",
       "alwaysOutputData": true,
       "credentials": {
@@ -654,6 +560,15 @@
                 "operation": "true",
                 "singleValue": true
               }
+            },
+            {
+              "id": "cc155e13-a127-4789-81b5-d4b86d28f665",
+              "leftValue": "={{ ( $('Inicio').first().json.body?.data?.message?.conversation || $('Inicio').first().json.body?.data?.message?.extendedTextMessage?.text || '' ).trim() }}",
+              "rightValue": "^\\s*(10|[0-9])\\s*$",
+              "operator": {
+                "type": "string",
+                "operation": "notRegex"
+              }
             }
           ],
           "combinator": "and"
@@ -663,10 +578,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        336,
-        288
+        1936,
+        5232
       ],
-      "id": "d27e743e-e90d-46f1-ac75-9f476a69a53d",
+      "id": "3f998432-53bf-409a-aae2-b9a06cb3164a",
       "name": "PRECISA DE ATENDIMENTO DE IA OU HUMANO?"
     },
     {
@@ -681,12 +596,11 @@
           "conditions": [
             {
               "id": "99545113-8f10-4ce7-ae88-38c1acafabf9",
-              "leftValue": "={{ false }}",
-              "rightValue": "",
+              "leftValue": "={{ ( $('Inicio').first().json.body?.data?.message?.conversation || $('Inicio').first().json.body?.data?.message?.extendedTextMessage?.text || '' ).trim() }}",
+              "rightValue": "^\\s*(10|[0-9])\\s*$",
               "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
+                "type": "string",
+                "operation": "regex"
               }
             }
           ],
@@ -697,10 +611,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        864,
-        288
+        2464,
+        5232
       ],
-      "id": "839e0fd2-a0c9-424f-bed2-ccf5f43b6afe",
+      "id": "5e6c38df-7403-404e-8908-b21c5c482696",
       "name": "É Resposta de NPS?"
     },
     {
@@ -721,7 +635,7 @@
           "parameters": [
             {
               "name": "number",
-              "value": "={{ $('Inicio').first().json.body.data.key.remoteJid.replace('@s.whatsapp.net', '') }}"
+              "value": "={{ ($('Inicio').first().json.body.data.key.remoteJid === 'status@broadcast' ? $('Inicio').first().json.body.data.participant : $('Inicio').first().json.body.data.key.remoteJid).replace('@s.whatsapp.net', '') }}"
             },
             {
               "name": "text",
@@ -734,10 +648,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1008,
-        608
+        2608,
+        5552
       ],
-      "id": "47e0599e-db08-45b2-8081-906839cf4bf1",
+      "id": "93a66a80-70e3-4912-8067-98b855c38bb4",
       "name": "agradecimento"
     },
     {
@@ -755,18 +669,18 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        720,
-        608
+        2320,
+        5552
       ],
-      "id": "ee1dc6cc-6629-4675-aab9-44a84ed1caff",
+      "id": "d923e1c8-e0bc-4439-9b9d-a699d7a2a56e",
       "name": "nps_feedbacks",
+      "alwaysOutputData": true,
       "credentials": {
         "supabaseApi": {
           "id": "CMbgGOC095IbrGUe",
           "name": "Supabase account"
         }
-      },
-      "alwaysOutputData": true
+      }
     },
     {
       "parameters": {
@@ -780,7 +694,7 @@
           "conditions": [
             {
               "id": "2ce886b2-3ae7-4c46-afc1-9a7bd4169d7e",
-              "leftValue": "={{ false }}",
+              "leftValue": "={{ $('Radar de Tickets').first()?.json?.status === 'awaiting_nps' || /^\\s*(10|[0-9])\\s*$/.test( ( $('Inicio').first().json.body?.data?.message?.conversation || $('Inicio').first().json.body?.data?.message?.extendedTextMessage?.text || '' ).trim() ) }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -796,10 +710,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        576,
-        304
+        2176,
+        5248
       ],
-      "id": "d35cfd6c-5e63-4b43-b12e-19175770c3d1",
+      "id": "cb3655e3-73ac-4b82-9799-f7f6dc264224",
       "name": "Status é Aguardando NPS?"
     },
     {
@@ -811,10 +725,10 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -416,
-        -144
+        1184,
+        4800
       ],
-      "id": "c5a46aba-e089-425e-8dcf-a2ac08a26b1a",
+      "id": "12e784d6-7182-48f0-be3b-4596d8b37c41",
       "name": "Sticky Note"
     },
     {
@@ -826,10 +740,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -384,
-        64
+        1216,
+        5008
       ],
-      "id": "a0113d1e-969b-489b-9ebd-2ee082537581",
+      "id": "1672f94a-bf8b-4101-86cd-92b956cb75f7",
       "name": "Inicio",
       "webhookId": "b92298c2-911f-4790-aecb-e60f803abbd6"
     },
@@ -863,7 +777,7 @@
             },
             {
               "name": "customer_phone",
-              "value": "={{ $('Inicio').item.json.body.data.key.remoteJid }}"
+              "value": "={{ $('Inicio').item.json.body.data.key.remoteJid === 'status@broadcast' ? $('Inicio').item.json.body.data.participant : $('Inicio').item.json.body.data.key.remoteJid }}"
             },
             {
               "name": "department_id",
@@ -875,7 +789,7 @@
             },
             {
               "name": "last_message",
-              "value": "={{ $('AI Agent').item.json.output.match(/\\[RESUMO_FINAL:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO_FINAL:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output }}"
+              "value": "={{ $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output }}"
             },
             {
               "name": "instance_id",
@@ -888,10 +802,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2112,
-        208
+        3712,
+        5152
       ],
-      "id": "f1d7bc10-efb6-4a87-b935-0ecb9d04a985",
+      "id": "4205163f-6d20-4779-b15b-2e561d662de8",
       "name": "Criar Ticket ATENDIMENTO"
     },
     {
@@ -924,7 +838,7 @@
             },
             {
               "name": "customer_phone",
-              "value": "={{ $('Inicio').item.json.body.data.key.remoteJid }}"
+              "value": "={{ $('Inicio').item.json.body.data.key.remoteJid === 'status@broadcast' ? $('Inicio').item.json.body.data.participant : $('Inicio').item.json.body.data.key.remoteJid }}"
             },
             {
               "name": "department_id",
@@ -936,7 +850,7 @@
             },
             {
               "name": "last_message",
-              "value": "={{ $('AI Agent').item.json.output.match(/\\[RESUMO_FINAL:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO_FINAL:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output }}"
+              "value": "={{ $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output }}"
             },
             {
               "name": "instance_id",
@@ -949,16 +863,16 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2112,
-        448
+        3712,
+        5392
       ],
-      "id": "57a95573-d954-4fb6-a58b-a9f797967ba0",
+      "id": "113a4e0c-7bf1-4a8d-822a-e47ba0e987f2",
       "name": "Criar Ticket COMERCIAL"
     },
     {
       "parameters": {
         "method": "PATCH",
-        "url": "=https://youxrufxufxxcgixymdd.supabase.co/rest/v1/service_tickets?id=eq.{{ $('Radar de Tickets').first()?.json?.id || '00000000-0000-0000-0000-000000000000' }}",
+        "url": "=https://youxrufxufxxcgixymdd.supabase.co/rest/v1/service_tickets?id=eq.{{ $('Radar de Tickets').first().json.id }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -984,93 +898,11 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -800,
-        1040
+        800,
+        5984
       ],
-      "id": "e2f8d3b4-1c9a-4d2b-b8e7-5a6f4c3d2e1f",
-      "name": "Fechar Ticket Apos NPS",
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "resume": "afterTime",
-        "amount": 3,
-        "unit": "seconds"
-      },
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        200,
-        4560
-      ],
-      "id": "wait-node-debounce",
-      "name": "Espera 3s (Debounce)",
-      "webhookId": "wait-node-debounce"
-    },
-    {
-      "parameters": {
-        "operation": "getAll",
-        "tableId": "=chat_messages",
-        "limit": 1,
-        "orderBy": "=created_at",
-        "matchType": "allFilters",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "=customer_phone",
-              "condition": "like",
-              "keyValue": "=%{{ $('Inicio').first().json.body?.data?.key?.remoteJid?.replace('@s.whatsapp.net', '')?.replace(/^55/, '') }}%"
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        300,
-        4560
-      ],
-      "id": "check-msg-debounce",
-      "name": "Puxar Ultima Msg",
-      "credentials": {
-        "supabaseApi": {
-          "id": "CMbgGOC095IbrGUe",
-          "name": "Supabase account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "cond1",
-              "leftValue": "={{ $json.id }}",
-              "rightValue": "={{ $('Salvar Msg Cliente').first().json[0].id }}",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        400,
-        4560
-      ],
-      "id": "if-node-debounce",
-      "name": "É a ultima msg?"
+      "id": "0116fc06-04cb-4e33-b88f-b81d15ca8ec6",
+      "name": "Fechar Ticket Apos NPS"
     }
   ],
   "connections": {
@@ -1153,7 +985,7 @@
       "main": [
         [
           {
-            "node": "Espera 3s (Debounce)",
+            "node": "COMANDO BD",
             "type": "main",
             "index": 0
           }
@@ -1241,8 +1073,18 @@
             "type": "main",
             "index": 0
           }
-        ],
-        []
+        ]
+      ]
+    },
+    "agradecimento": {
+      "main": [
+        [
+          {
+            "node": "Fechar Ticket Apos NPS",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "nps_feedbacks": {
@@ -1277,51 +1119,11 @@
           }
         ]
       ]
-    },
-    "agradecimento": {
-      "main": [
-        [
-          {
-            "node": "Fechar Ticket Apos NPS",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Espera 3s (Debounce)": {
-      "main": [
-        [
-          {
-            "node": "Puxar Ultima Msg",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Puxar Ultima Msg": {
-      "main": [
-        [
-          {
-            "node": "É a ultima msg?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "É a ultima msg?": {
-      "main": [
-        [
-          {
-            "node": "COMANDO BD",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
-      ]
     }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "61fad1a6fb7891864ca3d58a43c459dfab4f092dffb745e9d26d550549e6e45d"
   }
 }
