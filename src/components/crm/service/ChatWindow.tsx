@@ -1,5 +1,5 @@
 import React from 'react';
-import { Send, Smile, Paperclip, MoreVertical, Phone, Video, CheckCheck, User, Shield, ClipboardList, ArrowRightLeft, Loader2, CheckCircle2, AlertCircle, X, ChevronLeft } from 'lucide-react';
+import { Send, Smile, Paperclip, MoreVertical, Phone, Video, CheckCheck, User, Shield, ClipboardList, ArrowRightLeft, Loader2, CheckCircle2, AlertCircle, X, ChevronLeft, Mic, Square, Trash2 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { Ticket } from './TicketList';
 import { supabase } from '@/src/lib/supabase';
@@ -80,6 +80,113 @@ export default function ChatWindow({ ticket, onBack }: Props) {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const caseSummary = getCaseSummary(messages);
+
+  const [isRecording, setIsRecording] = React.useState(false);
+  const [recordingDuration, setRecordingDuration] = React.useState(0);
+  const mediaRecorderRef = React.useRef<MediaRecorder | null>(null);
+  const audioChunksRef = React.useRef<Blob[]>([]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        if (audioChunksRef.current.length === 0) return;
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          try {
+            setLoading(true);
+            const base64data = reader.result as string;
+            
+            await sendWhatsAppMessage(
+              null,
+              ticket.phone,
+              'Áudio enviado', // Evolution pode precisar de um texto msm qd eh audio
+              'chat_reply',
+              {
+                base64: base64data,
+                mimeType: 'audio/webm',
+                fileName: 'audio.ogg' // WhatsApp usa ogg
+              }
+            );
+
+            await supabase
+              .from('chat_messages')
+              .insert({
+                customer_phone: ticket.phone,
+                message_body: 'Mensagem de áudio',
+                sender_type: 'agent',
+                message_type: 'audio',
+                media_url: base64data,
+                instance_id: ticket.instanceId || 'tzion_terapias'
+              });
+
+            handleShowToast('Áudio enviado com sucesso!');
+          } catch (error) {
+            console.error('Erro ao enviar áudio:', error);
+            handleShowToast('Erro ao enviar áudio.', 'error');
+          } finally {
+            setLoading(false);
+            scrollToBottom();
+          }
+        };
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+    } catch (err) {
+      console.error('Erro ao acessar microfone:', err);
+      handleShowToast('Erro ao acessar o microfone. Verifique as permissões.', 'error');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    }
+    setIsRecording(false);
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    }
+    audioChunksRef.current = []; // descarta o áudio
+    setIsRecording(false);
+    setRecordingDuration(0);
+  };
+
+  React.useEffect(() => {
+    let interval: any;
+    if (isRecording) {
+      interval = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isRecording]);
+
+  const formatDuration = (seconds: number) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
 
   const handleShowToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -519,26 +626,57 @@ export default function ChatWindow({ ticket, onBack }: Props) {
             <Paperclip className="w-6 h-6" />
           </button>
 
-          <div className="flex-1 flex items-end gap-2 bg-white px-4 py-1.5 rounded-2xl border border-transparent focus-within:border-white transition-all shadow-sm">
-            <textarea 
-              rows={1}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-              placeholder="Digite uma mensagem"
-              className="flex-1 bg-transparent border-none outline-none py-2.5 text-[15px] resize-none max-h-32 text-slate-800 placeholder-slate-400"
-              disabled={loading}
-            />
-            <button 
-              onClick={handleSend}
-              disabled={!inputValue.trim() || loading}
-              className={cn(
-                "p-2 mb-1 rounded-full transition-all flex items-center justify-center shrink-0",
-                inputValue.trim() && !loading ? "bg-[#00a884] text-white hover:bg-[#008f6f]" : "text-slate-400 cursor-not-allowed"
-              )}
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 -ml-0.5" />}
-            </button>
+          <div className="flex-1 flex items-end gap-2 bg-white px-4 py-1.5 rounded-2xl border border-transparent focus-within:border-white transition-all shadow-sm relative">
+            {isRecording ? (
+              <div className="flex-1 flex items-center justify-between py-2 text-rose-500 font-bold animate-pulse">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 bg-rose-500 rounded-full"></span>
+                  Gravando áudio... {formatDuration(recordingDuration)}
+                </div>
+                <button onClick={cancelRecording} className="p-2 hover:bg-rose-50 rounded-full text-rose-500 transition-colors" title="Cancelar gravação">
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <textarea 
+                  rows={1}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+                  placeholder="Digite uma mensagem"
+                  className="flex-1 bg-transparent border-none outline-none py-2.5 text-[15px] resize-none max-h-32 text-slate-800 placeholder-slate-400"
+                  disabled={loading}
+                />
+                {!inputValue.trim() && !isRecording ? (
+                  <button
+                    onClick={startRecording}
+                    disabled={loading}
+                    className="p-2 mb-1 rounded-full transition-all flex items-center justify-center shrink-0 bg-[#00a884] text-white hover:bg-[#008f6f]"
+                  >
+                    <Mic className="w-5 h-5" />
+                  </button>
+                ) : isRecording ? (
+                  <button
+                    onClick={stopRecording}
+                    className="p-2 mb-1 rounded-full transition-all flex items-center justify-center shrink-0 bg-rose-500 text-white hover:bg-rose-600"
+                  >
+                    <Square className="w-5 h-5 fill-white" />
+                  </button>
+                ) : (
+                  <button 
+                    onClick={handleSend}
+                    disabled={!inputValue.trim() || loading}
+                    className={cn(
+                      "p-2 mb-1 rounded-full transition-all flex items-center justify-center shrink-0",
+                      inputValue.trim() && !loading ? "bg-[#00a884] text-white hover:bg-[#008f6f]" : "text-slate-400 cursor-not-allowed"
+                    )}
+                  >
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 -ml-0.5" />}
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
