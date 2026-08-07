@@ -967,8 +967,9 @@ export default function TherapistPage() {
 
       // 2. Upload to Supabase Storage bucket 'avatars'
       const targetTherapist = currentTherapist || profile;
-      const therapistName = targetTherapist?.name ? targetTherapist.name.replace(/\s+/g, '_').toLowerCase() : 'terapeuta';
-      const fileName = `${therapistName}-${Date.now()}.jpg`;
+      const rawName = targetTherapist?.name || 'terapeuta';
+      const sanitizedName = rawName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+      const fileName = `${sanitizedName}-${Date.now()}.jpg`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')

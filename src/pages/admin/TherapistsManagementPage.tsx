@@ -147,7 +147,7 @@ export default function TherapistsManagementPage() {
       if (!blob) throw new Error("Erro ao processar imagem.");
 
       // 2. Upload to storage bucket 'avatars'
-      const sanitizedName = therapistName.replace(/\s+/g, '_').toLowerCase();
+      const sanitizedName = therapistName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
       const fileName = `${sanitizedName}-${Date.now()}.jpg`;
 
       const { error: uploadError } = await supabase.storage
