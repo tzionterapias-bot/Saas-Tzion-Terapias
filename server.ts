@@ -333,13 +333,31 @@ async function startServer() {
       const { instanceName } = req.params;
       const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
       const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
-      const response = await fetch(`${apiUrl}/message/sendMedia/${instanceName}`, {
+      
+      const isAudio = req.body.mediatype === 'audio';
+      const endpoint = isAudio 
+        ? `${apiUrl}/message/sendWhatsAppAudio/${instanceName}` 
+        : `${apiUrl}/message/sendMedia/${instanceName}`;
+        
+      // Se for áudio, Evolution espera a propriedade 'audio' com o base64 (em versões v1/v2 mistas), 
+      // ou apenas aceita se enviarmos no formato correto.
+      // Vamos formatar o body para garantir suporte a sendWhatsAppAudio
+      let bodyPayload = req.body;
+      if (isAudio && req.body.media) {
+        bodyPayload = {
+          number: req.body.number,
+          options: req.body.options,
+          audio: req.body.media // sendWhatsAppAudio usa 'audio' no body
+        };
+      }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'apikey': apiKey
         },
-        body: JSON.stringify(req.body)
+        body: JSON.stringify(bodyPayload)
       });
       const data = await response.json();
       res.status(response.status).json(data);
