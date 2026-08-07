@@ -89,14 +89,20 @@ export default function ChatWindow({ ticket, onBack }: Props) {
   const fetchMessages = async () => {
     // Pega os últimos 10 dígitos do telefone para busca flexível no banco
     // (Isso resolve o problema do n8n salvar sem o +55 ou sem o @s.whatsapp.net)
-    const digitsOnly = ticket.phone.replace(/\D/g, '');
+    const digitsOnly = (ticket.phone || '').replace(/\D/g, '');
     const shortPhone = digitsOnly.length > 10 ? digitsOnly.slice(-10) : digitsOnly;
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('chat_messages')
-      .select('*')
-      .or(`customer_phone.eq.${ticket.phone},customer_phone.ilike.%${shortPhone}%`)
-      .order('created_at', { ascending: true });
+      .select('*');
+
+    if (shortPhone) {
+      query = query.or(`customer_phone.eq.${ticket.phone},customer_phone.ilike.%${shortPhone}%`);
+    } else {
+      query = query.eq('customer_phone', ticket.phone);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: true });
 
     if (error) {
       console.error('Erro ao buscar mensagens:', error);
