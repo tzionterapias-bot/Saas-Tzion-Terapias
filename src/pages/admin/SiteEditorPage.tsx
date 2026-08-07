@@ -218,7 +218,7 @@ const processImageFile = (file: File, callback: (base64: string) => void) => {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (e) => {
-    const img = new Image();
+    const img = new window.Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
       const MAX_WIDTH = 600;
