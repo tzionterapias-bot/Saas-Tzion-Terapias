@@ -260,9 +260,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (!user) {
       navigate('/login');
     } else {
-      // Quando o sistema carregar e o usuário estiver logado, dispara os lembretes diários e aniversários.
-      processDailyReminders();
-      processDailyBirthdays();
+      // O backend gencia os lembretes diários (veja startRemindersWorker no server.ts)
       loadDynamicNotifications();
     }
 

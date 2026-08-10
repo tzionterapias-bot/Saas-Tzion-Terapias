@@ -47,9 +47,12 @@ function NPSDaemon() {
   return null;
 }
 
+import { useDebugConsole } from '@/src/hooks/useDebugConsole';
+
 // App Component
 
 export default function App() {
+  useDebugConsole();
   return (
     <AuthProvider>
       <Router>

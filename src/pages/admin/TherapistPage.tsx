@@ -5,7 +5,7 @@ import {
   Clock, CheckCircle2, ChevronRight, Plus, Search,
   TrendingUp, Star, Award, Settings, Bell, MessageSquare, X, Save, FileText as FileIcon,
   Image as ImageIcon, MapPin, Video, MonitorSmartphone, Filter, History, Trash2, AlertCircle,
-  Receipt, Percent, Loader2, Camera, PlayCircle, Lock
+  Receipt, Percent, Loader2, Camera, PlayCircle, Lock, MoreHorizontal
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -2467,25 +2467,29 @@ export default function TherapistPage() {
                      </>
                   )}
 
-                 {/* Linha do Tempo (Registros Passados) */}
+                 {/* Prontuário (Registros Passados) */}
                  {patientRecords.length > 0 && (
-                    <div className="mt-10 pt-10 border-t border-slate-100 space-y-6">
-                       <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2"><History className="w-4 h-4 text-slate-500"/> Histórico Clínico (Linha do Tempo)</h4>
-                       <div className="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
-                          {patientRecords.map(rec => (
-                             <div key={rec.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                                <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-indigo-100 text-indigo-600 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm z-10">
-                                   {rec.type === 'evolution' ? <TrendingUp className="w-4 h-4" /> : <ClipboardList className="w-4 h-4" />}
-                                </div>
-                                <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition-all">
-                                   <div className="flex items-center justify-between mb-2">
-                                      <span className={cn("text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg", rec.type === 'evolution' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600')}>{rec.type === 'evolution' ? 'Evolução' : 'Anamnese'}</span>
-                                      <time className="text-xs font-bold text-slate-400">{new Date(rec.created_at).toLocaleDateString('pt-BR')}</time>
+                    <div className="mt-10 pt-10 border-t border-slate-100">
+                       <div className="border border-slate-200 bg-slate-50/30 rounded-lg overflow-hidden shadow-sm">
+                          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
+                             <h4 className="font-bold text-slate-800">Prontuário</h4>
+                             <button className="text-slate-400 hover:text-slate-600 transition-colors"><MoreHorizontal className="w-5 h-5"/></button>
+                          </div>
+                          
+                          <div className="divide-y divide-slate-200 bg-slate-50/30">
+                             {patientRecords.map(rec => (
+                                <div key={rec.id} className="p-6 transition-colors hover:bg-slate-50">
+                                   <div className="text-[15px] text-slate-800 whitespace-pre-wrap leading-relaxed font-medium">
+                                      {rec.content?.text || (rec.type === 'evolution' ? '(Sem anotações)' : '')}
                                    </div>
-                                   <p className="text-sm text-slate-600 font-medium whitespace-pre-wrap">{rec.content?.text}</p>
+                                   <div className="mt-8 text-right">
+                                      <span className="italic text-slate-500 text-[13px] font-medium">
+                                         {rec.therapists?.name || user?.name || 'Terapeuta'} - {new Date(rec.created_at).toLocaleDateString('pt-BR')} {new Date(rec.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}
+                                      </span>
+                                   </div>
                                 </div>
-                             </div>
-                          ))}
+                             ))}
+                          </div>
                        </div>
                     </div>
                  )}

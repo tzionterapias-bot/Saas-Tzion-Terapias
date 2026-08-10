@@ -94,6 +94,69 @@
                       "type": "string",
                       "operation": "notContains"
                     }
+                  },
+                  {
+                    "id": "0.28097102041866173",
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "(não informado)",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notContains"
+                    }
+                  },
+                  {
+                    "id": "0.558978200915631",
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "(pendente)",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notContains"
+                    }
+                  },
+                  {
+                    "id": "0.8482359730717164",
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "(não especificado)",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notContains"
+                    }
+                  },
+                  {
+                    "id": "0.9865142923637327",
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "não informado",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notContains"
+                    }
+                  },
+                  {
+                    "id": "0.7530811048078316",
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "pendente",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notContains"
+                    }
+                  },
+                  {
+                    "id": "0.18111253627402268",
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "a definir",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notContains"
+                    }
+                  },
+                  {
+                    "id": "0.4911454409289753",
+                    "leftValue": "={{ $json.output }}",
+                    "rightValue": "aguardando",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notContains"
+                    }
                   }
                 ],
                 "combinator": "and"

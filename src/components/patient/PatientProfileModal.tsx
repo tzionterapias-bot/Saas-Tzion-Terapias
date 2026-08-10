@@ -8,13 +8,14 @@ import { supabase } from '@/src/lib/supabase';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
 import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 import { fillContractTemplate, DEFAULT_CONTRACT_TEMPLATE } from '@/src/lib/contract';
+import ErrorBoundary from '@/src/components/ErrorBoundary';
 
 interface PatientProfileModalProps {
   patient: any;
   onClose: () => void;
 }
 
-export default function PatientProfileModal({ patient, onClose }: PatientProfileModalProps) {
+function PatientProfileModalContent({ patient, onClose }: PatientProfileModalProps) {
   const [activeTab, setActiveTab] = useState<'timeline' | 'records' | 'finance'>('timeline');
   const [loading, setLoading] = useState(true);
   
@@ -54,10 +55,11 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
 
       // 1. Appointments
       appointments.forEach(app => {
+         const date = new Date(app.start_time || new Date());
          events.push({
              id: `app-${app.id}`,
              type: 'appointment',
-             date: new Date(app.start_time),
+             date: isNaN(date.getTime()) ? new Date() : date,
              title: `Sessão ${app.status === 'completed' ? 'Realizada' : 'Agendada'}`,
              description: `Modalidade: ${app.type || 'Presencial'} | Terapeuta: ${app.therapists?.name || 'Não atribuído'}`,
              status: app.status
@@ -66,10 +68,11 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
 
       // 2. Medical Records
       records.forEach(rec => {
+          const date = new Date(rec.created_at || new Date());
           events.push({
               id: `rec-${rec.id}`,
               type: 'record',
-              date: new Date(rec.created_at),
+              date: isNaN(date.getTime()) ? new Date() : date,
               title: rec.type === 'evolution' ? 'Evolução Clínica' : 'Anamnese',
               description: `Anotação feita por ${rec.therapists?.name || 'Terapeuta'}. ${rec.content?.text ? rec.content.text.substring(0, 150) + '...' : ''}`,
               rawContent: rec.content?.text
@@ -78,10 +81,11 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
 
       // 2.5 Patient Evolutions (from session logger)
       evolutions.forEach(evo => {
+          const date = new Date(evo.created_at || new Date());
           events.push({
               id: `evo-${evo.id}`,
               type: 'record',
-              date: new Date(evo.created_at),
+              date: isNaN(date.getTime()) ? new Date() : date,
               title: evo.type || 'Sessão Regular',
               description: `Anotação feita por ${evo.therapists?.name || 'Terapeuta'}. ${evo.notes ? evo.notes.substring(0, 150) + '...' : ''}`,
               rawContent: evo.notes
@@ -90,12 +94,13 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
 
       // 3. Payments / Purchases
       payments.forEach(pay => {
+          const date = new Date(pay.created_at || new Date());
           events.push({
               id: `pay-${pay.id}`,
               type: 'finance',
-              date: new Date(pay.created_at),
+              date: isNaN(date.getTime()) ? new Date() : date,
               title: `Pagamento: ${pay.payment_method?.toUpperCase() || 'PIX'}`,
-              description: `${pay.description} | R$ ${pay.amount.toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
+              description: `${pay.description || ''} | R$ ${Number(pay.amount || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}`,
               status: pay.status
           });
       });
@@ -103,10 +108,11 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
       // 4. Contracts
       const baseUrlForContracts = await getSystemBaseUrl();
       contracts.forEach(contract => {
+          const date = new Date(contract.created_at || new Date());
           events.push({
               id: `contract-${contract.id}`,
               type: 'contract',
-              date: new Date(contract.created_at),
+              date: isNaN(date.getTime()) ? new Date() : date,
               title: `Contrato de Serviço ${contract.status === 'signed' ? '(Assinado)' : '(Pendente)'}`,
               description: `Acesse o termo no link: ${baseUrlForContracts}/contrato/${contract.id}`,
               status: contract.status
@@ -195,7 +201,6 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
         <div className="bg-white rounded-[3rem] w-full max-w-4xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
-            
             {/* Header */}
             <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div className="flex items-center gap-6">
@@ -346,5 +351,13 @@ export default function PatientProfileModal({ patient, onClose }: PatientProfile
             </div>
         </div>
     </div>
+  );
+}
+
+export default function PatientProfileModal(props: PatientProfileModalProps) {
+  return (
+    <ErrorBoundary>
+      <PatientProfileModalContent {...props} />
+    </ErrorBoundary>
   );
 }

@@ -1200,7 +1200,7 @@ async function runDailyRemindersBackend() {
     if (appointments && appointments.length > 0) {
       console.log(`[WORKER][REMINDERS] Found ${appointments.length} appointments for tomorrow.`);
       for (const app of appointments) {
-        const time = new Date(app.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const time = new Date(app.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
         // Lembrete para o Paciente
         if (app.patients?.phone) {
