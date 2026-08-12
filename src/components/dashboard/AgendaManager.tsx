@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search, Trash2 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
@@ -21,6 +22,7 @@ interface Appointment {
 
 export default function AgendaManager() {
   const { user } = useAuth();
+  const location = useLocation();
   const [showModal, setShowModal] = useState(false);
   const [selectedDateAppointments, setSelectedDateAppointments] = useState<{date: Date, appts: Appointment[]} | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -613,6 +615,12 @@ export default function AgendaManager() {
     fetchData(true);
   }, []);
 
+  useEffect(() => {
+    if (location.search.includes('new=true')) {
+      handleOpenWizard();
+    }
+  }, [location.search]);
+
   // Monitora mudança de data visível na agenda para recarregar agendamentos do período
   const isMounted = React.useRef(false);
   useEffect(() => {
@@ -759,6 +767,37 @@ export default function AgendaManager() {
     }
   };
 
+  const executeDeleteAppointment = async () => {
+    if (!cancelConfirmationAppt) return;
+    const event = cancelConfirmationAppt;
+    setCancelConfirmationAppt(null);
+
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('appointments')
+        .delete()
+        .eq('id', event.id);
+
+      if (error) throw error;
+
+      setSelectedDateAppointments(prev => prev ? {
+         ...prev,
+         appts: prev.appts.filter(x => x.id !== event.id)
+      } : null);
+
+      setToastMessage('Consulta removida permanentemente com sucesso!');
+      setTimeout(() => setToastMessage(null), 3500);
+      fetchData(false);
+    } catch (e: any) {
+      console.error(e);
+      setToastMessage('Erro ao remover consulta: ' + e.message);
+      setTimeout(() => setToastMessage(null), 3500);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleOpenRescheduleModal = (app: Appointment) => {
      setReschedulingAppt(app);
      const initialDate = app.start_time ? app.start_time.split('T')[0] : new Date().toISOString().split('T')[0];
@@ -786,7 +825,8 @@ export default function AgendaManager() {
         .from('appointments')
         .update({
           start_time: startTime,
-          end_time: endTime
+          end_time: endTime,
+          status: 'scheduled'
         })
         .eq('id', reschedulingAppt.id);
 
@@ -1859,33 +1899,27 @@ export default function AgendaManager() {
                           {app.type}
                         </span>
                         
-                        {app.status !== 'completed' && app.status !== 'cancelled' && (
-                          <div className="flex gap-1">
-                            <button 
-                              onClick={() => {
-                                 setSelectedDateAppointments(null);
-                                 handleOpenRescheduleModal(app);
-                              }}
-                              title="Reagendar Sessão"
-                              className="p-2 hover:bg-slate-100 hover:text-indigo-600 rounded-xl transition-colors text-slate-300"
-                            >
-                              <CalendarIcon className="w-5 h-5" />
-                            </button>
-                            <button 
-                              onClick={() => {
-                                 handleCancelAppointment(app);
-                                 setSelectedDateAppointments(prev => prev ? {
-                                    ...prev,
-                                    appts: prev.appts.filter(x => x.id !== app.id)
-                                 } : null);
-                              }}
-                              title="Desmarcar Sessão"
-                              className="p-2 hover:bg-slate-100 hover:text-rose-600 rounded-xl transition-colors text-slate-300"
-                            >
-                              <X className="w-5 h-5" />
-                            </button>
-                          </div>
-                        )}
+                        <div className="flex gap-1">
+                          <button 
+                            onClick={() => {
+                               setSelectedDateAppointments(null);
+                               handleOpenRescheduleModal(app);
+                            }}
+                            title="Reagendar Sessão"
+                            className="p-2 hover:bg-slate-100 hover:text-indigo-600 rounded-xl transition-colors text-slate-300"
+                          >
+                            <CalendarIcon className="w-5 h-5" />
+                          </button>
+                          <button 
+                            onClick={() => {
+                               handleCancelAppointment(app);
+                            }}
+                            title="Desmarcar / Remover Sessão"
+                            className="p-2 hover:bg-slate-100 hover:text-rose-600 rounded-xl transition-colors text-slate-300"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
                       </div>
                    </div>
                  ))}
@@ -1986,27 +2020,35 @@ export default function AgendaManager() {
                     <X className="w-6 h-6" />
                  </div>
                  <div>
-                     <h3 className="text-xl font-black text-slate-900 tracking-tight">Desmarcar Sessão</h3>
-                     <p className="text-xs text-slate-400 font-medium">Esta ação enviará uma notificação ao paciente</p>
+                     <h3 className="text-xl font-black text-slate-900 tracking-tight">Desmarcar ou Remover Consulta</h3>
+                     <p className="text-xs text-slate-400 font-medium">Escolha a ação desejada para esta consulta</p>
                  </div>
               </div>
               
               <p className="text-sm text-slate-600 font-medium leading-relaxed">
-                 Deseja realmente desmarcar a sessão de <strong className="text-slate-900 font-bold">{cancelConfirmationAppt.patient_name}</strong>?
+                 Deseja alterar a consulta de <strong className="text-slate-900 font-bold">{cancelConfirmationAppt.patient_name}</strong>?
               </p>
 
-              <div className="flex items-center justify-end gap-3 pt-2">
-                 <button 
-                    onClick={() => setCancelConfirmationAppt(null)}
-                    className="px-5 py-3 rounded-xl font-bold text-sm text-slate-600 hover:bg-slate-200 transition-colors"
-                 >
-                    Cancelar
-                 </button>
+              <div className="flex flex-col gap-3 pt-2">
                  <button 
                     onClick={executeCancelAppointment}
-                    className="px-6 py-3 bg-rose-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-rose-100 hover:bg-rose-700 transition-all active:scale-95"
+                    className="w-full py-3.5 bg-amber-500 text-white rounded-xl font-bold text-sm shadow-md hover:bg-amber-600 transition-all active:scale-95 flex items-center justify-center gap-2"
                  >
-                    Sim, Desmarcar
+                    <Clock className="w-4 h-4" />
+                    Desmarcar (Marcar como Cancelada)
+                 </button>
+                 <button 
+                    onClick={executeDeleteAppointment}
+                    className="w-full py-3.5 bg-rose-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-rose-700 transition-all active:scale-95 flex items-center justify-center gap-2"
+                 >
+                    <Trash2 className="w-4 h-4" />
+                    Excluir Permanentemente
+                 </button>
+                 <button 
+                    onClick={() => setCancelConfirmationAppt(null)}
+                    className="w-full py-2.5 rounded-xl font-bold text-sm text-slate-500 hover:bg-slate-100 transition-colors"
+                 >
+                    Voltar / Cancelar
                  </button>
               </div>
            </div>
