@@ -1864,6 +1864,46 @@ async function startTicketCleanupWorker() {
   }, 15 * 60 * 1000);
 }
 
+async function runAutoCleanupLogsBackend() {
+  try {
+    const cutoffDate = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
+    console.log(`[WORKER][AUTO-CLEANUP] Executando rotina de limpeza para registros anteriores a 15 dias (${cutoffDate})...`);
+
+    const { count: commLogsCleaned } = await supabase
+      .from('communications_log')
+      .delete({ count: 'exact' })
+      .lt('created_at', cutoffDate);
+
+    const { count: chatMsgsCleaned } = await supabase
+      .from('chat_messages')
+      .delete({ count: 'exact' })
+      .lt('created_at', cutoffDate);
+
+    const { count: campaignLogsCleaned } = await supabase
+      .from('campaign_logs')
+      .delete({ count: 'exact' })
+      .lt('created_at', cutoffDate);
+
+    console.log(`[WORKER][AUTO-CLEANUP] Sucesso: Eliminados ${commLogsCleaned || 0} logs de disparo, ${chatMsgsCleaned || 0} mensagens de chat e ${campaignLogsCleaned || 0} logs de campanha.`);
+  } catch (err) {
+    console.error('[WORKER][AUTO-CLEANUP] Erro durante a limpeza automática de logs:', err);
+  }
+}
+
+async function startAutoCleanupWorker() {
+  console.log("[WORKER][AUTO-CLEANUP] Worker de Limpeza Automática (15 dias) inicializado.");
+  setTimeout(runAutoCleanupLogsBackend, 5000);
+  setInterval(async () => {
+    try {
+      await runAutoCleanupLogsBackend();
+    } catch (e) {
+      console.error('[WORKER][AUTO-CLEANUP] Erro no intervalo da limpeza automática:', e);
+    }
+  }, 6 * 60 * 60 * 1000);
+}
+
 startServer();
+startTicketCleanupWorker();
+startAutoCleanupWorker();
 
 export default app;
