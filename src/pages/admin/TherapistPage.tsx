@@ -558,8 +558,8 @@ export default function TherapistPage() {
       // Busca contatos para enviar avisos
       const { data: patientData } = await supabase.from('patients').select('phone, name').eq('id', event.patient_id).single();
       const { data: therapistData } = await supabase.from('therapists').select('phone, name').eq('id', event.therapist_id).single();
-      const dataFormatada = new Date(event.start_time).toLocaleDateString('pt-BR');
-      const horaFormatada = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const dataFormatada = new Date(event.start_time).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const horaFormatada = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
       // Dispara o Webhook do n8n para cancelar o evento no Google Calendar
       try {
@@ -774,8 +774,8 @@ export default function TherapistPage() {
       // Automação: Envio de WhatsApp para o Terapeuta
       const { data: therapistData } = finalTherapistId ? await supabase.from('therapists').select('phone, name').eq('id', finalTherapistId).single() : { data: null };
       
-      const dataFormatada = startTime.toLocaleDateString('pt-BR');
-      const horaFormatada = startTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const dataFormatada = startTime.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const horaFormatada = startTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
       let meetLink = '';
       let googleEventId = '';
 

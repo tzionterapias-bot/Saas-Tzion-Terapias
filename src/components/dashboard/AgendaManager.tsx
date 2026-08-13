@@ -709,8 +709,8 @@ export default function AgendaManager() {
       // Busca contatos para enviar avisos
       const { data: patientData } = await supabase.from('patients').select('phone, name').eq('id', event.patient_id).single();
       const { data: therapistData } = await supabase.from('therapists').select('phone, name').eq('id', event.therapist_id).single();
-      const dataFormatada = new Date(event.start_time).toLocaleDateString('pt-BR');
-      const horaFormatada = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const dataFormatada = new Date(event.start_time).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      const horaFormatada = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
       // Dispara o Webhook do n8n para cancelar o evento no Google Calendar
       try {
@@ -927,8 +927,8 @@ export default function AgendaManager() {
         }
 
        const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
-       const dataFormatada = new Date(event.start_time).toLocaleDateString('pt-BR');
-       const horaFormatada = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+       const dataFormatada = new Date(event.start_time).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+       const horaFormatada = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
        const firstName = event.patient_name.split(' ')[0];
        let mensagem = `Olá, *${firstName}*! ✨\n\nPassando aqui para lembrar da sua sessão na *Clínica Tzion Terapias* marcada para hoje!\n\n`;
@@ -974,7 +974,7 @@ export default function AgendaManager() {
 
              if (therapistData && therapistData.phone) {
                  const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
-                 const time = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                 const time = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
                  const msg = `Olá, *${therapistData.name.split(' ')[0]}*! 🔔\n\nSeu paciente *${event.patient_name}* acabou de realizar o check-in na recepção para a sessão das ${time}. Ele(a) já está te aguardando!`;
                  await sendWhatsAppMessage(null, therapistData.phone, msg, 'patient_arrived_therapist');
              }

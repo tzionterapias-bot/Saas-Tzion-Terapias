@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PlayCircle, Clock, Save, FileText, User, Search, CheckCircle2, AlertCircle, X, ChevronRight, History, Calendar, ExternalLink, Plus, Loader2, MessageSquare, Heart } from 'lucide-react';
+import { PlayCircle, Clock, Save, FileText, User, Search, CheckCircle2, AlertCircle, X, ChevronRight, History, Calendar, ExternalLink, Plus, Loader2, MessageSquare, Heart, Edit, Send } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useActiveSession } from '@/src/contexts/ActiveSessionContext';
@@ -20,6 +20,8 @@ export default function SessionLogger() {
   const [showLastGuidance, setShowLastGuidance] = useState(false);
   const [activeTab, setActiveTab] = useState<'evolution' | 'documents' | 'history' | 'anamnesis'>('evolution');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [editingEvolution, setEditingEvolution] = useState<{ id: string; notes: string } | null>(null);
+  const [resendingEvolutionId, setResendingEvolutionId] = useState<string | null>(null);
   const [indicators, setIndicators] = useState({ anxiety: 5, vitality: 5, physical_pain: 0, sleep_quality: 5 });
   const [prescriptionItems, setPrescriptionItems] = useState<{ type: string; name: string; usage: string }[]>([
     { type: 'floral', name: '', usage: '' }
@@ -81,7 +83,7 @@ export default function SessionLogger() {
         id: a.id,
         patientId: a.patient_id,
         patient: patientsMap.get(a.patient_id) || 'Paciente Não Encontrado',
-        time: new Date(a.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        time: new Date(a.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }),
         type: a.type || 'Presencial',
         therapy: 'Terapia Integrativa',
         therapistId: a.therapist_id,
@@ -277,6 +279,44 @@ export default function SessionLogger() {
       setTimeout(() => setToastMessage(null), 3500);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdateEvolution = async (id: string, newNotes: string, sendWhatsApp: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('patient_evolutions')
+        .update({ notes: newNotes })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setHistory(prev => prev.map(e => e.id === id ? { ...e, content: newNotes } : e));
+      setEditingEvolution(null);
+
+      if (sendWhatsApp && selectedPatient?.patientId) {
+        setResendingEvolutionId(id);
+        const { data: patientData } = await supabase.from('patients').select('phone').eq('id', selectedPatient.patientId).maybeSingle();
+        if (patientData?.phone) {
+          const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
+          const msg = `*Orientação do seu terapeuta:*\n\n${newNotes}`;
+          const sent = await sendWhatsAppMessage(selectedPatient.patientId, patientData.phone, msg, 'patient_guidance_updated');
+          if (sent) {
+            setToastMessage('Orientação atualizada e reenviada com sucesso via WhatsApp!');
+          } else {
+            setToastMessage('Orientação atualizada no prontuário. Houve falha ao enviar WhatsApp.');
+          }
+        } else {
+          setToastMessage('Paciente não possui telefone cadastrado.');
+        }
+      } else {
+        setToastMessage('Orientação/Evolução atualizada com sucesso!');
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao atualizar orientação: ' + (err.message || err));
+    } finally {
+      setResendingEvolutionId(null);
     }
   };
 
@@ -691,22 +731,77 @@ export default function SessionLogger() {
 
               {activeTab === 'evolution' && (
                 <div className="space-y-6">
-                  {history.map((item) => (
-                    <div key={item.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-4 hover:border-indigo-200 transition-all group">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-0">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="flex items-center gap-2 text-indigo-600 font-bold text-xs bg-indigo-50 px-3 py-1 rounded-lg">
-                            <Calendar className="w-3.5 h-3.5" /> {new Date(item.date).toLocaleDateString('pt-BR')} às {new Date(item.date).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
-                          </span>
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 py-1 bg-slate-100 rounded-md">
-                            {item.type}
-                          </span>
+                  {history.map((item) => {
+                    const isEditing = editingEvolution?.id === item.id;
+                    const isResending = resendingEvolutionId === item.id;
+
+                    return (
+                      <div key={item.id} className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-4 hover:border-indigo-200 transition-all group">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-0">
+                          <div className="flex flex-wrap items-center gap-3">
+                            <span className="flex items-center gap-2 text-indigo-600 font-bold text-xs bg-indigo-50 px-3 py-1 rounded-lg">
+                              <Calendar className="w-3.5 h-3.5" /> {new Date(item.date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} às {new Date(item.date).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'})}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 py-1 bg-slate-100 rounded-md">
+                              {item.type}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-medium text-slate-400">Terapeuta: <strong className="text-slate-600">{item.therapist}</strong></span>
+                            {!isEditing && (
+                              <button
+                                type="button"
+                                onClick={() => setEditingEvolution({ id: item.id, notes: item.content || '' })}
+                                className="px-3 py-1 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                              >
+                                <Edit className="w-3.5 h-3.5" /> Editar / Reenviar
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <span className="text-xs font-medium text-slate-400">Terapeuta: <strong className="text-slate-600">{item.therapist}</strong></span>
+
+                        {isEditing ? (
+                          <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border border-indigo-100 animate-in fade-in duration-200">
+                            <label className="text-xs font-bold text-slate-700 block">Editar Orientação / Anotações:</label>
+                            <textarea
+                              value={editingEvolution.notes}
+                              onChange={(e) => setEditingEvolution({ ...editingEvolution, notes: e.target.value })}
+                              rows={4}
+                              className="w-full p-4 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                              placeholder="Digite o texto corrigido da orientação..."
+                            />
+                            <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => setEditingEvolution(null)}
+                                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateEvolution(item.id, editingEvolution.notes, false)}
+                                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                              >
+                                <Save className="w-3.5 h-3.5" />
+                                Salvar Alteração
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateEvolution(item.id, editingEvolution.notes, true)}
+                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-100"
+                              >
+                                {isResending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                                Salvar e Reenviar via WhatsApp
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-slate-700 text-lg leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                        )}
                       </div>
-                      <p className="text-slate-700 text-lg leading-relaxed whitespace-pre-wrap">{item.content}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {history.length === 0 && (
                     <div className="py-10 text-center text-slate-400 font-medium">Nenhum registro anterior encontrado.</div>
                   )}

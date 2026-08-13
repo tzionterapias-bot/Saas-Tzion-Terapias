@@ -89,8 +89,8 @@ serve(async (req) => {
 
         if (appointments && appointments.length > 0) {
           const appointment = appointments[0];
-          const time = new Date(appointment.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-          const dateStr = new Date(appointment.start_time).toLocaleDateString('pt-BR');
+          const time = new Date(appointment.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+          const dateStr = new Date(appointment.start_time).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
           
           if (isConfirm) {
             await supabase

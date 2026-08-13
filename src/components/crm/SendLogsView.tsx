@@ -32,24 +32,56 @@ export default function SendLogsView() {
     fetchLogs();
   }, []);
 
+  const getRecipientLabel = (log: any) => {
+    if (log.patients?.name) {
+      return log.patients.name;
+    }
+    const match = log.content?.match(/Olá,?\s*\*?([^*!\n\r]+)\*?!?/i);
+    if (match && match[1]) {
+      const firstName = match[1].trim();
+      return `${firstName} (Terapeuta)`;
+    }
+    if (log.trigger_event?.includes('therapist')) {
+      return 'Terapeuta / Equipe';
+    }
+    return 'Destinatário sem nome';
+  };
+
   const handleResend = async (log: any) => {
     if (resending) return;
     setResending(log.id);
 
     try {
-      const phone = log.patients?.phone;
+      let phone = log.patients?.phone;
+      let targetPatientId = log.patient_id;
+
       if (!phone) {
-         alert('Paciente não possui telefone cadastrado.');
+        const match = log.content?.match(/Olá,?\s*\*?([^*!\n\r]+)\*?!?/i);
+        if (match && match[1]) {
+          const firstName = match[1].trim();
+          const { data: therapist } = await supabase
+            .from('therapists')
+            .select('phone')
+            .ilike('name', `${firstName}%`)
+            .maybeSingle();
+
+          if (therapist?.phone) {
+            phone = therapist.phone;
+          }
+        }
+      }
+
+      if (!phone) {
+         alert('Telefone do destinatário não encontrado para reenvio.');
          return;
       }
 
-      // Remove a tag de anexo caso exista na string do log (para reenviar apenas o texto base se não tivermos o arquivo)
+      // Remove a tag de anexo caso exista na string do log
       const cleanContent = log.content.replace('[Anexo Enviado] ', '');
 
-      const success = await sendWhatsAppMessage(log.patient_id, phone, cleanContent, log.trigger_event + '_resend');
+      const success = await sendWhatsAppMessage(targetPatientId, phone, cleanContent, log.trigger_event + '_resend');
       
       if (success) {
-         // Atualiza status visualmente e recarrega
          await supabase.from('communications_log').update({ status: 'sent' }).eq('id', log.id);
          fetchLogs();
       } else {
@@ -83,7 +115,7 @@ export default function SendLogsView() {
             <tr className="border-b border-slate-100">
               <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-slate-400 pl-4">Status</th>
               <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Data/Hora</th>
-              <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Paciente</th>
+              <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Destinatário / Paciente</th>
               <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Mensagem</th>
               <th className="pb-4 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right pr-4">Ação</th>
             </tr>
@@ -123,7 +155,7 @@ export default function SendLogsView() {
                   </div>
                 </td>
                 <td className="py-4 font-bold text-slate-800">
-                  {log.patients?.name || <span className="text-slate-400 font-normal">Sem nome</span>}
+                  {getRecipientLabel(log)}
                 </td>
                 <td className="py-4">
                   <p className="text-slate-600 font-medium truncate max-w-[300px]" title={log.content}>

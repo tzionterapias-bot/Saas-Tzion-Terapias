@@ -70,6 +70,30 @@ async function requireStaffAuth(req: any, res: any, next: any) {
   }
 }
 
+async function requireAuth(req: any, res: any, next: any) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Cabeçalho de autorização inválido ou ausente." });
+      return;
+    }
+
+    const token = authHeader.split(" ")[1];
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      res.status(401).json({ error: "Sessão inválida ou expirada." });
+      return;
+    }
+
+    (req as any).user = { id: user.id, email: user.email };
+    next();
+  } catch (err: any) {
+    console.error("[AUTH MIDDLEWARE] Erro interno:", err);
+    res.status(500).json({ error: "Erro interno no servidor durante autenticação." });
+  }
+}
+
 async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
   const root = process.cwd();
@@ -84,7 +108,7 @@ async function startServer() {
   });
 
   // --- SECURE N8N WEBHOOK PROXY ---
-  app.post("/api/n8n-proxy", requireStaffAuth, async (req, res) => {
+  app.post("/api/n8n-proxy", requireAuth, async (req, res) => {
     try {
       const { webhookUrl, payload } = req.body;
       if (!webhookUrl) {
@@ -1390,7 +1414,10 @@ async function sendWhatsAppBackend(patientId: string | null, phone: string, mess
   let status = 'failed';
 
   if (isProduction && phone) {
-    const cleanPhone = String(phone).replace(/\D/g, '');
+    let cleanPhone = String(phone).replace(/\D/g, '');
+    if (cleanPhone.startsWith('0')) {
+      cleanPhone = cleanPhone.replace(/^0+/, '');
+    }
     const waNumber = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
 
     try {

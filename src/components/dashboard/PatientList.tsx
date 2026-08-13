@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Filter, MoreVertical, Phone, Mail, Calendar, X, Save, User, MapPin, FileText, History, AlertCircle, Heart, Clock, Download, Loader2, Activity, Award, DollarSign, ClipboardList, Send, CheckCircle2, Shield, TrendingUp, MessageCircle, File, Trash2 } from 'lucide-react';
+import { Search, Plus, Filter, MoreVertical, Phone, Mail, Calendar, X, Save, User, MapPin, FileText, History, AlertCircle, Heart, Clock, Download, Loader2, Activity, Award, DollarSign, ClipboardList, Send, CheckCircle2, Shield, TrendingUp, MessageCircle, File, Trash2, Edit } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -21,6 +21,10 @@ export default function PatientList() {
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Evolution Editing State
+  const [editingEvolution, setEditingEvolution] = useState<{ id: string; notes: string } | null>(null);
+  const [resendingEvolutionId, setResendingEvolutionId] = useState<string | null>(null);
 
   // Timeline State
   const [timelineEvents, setTimelineEvents] = useState<any[]>([]);
@@ -807,6 +811,42 @@ export default function PatientList() {
       setToastMessage('Erro ao registrar evolução.');
     }
     setSaving(false);
+  };
+
+  const handleUpdateEvolution = async (id: string, newNotes: string, sendWhatsApp: boolean) => {
+    if (saving) return;
+    try {
+      setSaving(true);
+      const { error } = await supabase
+        .from('patient_evolutions')
+        .update({ notes: newNotes })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setEvolutions(prev => prev.map(e => e.id === id ? { ...e, notes: newNotes } : e));
+      setEditingEvolution(null);
+
+      if (sendWhatsApp && selectedPatient?.phone) {
+        setResendingEvolutionId(id);
+        const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
+        const msg = `*Orientação do seu terapeuta:*\n\n${newNotes}`;
+        const sent = await sendWhatsAppMessage(selectedPatient.id, selectedPatient.phone, msg, 'patient_guidance_updated');
+        if (sent) {
+          setToastMessage('Orientação atualizada e reenviada com sucesso via WhatsApp!');
+        } else {
+          setToastMessage('Orientação atualizada no prontuário. Houve falha ao enviar WhatsApp.');
+        }
+      } else {
+        setToastMessage('Orientação/Evolução atualizada com sucesso!');
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao atualizar orientação: ' + (err.message || err));
+    } finally {
+      setSaving(false);
+      setResendingEvolutionId(null);
+    }
   };
 
   const handleResendContract = async (contractId: string, patientName: string, patientPhone: string) => {
@@ -1709,18 +1749,80 @@ export default function PatientList() {
                       </div>
                       
                       <div className="space-y-6 max-h-[500px] overflow-y-auto pr-4 hide-scrollbar">
-                        {evolutions.map((evol) => (
-                          <div key={evol.id} className="group relative pl-10 border-l-2 border-slate-100 pb-10 last:pb-0">
-                            <div className="absolute top-0 left-[-9px] w-4 h-4 rounded-full bg-white border-2 border-indigo-600 shadow-sm" />
-                            <div className="bg-white p-6 rounded-3xl border border-slate-100 group-hover:border-indigo-100 group-hover:shadow-md transition-all shadow-sm">
-                              <div className="flex justify-between mb-2">
-                                 <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest">{evol.type} • {new Date(evol.created_at).toLocaleDateString('pt-BR')} às {new Date(evol.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</p>
-                                 <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1"><User className="w-3 h-3" /> Assinado Digitalmente</span>
+                        {evolutions.map((evol) => {
+                          const isEditing = editingEvolution?.id === evol.id;
+                          const isResending = resendingEvolutionId === evol.id;
+
+                          return (
+                            <div key={evol.id} className="group relative pl-10 border-l-2 border-slate-100 pb-10 last:pb-0">
+                              <div className="absolute top-0 left-[-9px] w-4 h-4 rounded-full bg-white border-2 border-indigo-600 shadow-sm" />
+                              <div className="bg-white p-6 rounded-3xl border border-slate-100 group-hover:border-indigo-100 group-hover:shadow-md transition-all shadow-sm space-y-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                   <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest">
+                                     {evol.type} • {new Date(evol.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} às {new Date(evol.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo'})}
+                                   </p>
+                                   <div className="flex items-center gap-3">
+                                     <span className="text-[10px] text-slate-400 font-bold uppercase flex items-center gap-1">
+                                       <User className="w-3 h-3" /> Assinado Digitalmente
+                                     </span>
+                                     {!isEditing && (
+                                       <button
+                                         type="button"
+                                         onClick={() => setEditingEvolution({ id: evol.id, notes: evol.notes || '' })}
+                                         className="px-3 py-1 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                                       >
+                                         <Edit className="w-3.5 h-3.5" /> Editar / Reenviar
+                                       </button>
+                                     )}
+                                   </div>
+                                </div>
+
+                                {isEditing ? (
+                                  <div className="space-y-4 bg-slate-50 p-4 rounded-2xl border border-indigo-100 animate-in fade-in duration-200">
+                                    <label className="text-xs font-bold text-slate-700 block">Editar Orientação / Anotações:</label>
+                                    <textarea
+                                      value={editingEvolution.notes}
+                                      onChange={(e) => setEditingEvolution({ ...editingEvolution, notes: e.target.value })}
+                                      rows={4}
+                                      className="w-full p-4 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                      placeholder="Digite o texto corrigido da orientação..."
+                                    />
+                                    <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingEvolution(null)}
+                                        disabled={saving}
+                                        className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                                      >
+                                        Cancelar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateEvolution(evol.id, editingEvolution.notes, false)}
+                                        disabled={saving}
+                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                                      >
+                                        {saving && !isResending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                        Salvar Alteração
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUpdateEvolution(evol.id, editingEvolution.notes, true)}
+                                        disabled={saving}
+                                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-100 disabled:opacity-50"
+                                      >
+                                        {isResending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                                        Salvar e Reenviar via WhatsApp
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-slate-600 leading-relaxed font-medium whitespace-pre-wrap">{evol.notes}</p>
+                                )}
                               </div>
-                              <p className="text-slate-600 leading-relaxed font-medium whitespace-pre-wrap">{evol.notes}</p>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                         {evolutions.length === 0 && (
                           <div className="text-center py-10 text-slate-400 font-medium">Nenhuma evolução registrada para este paciente ainda.</div>
                         )}

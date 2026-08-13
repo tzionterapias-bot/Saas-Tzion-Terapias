@@ -19,7 +19,10 @@ export async function sendWhatsAppMessage(
 
     if (isProduction && phone) {
       const phoneStr = String(phone);
-      const cleanPhone = phoneStr.replace(/\D/g, '');
+      let cleanPhone = phoneStr.replace(/\D/g, '');
+      if (cleanPhone.startsWith('0')) {
+        cleanPhone = cleanPhone.replace(/^0+/, '');
+      }
       const waNumber = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
 
       try {
