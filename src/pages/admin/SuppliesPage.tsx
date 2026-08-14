@@ -18,12 +18,26 @@ export default function SuppliesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showStockModal, setShowStockModal] = useState<{item: Supply, type: 'in' | 'out'} | null>(null);
+  const [registerExpense, setRegisterExpense] = useState(true);
+  const [unitCost, setUnitCost] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [newItem, setNewItem] = useState({ name: '', category: 'Higiene', stock: '', min_stock: '', price: '' });
   const [stockAmount, setStockAmount] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  const openStockModalIn = (item: Supply) => {
+    setUnitCost(item.price ? String(item.price) : '');
+    setRegisterExpense(true);
+    setStockAmount('');
+    setShowStockModal({ item, type: 'in' });
+  };
+
+  const openStockModalOut = (item: Supply) => {
+    setStockAmount('');
+    setShowStockModal({ item, type: 'out' });
+  };
 
   const showToast = (type: 'success' | 'error', msg: string) => {
     setToast({ type, msg });
@@ -127,15 +141,40 @@ export default function SuppliesPage() {
 
     const { error } = await supabase.from('supplies').update({ stock: finalStock }).eq('id', item.id);
     
-    setSaving(false);
     if (error) {
+      setSaving(false);
       showToast('error', 'Erro ao atualizar estoque.');
-    } else {
-      showToast('success', 'Estoque atualizado!');
-      setShowStockModal(null);
-      setStockAmount('');
-      fetchSupplies();
+      return;
     }
+
+    let expenseCreated = false;
+    if (showStockModal.type === 'in' && registerExpense) {
+      const cost = Number(unitCost) || item.price || 0;
+      const totalAmount = amount * cost;
+      if (totalAmount > 0) {
+        const { error: payErr } = await supabase.from('payments').insert([{
+          amount: totalAmount,
+          type: 'expense',
+          status: 'paid',
+          description: `Compra de Insumo: ${item.name} (${amount} un)`,
+          category: 'Insumos',
+          payment_method: 'pix',
+          due_date: new Date().toISOString().split('T')[0],
+          created_at: new Date().toISOString(),
+        }]);
+        if (!payErr) {
+          expenseCreated = true;
+        } else {
+          console.error('Erro ao registrar despesa no financeiro:', payErr);
+        }
+      }
+    }
+
+    setSaving(false);
+    showToast('success', expenseCreated ? 'Estoque atualizado e despesa registrada no Financeiro!' : 'Estoque atualizado com sucesso!');
+    setShowStockModal(null);
+    setStockAmount('');
+    fetchSupplies();
   };
 
   const filteredItems = items.filter(i => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -281,13 +320,13 @@ export default function SuppliesPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2">
                         <button 
-                          onClick={() => setShowStockModal({ item, type: 'in' })}
+                          onClick={() => openStockModalIn(item)}
                           className="px-3 py-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
                         >
                           ENTRADA
                         </button>
                         <button 
-                          onClick={() => setShowStockModal({ item, type: 'out' })}
+                          onClick={() => openStockModalOut(item)}
                           className="px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors"
                         >
                           SAÍDA
@@ -354,8 +393,8 @@ export default function SuppliesPage() {
               <p className="text-white/80 font-medium mt-1">{showStockModal.item.name}</p>
             </div>
             
-            <div className="p-6 space-y-6">
-              <div className="space-y-2">
+            <div className="p-6 space-y-5">
+              <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Quantidade</label>
                 <div className="flex items-center gap-3">
                   <input 
@@ -367,12 +406,47 @@ export default function SuppliesPage() {
                     className="w-full p-4 bg-slate-50 border-none rounded-xl text-3xl font-black text-slate-900 text-center focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
-                <p className="text-center text-sm font-medium text-slate-500 mt-2">
+                <p className="text-center text-xs font-medium text-slate-500 mt-1">
                   Estoque atual: <span className="font-bold text-slate-900">{showStockModal.item.stock}</span>
                 </p>
               </div>
 
-              <div className="flex gap-3">
+              {showStockModal.type === 'in' && (
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <input 
+                      type="checkbox"
+                      checked={registerExpense}
+                      onChange={(e) => setRegisterExpense(e.target.checked)}
+                      className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 border-slate-300"
+                    />
+                    <span className="text-xs font-bold text-slate-700">Lançar despesa no Financeiro</span>
+                  </label>
+
+                  {registerExpense && (
+                    <div className="space-y-2 pt-1 border-t border-slate-200/60">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Custo Unitário (R$)</label>
+                        <input 
+                          type="number" 
+                          value={unitCost}
+                          onChange={(e) => setUnitCost(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full mt-1 p-2.5 bg-white border border-slate-200 rounded-xl font-bold text-slate-900 text-sm focus:ring-2 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="flex justify-between items-center text-xs pt-1">
+                        <span className="text-slate-500 font-medium">Total da Compra:</span>
+                        <span className="font-black text-emerald-700 text-sm">
+                          R$ {((Number(stockAmount) || 0) * (Number(unitCost) || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
                 <button 
                   onClick={() => { setShowStockModal(null); setStockAmount(''); }}
                   className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-colors"

@@ -5,7 +5,7 @@ import {
   FileText, CheckCircle2, AlertCircle, Loader2, Link as LinkIcon, X, Save,
   Users, Briefcase, PieChart, Wallet, Clock, UserCheck, Percent,
   MessageCircle, ChevronLeft, ChevronRight, Ban, Receipt, BarChart2, Settings,
-  Award, Check, Pencil, Trash2
+  Award, Check, Pencil, Trash2, Package
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -268,6 +268,8 @@ export default function FinancialPage() {
   const [installments, setInstallments] = useState(1);
   const [confirmInstallments, setConfirmInstallments] = useState(1);
 
+  const [supplies, setSupplies] = useState<any[]>([]);
+
   // ─── Toast Helper ────────────────────────────────────────────────────────────
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -280,12 +282,13 @@ export default function FinancialPage() {
     setLoading(true);
 
     // Queries que sempre existem
-    const [paymentsRes, servicesRes, patientsRes, staffRes, suppliersRes] = await Promise.all([
+    const [paymentsRes, servicesRes, patientsRes, staffRes, suppliersRes, suppliesRes] = await Promise.all([
       supabase.from('payments').select('*, patients(name, phone)').order('created_at', { ascending: false }),
       supabase.from('services').select('*').order('name'),
       supabase.from('patients').select('id, name, phone, cpf').order('name'),
       supabase.from('staff').select('*').order('name'),
       supabase.from('suppliers').select('*').order('company_name'),
+      supabase.from('supplies').select('*').order('name'),
     ]);
 
     setPayments((paymentsRes.data || []) as Payment[]);
@@ -293,6 +296,7 @@ export default function FinancialPage() {
     setPatients(patientsRes.data || []);
     if (staffRes.data) setStaff(staffRes.data);
     if (suppliersRes.data) setSuppliers(suppliersRes.data);
+    if (suppliesRes.data) setSupplies(suppliesRes.data);
 
     // Carregar bônus da equipe
     const { data: bonusesData } = await supabase
@@ -475,14 +479,19 @@ export default function FinancialPage() {
     const clinicShareGross = grossIncome - totalTherapistShare;
     const clinicNetRealized = clinicShareGross - grossExpense;
 
+    const suppliesTotalValue = supplies.reduce((s, item) => s + (Number(item.stock || 0) * Number(item.price || 0)), 0);
+    const suppliesLowStockCount = supplies.filter(item => Number(item.stock || 0) <= Number(item.min_stock || 0)).length;
+
     return {
       grossIncome,
       grossExpense,
       totalTherapistShare,
       clinicShareGross,
-      clinicNetRealized
+      clinicNetRealized,
+      suppliesTotalValue,
+      suppliesLowStockCount
     };
-  }, [monthlyPaid, therapists]);
+  }, [monthlyPaid, therapists, supplies]);
 
   const chartData = useMemo(() => Array.from({ length: 12 }, (_, i) => {
     const label = new Date(2000, i, 1).toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
@@ -1371,40 +1380,45 @@ export default function FinancialPage() {
           </div>
 
           {/* KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
             {loading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="bg-white p-6 sm:p-8 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden animate-pulse">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-100 mb-4" />
-                  <div className="w-24 h-3 bg-slate-200 rounded-full mb-3" />
-                  <div className="w-32 h-6 bg-slate-200 rounded-full mb-3" />
-                  <div className="w-40 h-3 bg-slate-200 rounded-full" />
+              Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden animate-pulse">
+                  <div className="w-10 h-10 rounded-2xl bg-slate-100 mb-3" />
+                  <div className="w-20 h-3 bg-slate-200 rounded-full mb-2" />
+                  <div className="w-28 h-5 bg-slate-200 rounded-full mb-2" />
+                  <div className="w-32 h-3 bg-slate-200 rounded-full" />
                 </div>
               ))
             ) : (
               (() => {
-                const { grossIncome, grossExpense, totalTherapistShare, clinicShareGross, clinicNetRealized } = dashboardStats;
+                const { grossIncome, grossExpense, totalTherapistShare, clinicShareGross, clinicNetRealized, suppliesTotalValue, suppliesLowStockCount } = dashboardStats;
                 return [
                   { label: 'Faturamento Bruto', value: grossIncome, icon: TrendingUp, color: 'emerald', sub: `Clínica: R$ ${fmt(clinicShareGross)} | Terapeutas: R$ ${fmt(totalTherapistShare)}` },
                   { label: 'Despesas Pagas', value: grossExpense, icon: TrendingDown, color: 'rose', sub: 'Saídas operacionais do período' },
                   { label: 'Lucro Líquido Clínica', value: clinicNetRealized, icon: DollarSign, color: clinicNetRealized >= 0 ? 'indigo' : 'rose', sub: 'Faturamento Clínica − Despesas' },
                   { label: 'A Receber', value: pendingIncome, icon: Clock, color: 'amber', sub: 'Lançamentos pendentes' },
+                  { label: 'Capital em Insumos', value: suppliesTotalValue, icon: Package, color: 'sky', sub: suppliesLowStockCount > 0 ? `⚠️ ${suppliesLowStockCount} item(ns) em nível crítico` : 'Insumos estocados na clínica' },
                 ].map((c, i) => (
-                  <div key={i} className="bg-white p-6 sm:p-8 rounded-3xl sm:rounded-[2.5rem] border border-slate-100 shadow-sm relative overflow-hidden group">
+                  <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group">
                     <div className={cn(
-                      "w-12 h-12 rounded-2xl flex items-center justify-center mb-4 shadow-lg",
+                      "w-11 h-11 rounded-2xl flex items-center justify-center mb-3 shadow-lg",
                       c.color === 'emerald' ? "bg-emerald-500 shadow-emerald-100 text-white" :
                       c.color === 'rose' ? "bg-rose-500 shadow-rose-100 text-white" :
                       c.color === 'amber' ? "bg-amber-500 shadow-amber-100 text-white" :
+                      c.color === 'sky' ? "bg-sky-500 shadow-sky-100 text-white" :
                       "bg-indigo-500 shadow-indigo-100 text-white"
                     )}>
-                      <c.icon className="w-6 h-6" />
+                      <c.icon className="w-5 h-5" />
                     </div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{c.label}</p>
-                    <h3 className={cn("text-xl sm:text-2xl font-black mb-1", c.color === 'rose' && c.label !== 'Despesas Pagas' ? "text-rose-600" : "text-slate-900")}>
+                    <h3 className={cn("text-xl font-black mb-1", c.color === 'rose' && c.label !== 'Despesas Pagas' ? "text-rose-600" : "text-slate-900")}>
                       R$ {fmt(c.value)}
                     </h3>
-                    <p className="text-[10px] text-slate-400 font-medium leading-relaxed">{c.sub}</p>
+                    <p className={cn(
+                      "text-[10px] font-medium leading-relaxed",
+                      c.label === 'Capital em Insumos' && suppliesLowStockCount > 0 ? "text-amber-600 font-bold" : "text-slate-400"
+                    )}>{c.sub}</p>
                   </div>
                 ));
               })()
