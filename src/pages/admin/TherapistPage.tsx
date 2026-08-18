@@ -617,12 +617,23 @@ export default function TherapistPage() {
     }
   };
 
+  const handleOpenAppointmentModal = () => {
+    setNewApp({ patient_id: '', start_time: '', type: 'Presencial', room_id: '' });
+    setShowAppointmentModal(true);
+  };
+
+  const handleCloseAppointmentModal = () => {
+    setShowAppointmentModal(false);
+    setNewApp({ patient_id: '', start_time: '', type: 'Presencial', room_id: '' });
+  };
+
   const handleOpenRescheduleModal = (app: any) => {
       setReschedulingAppt(app);
       const initialDate = app.start_time ? app.start_time.split('T')[0] : new Date().toISOString().split('T')[0];
       setRescheduleData({
          date: initialDate,
-         time: ''
+         time: '',
+         type: app.type || 'Presencial'
       });
   };
 
@@ -639,16 +650,33 @@ export default function TherapistPage() {
 
       const startTime = `${rescheduleData.date}T${rescheduleData.time}:00${tzOffset}`;
       const endTime = new Date(new Date(startTime).getTime() + 60 * 60 * 1000).toISOString();
+      const finalType = (rescheduleData as any).type || reschedulingAppt.type || 'Presencial';
 
       const { error } = await supabase
         .from('appointments')
         .update({
           start_time: startTime,
-          end_time: endTime
+          end_time: endTime,
+          type: finalType
         })
         .eq('id', reschedulingAppt.id);
 
       if (error) throw error;
+
+      // Buscar endereço no perfil da clínica para agendamento presencial
+      let localAddress = 'Nosso consultório está de portas abertas para te receber.';
+      try {
+          const { data: clinicProfileSett } = await supabase
+              .from('settings')
+              .select('value')
+              .eq('key', 'clinic_profile')
+              .maybeSingle();
+          if (clinicProfileSett?.value?.address && clinicProfileSett.value.address.trim() !== '') {
+              localAddress = clinicProfileSett.value.address.trim();
+          }
+      } catch (err) {
+          console.error("Erro ao buscar endereço da clínica:", err);
+      }
 
       // Busca contatos para enviar avisos
       const { data: patientData } = await supabase.from('patients').select('phone, name').eq('id', reschedulingAppt.patient_id).single();
@@ -677,7 +705,7 @@ export default function TherapistPage() {
                       new_date_iso: rescheduleData.date,
                       new_date_br: dataFormatada,
                       new_time: rescheduleData.time,
-                      type: reschedulingAppt.type
+                      type: finalType
                    }
                 })
              });
@@ -690,19 +718,25 @@ export default function TherapistPage() {
       const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
       if (patientData && patientData.phone) {
          const firstName = patientData.name.split(' ')[0];
-         let msg = `Olá, *${firstName}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* ${dataFormatada}\n⏰ *Novo Horário:* ${newTime}\n📍 *Modalidade:* ${reschedulingAppt.type}\n`;
-         if (reschedulingAppt.type === 'Online' && reschedulingAppt.meet_link) {
-            msg += `💻 *Acesso à Sessão Online:*\n🔗 ${reschedulingAppt.meet_link}\n\n`;
+         let msg = `Olá, *${firstName}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* ${dataFormatada}\n⏰ *Novo Horário:* ${newTime}\n📍 *Modalidade:* ${finalType}\n\n`;
+         if (finalType === 'Online') {
+            if (reschedulingAppt.meet_link) {
+               msg += `💻 *Acesso à Sessão Online:*\n🔗 ${reschedulingAppt.meet_link}\n\n`;
+            } else {
+               msg += `💻 *Sessão Online:*\nO link do Google Meet será gerado pelo seu terapeuta e enviado logo antes da sessão. Fique de olho!\n\n`;
+            }
+         } else {
+            msg += `📍 *Local Presencial:*\n${localAddress}\n\n`;
          }
-         msg += `Qualquer dúvida, estamos à disposição! 💙`;
+         msg += `Um abraço e te esperamos! 💙`;
          await sendWhatsAppMessage(reschedulingAppt.patient_id, patientData.phone, msg, 'appointment_rescheduled');
       }
 
       if (therapistData && therapistData.phone) {
          const firstNameT = therapistData.name.split(' ')[0];
-         let msg = `Olá, *${firstNameT}*! 🔄\n\nA sessão do paciente *${patientName}* foi reagendada.\n\n📅 *Novo horário:* ${dataFormatada} às ${newTime}\n📍 *Modalidade:* ${reschedulingAppt.type}\n`;
-         if (reschedulingAppt.type === 'Online' && reschedulingAppt.meet_link) {
-            msg += `🔗 *Link do Meet da Sessão:*\n${reschedulingAppt.meet_link}`;
+         let msg = `Olá, *${firstNameT}*! 🔄\n\nA sessão do paciente *${patientName}* foi reagendada.\n\n📅 *Novo horário:* ${dataFormatada} às ${newTime}\n📍 *Modalidade:* ${finalType}\n`;
+         if (finalType === 'Online' && reschedulingAppt.meet_link) {
+            msg += `\n🔗 *Link do Meet da Sessão:*\n${reschedulingAppt.meet_link}`;
          }
          await sendWhatsAppMessage(null, therapistData.phone, msg, 'appointment_rescheduled_therapist');
       }
@@ -1337,7 +1371,7 @@ export default function TherapistPage() {
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto mt-4 md:mt-0 shrink-0">
           <button className="p-3.5 sm:p-4 bg-slate-50 text-slate-400 rounded-2xl hover:text-indigo-600 transition-all border border-slate-100 w-full sm:w-auto flex justify-center"><Bell className="w-5 h-5 sm:w-6 sm:h-6" /></button>
-          <button onClick={() => setShowAppointmentModal(true)} className="px-5 py-3 sm:px-6 sm:py-4 bg-indigo-600 text-white rounded-2xl text-xs sm:text-sm font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 w-full sm:w-auto">
+          <button onClick={handleOpenAppointmentModal} className="px-5 py-3 sm:px-6 sm:py-4 bg-indigo-600 text-white rounded-2xl text-xs sm:text-sm font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 w-full sm:w-auto">
             <Plus className="w-4 h-4 sm:w-5 sm:h-5" /> Novo Agendamento
           </button>
         </div>
@@ -2507,7 +2541,7 @@ export default function TherapistPage() {
                     <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg"><Calendar className="w-6 h-6" /></div>
                     <h3 className="text-2xl font-black text-slate-900 tracking-tight">Novo Agendamento</h3>
                  </div>
-                 <button onClick={() => setShowAppointmentModal(false)} className="p-2 hover:bg-white rounded-full text-slate-400 transition-all border border-transparent hover:border-slate-200"><X className="w-6 h-6" /></button>
+                 <button onClick={handleCloseAppointmentModal} className="p-2 hover:bg-white rounded-full text-slate-400 transition-all border border-transparent hover:border-slate-200"><X className="w-6 h-6" /></button>
               </div>
               <div className="p-8 space-y-6">
                  <div className="space-y-2">
@@ -2557,19 +2591,21 @@ export default function TherapistPage() {
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Modalidade</label>
                     <div className="grid grid-cols-2 gap-4">
                        <button 
+                          type="button"
                           onClick={() => setNewApp({...newApp, type: 'Presencial'})}
                           className={cn(
                             "py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all",
-                            newApp.type === 'Presencial' ? "bg-indigo-50 border-indigo-500 text-indigo-700" : "bg-slate-50 border-transparent text-slate-400"
+                            newApp.type === 'Presencial' ? "bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm" : "bg-slate-50 border-transparent text-slate-400 hover:border-slate-200"
                           )}
                         >
                           <MapPin className="w-5 h-5" /> Presencial
                         </button>
                         <button 
+                          type="button"
                           onClick={() => setNewApp({...newApp, type: 'Online'})}
                           className={cn(
                             "py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all",
-                            newApp.type === 'Online' ? "bg-indigo-50 border-indigo-500 text-indigo-700" : "bg-slate-50 border-transparent text-slate-400"
+                            newApp.type === 'Online' ? "bg-blue-50 border-blue-500 text-blue-700 shadow-sm" : "bg-slate-50 border-transparent text-slate-400 hover:border-slate-200"
                           )}
                         >
                           <Video className="w-5 h-5" /> Online
@@ -2615,14 +2651,11 @@ export default function TherapistPage() {
                      </div>
                      <div className="flex items-center gap-4">
                         <span className={cn(
-                          "px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest",
-                          app.status === 'completed' ? "bg-emerald-50 text-emerald-600" :
-                          app.status === 'cancelled' ? "bg-rose-50 text-rose-600" : 
-                          (app.status === 'confirmed' || app.status === 'confirmado') ? "bg-sky-50 text-sky-600" : "bg-indigo-50 text-indigo-600"
+                          "px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5",
+                          app.type === 'Online' ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-600"
                         )}>
-                          {app.status === 'completed' ? 'Concluído' : 
-                           app.status === 'cancelled' ? 'Cancelado' : 
-                           (app.status === 'confirmed' || app.status === 'confirmado') ? 'Confirmado' : 'Agendado'}
+                          {app.type === 'Online' ? <Video className="w-3.5 h-3.5" /> : <MapPin className="w-3.5 h-3.5" />}
+                          {app.type || 'Presencial'}
                         </span>
                         
                         {app.status !== 'completed' && app.status !== 'cancelled' && (
@@ -2679,6 +2712,32 @@ export default function TherapistPage() {
                   </button>
                </div>
                <div className="p-8 space-y-6 overflow-y-auto">
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Modalidade</label>
+                     <div className="grid grid-cols-2 gap-4">
+                        <button 
+                           type="button"
+                           onClick={() => setRescheduleData({...rescheduleData, type: 'Presencial'})}
+                           className={cn(
+                             "py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all",
+                             (rescheduleData as any).type === 'Presencial' ? "bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm" : "bg-slate-50 border-transparent text-slate-400 hover:border-slate-200"
+                           )}
+                         >
+                           <MapPin className="w-5 h-5" /> Presencial
+                         </button>
+                         <button 
+                           type="button"
+                           onClick={() => setRescheduleData({...rescheduleData, type: 'Online'})}
+                           className={cn(
+                             "py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all",
+                             (rescheduleData as any).type === 'Online' ? "bg-blue-50 border-blue-500 text-blue-700 shadow-sm" : "bg-slate-50 border-transparent text-slate-400 hover:border-slate-200"
+                           )}
+                         >
+                           <Video className="w-5 h-5" /> Online
+                         </button>
+                     </div>
+                  </div>
+
                   <div className="space-y-2">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nova Data</label>
                      <input 

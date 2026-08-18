@@ -77,7 +77,29 @@ export default function ConfigPage() {
 
   // Settings states
   const [clinicProfile, setClinicProfile] = useState({ name: 'Tzion Terapias', cnpj: '', address: '', system_url: '' });
-  const [integrations, setIntegrations] = useState({ asaas_token: '', google_client_id: '', meet_webhook: '' });
+  const [integrations, setIntegrations] = useState<{
+    asaas_token?: string;
+    asaas_webhook_token?: string;
+    google_client_id?: string;
+    meet_webhook?: string;
+    n8n_webhook_url?: string;
+    asaas_max_installments?: string;
+    asaas_interest_free_installments?: string;
+    asaas_credit_fee_percent?: string;
+    asaas_credit_fixed_fee?: string;
+    asaas_installment_fee_monthly?: string;
+  }>({
+    asaas_token: '',
+    asaas_webhook_token: '',
+    google_client_id: '',
+    meet_webhook: '',
+    n8n_webhook_url: '',
+    asaas_max_installments: '12',
+    asaas_interest_free_installments: '6',
+    asaas_credit_fee_percent: '3.49',
+    asaas_credit_fixed_fee: '0.49',
+    asaas_installment_fee_monthly: '2.49',
+  });
   const [securitySettings, setSecuritySettings] = useState({ twoFactor: false });
   const [teamRoles, setTeamRoles] = useState(['Admin Geral', 'Secretaria Administrativa', 'Comercial']);
   const [addingRole, setAddingRole] = useState(false);
@@ -623,6 +645,171 @@ export default function ConfigPage() {
                               className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
                             />
                             <p className="text-[10px] text-slate-400 ml-1 font-medium">Usado para validar que as mensagens recebidas realmente vieram do Asaas.</p>
+                          </div>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-100 space-y-4">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900 mb-1">Regras de Parcelamento no Cartão (Asaas)</h4>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              Defina até quantas vezes o parcelamento será <strong>sem juros</strong> para o cliente e o limite máximo de parcelas.
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Sem Juros até</label>
+                              <select
+                                value={integrations.asaas_interest_free_installments || '6'}
+                                onChange={e => setIntegrations({ ...integrations, asaas_interest_free_installments: e.target.value })}
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                              >
+                                <option value="1">1x (Sem juros só à vista)</option>
+                                <option value="2">Até 2x sem juros</option>
+                                <option value="3">Até 3x sem juros</option>
+                                <option value="4">Até 4x sem juros</option>
+                                <option value="5">Até 5x sem juros</option>
+                                <option value="6">Até 6x sem juros</option>
+                                <option value="7">Até 7x sem juros</option>
+                                <option value="8">Até 8x sem juros</option>
+                                <option value="9">Até 9x sem juros</option>
+                                <option value="10">Até 10x sem juros</option>
+                                <option value="11">Até 11x sem juros</option>
+                                <option value="12">Até 12x sem juros</option>
+                              </select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Parcelamento Máximo</label>
+                              <select
+                                value={integrations.asaas_max_installments || '12'}
+                                onChange={e => setIntegrations({ ...integrations, asaas_max_installments: e.target.value })}
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                              >
+                                <option value="1">Apenas 1x (À vista)</option>
+                                <option value="2">Até 2x</option>
+                                <option value="3">Até 3x</option>
+                                <option value="4">Até 4x</option>
+                                <option value="5">Até 5x</option>
+                                <option value="6">Até 6x</option>
+                                <option value="7">Até 7x</option>
+                                <option value="8">Até 8x</option>
+                                <option value="9">Até 9x</option>
+                                <option value="10">Até 10x</option>
+                                <option value="11">Até 11x</option>
+                                <option value="12">Até 12x</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl text-xs font-medium text-amber-900 flex items-start gap-3">
+                            <span className="text-base">💳</span>
+                            <div className="leading-relaxed">
+                              <strong>Regra configurada:</strong> De 1x até {integrations.asaas_interest_free_installments || '6'}x as parcelas serão <strong>sem juros</strong>.
+                              {Number(integrations.asaas_max_installments || 12) > Number(integrations.asaas_interest_free_installments || 6) && (
+                                <> De {Number(integrations.asaas_interest_free_installments || 6) + 1}x até {integrations.asaas_max_installments || '12'}x o Asaas repassará os juros de parcelamento ao cliente.</>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Configuração de Taxas e Tabela de Simulação */}
+                          <div className="pt-4 border-t border-slate-100 space-y-4">
+                            <div>
+                              <h4 className="text-sm font-bold text-slate-900 mb-1">Taxas de Intermediação e Parcelamento do Asaas</h4>
+                              <p className="text-xs text-slate-500 leading-relaxed">
+                                 Configure as taxas aplicadas pela sua conta do Asaas para visualizar a tabela de simulação e o custo por parcela.
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3">
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Taxa Cartão (%)</label>
+                                <input
+                                  type="text"
+                                  value={integrations.asaas_credit_fee_percent || '3.49'}
+                                  onChange={e => setIntegrations({ ...integrations, asaas_credit_fee_percent: e.target.value })}
+                                  placeholder="3.49"
+                                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Taxa Fixa (R$)</label>
+                                <input
+                                  type="text"
+                                  value={integrations.asaas_credit_fixed_fee || '0.49'}
+                                  onChange={e => setIntegrations({ ...integrations, asaas_credit_fixed_fee: e.target.value })}
+                                  placeholder="0.49"
+                                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Taxa Parcela (% a.m.)</label>
+                                <input
+                                  type="text"
+                                  value={integrations.asaas_installment_fee_monthly || '2.49'}
+                                  onChange={e => setIntegrations({ ...integrations, asaas_installment_fee_monthly: e.target.value })}
+                                  placeholder="2.49"
+                                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Tabela de Simulação por Parcela (1x a N) */}
+                            <div className="space-y-2 pt-2">
+                              <span className="text-xs font-bold text-slate-900 flex items-center justify-between">
+                                <span>Tabela Detalhada de Taxas por Parcela (1x até {integrations.asaas_max_installments || '12'}x):</span>
+                                <span className="text-[10px] text-slate-400 font-normal">*Estimativas com base nas taxas informadas</span>
+                              </span>
+
+                              <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-slate-100 text-slate-500 font-bold uppercase text-[9px] tracking-wider border-b border-slate-200">
+                                    <tr>
+                                      <th className="px-3 py-2.5">Parcela</th>
+                                      <th className="px-3 py-2.5">Condição</th>
+                                      <th className="px-3 py-2.5 text-right">Taxa Estimada (%)</th>
+                                      <th className="px-3 py-2.5 text-right">Responsável</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                                    {Array.from({ length: Number(integrations.asaas_max_installments || 12) }, (_, i) => i + 1).map(num => {
+                                      const interestFreeLimit = Number(integrations.asaas_interest_free_installments || 6);
+                                      const isFree = num <= interestFreeLimit;
+                                      const baseRate = Number(integrations.asaas_credit_fee_percent?.replace(',', '.')) || 3.49;
+                                      const monthlyRate = Number(integrations.asaas_installment_fee_monthly?.replace(',', '.')) || 2.49;
+                                      
+                                      const totalRate = isFree ? (baseRate + (num - 1) * monthlyRate).toFixed(2) : baseRate.toFixed(2);
+
+                                      return (
+                                        <tr key={num} className={cn("hover:bg-white transition-colors", !isFree && "bg-slate-50/80")}>
+                                          <td className="px-3 py-2 font-bold text-slate-900">{num}x</td>
+                                          <td className="px-3 py-2">
+                                            <span className={cn(
+                                              "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                              isFree ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800"
+                                            )}>
+                                              {isFree ? "Sem Juros" : "Com Juros"}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2 text-right font-black font-mono">
+                                            {isFree ? `${totalRate}% + R$ ${integrations.asaas_credit_fixed_fee || '0,49'}` : `${baseRate}% (Juros repassados)`}
+                                          </td>
+                                          <td className="px-3 py-2 text-right text-[11px] font-medium">
+                                            {isFree ? (
+                                              <span className="text-emerald-700 font-bold">🟢 Clínica absorve</span>
+                                            ) : (
+                                              <span className="text-indigo-700 font-bold">🔵 Cliente paga</span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1222,9 +1409,6 @@ export default function ConfigPage() {
                                 patient: {
                                   name: 'Maria da Silva',
                                   cpf: '123.456.789-00',
-                                  rg: '1.234.567',
-                                  rg_issuer: 'SSP/TO',
-                                  rg_issue_date: '2018-05-15',
                                   address: 'Rua Princesa Isabel',
                                   address_number: '100',
                                   neighborhood: 'Santa Helena',

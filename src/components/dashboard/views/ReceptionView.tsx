@@ -212,8 +212,9 @@ export default function ReceptionView() {
      const initialDate = app.start_time ? app.start_time.split('T')[0] : new Date().toISOString().split('T')[0];
      setRescheduleData({
         date: initialDate,
-        time: ''
-     });
+        time: '',
+        type: app.type || 'Presencial'
+     } as any);
   };
 
   const handleRescheduleAppointment = async () => {
@@ -229,17 +230,34 @@ export default function ReceptionView() {
 
       const startTime = `${rescheduleData.date}T${rescheduleData.time}:00${tzOffset}`;
       const endTime = new Date(new Date(startTime).getTime() + 60 * 60 * 1000).toISOString();
+      const finalType = (rescheduleData as any).type || reschedulingAppt.type || 'Presencial';
 
       const { error } = await supabase
         .from('appointments')
         .update({
           start_time: startTime,
           end_time: endTime,
+          type: finalType,
           status: 'scheduled'
         })
         .eq('id', reschedulingAppt.id);
 
       if (error) throw error;
+
+      // Buscar endereço no perfil da clínica para agendamento presencial
+      let localAddress = 'Nosso consultório está de portas abertas para te receber.';
+      try {
+          const { data: clinicProfileSett } = await supabase
+              .from('settings')
+              .select('value')
+              .eq('key', 'clinic_profile')
+              .maybeSingle();
+          if (clinicProfileSett?.value?.address && clinicProfileSett.value.address.trim() !== '') {
+              localAddress = clinicProfileSett.value.address.trim();
+          }
+      } catch (err) {
+          console.error("Erro ao buscar endereço da clínica:", err);
+      }
 
       const patientName = reschedulingAppt.patients?.name || reschedulingAppt.patient_name || 'Paciente';
       const therapistName = reschedulingAppt.therapists?.name || reschedulingAppt.therapist_name || 'Terapeuta';
@@ -269,7 +287,7 @@ export default function ReceptionView() {
                       new_date_iso: rescheduleData.date,
                       new_date_br: dataFormatada,
                       new_time: rescheduleData.time,
-                      type: reschedulingAppt.type
+                      type: finalType
                    }
                 })
              });
@@ -282,9 +300,15 @@ export default function ReceptionView() {
       const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
       if (patientData && patientData.phone) {
          const firstName = patientData.name.split(' ')[0];
-         let msg = `Olá, *${firstName}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* ${dataFormatada}\n⏰ *Novo Horário:* ${newTime}\n📍 *Modalidade:* ${reschedulingAppt.type}\n`;
-         if (reschedulingAppt.type === 'Online' && reschedulingAppt.meet_link) {
-            msg += `💻 *Acesso à Sessão Online:*\n🔗 ${reschedulingAppt.meet_link}\n\n`;
+         let msg = `Olá, *${firstName}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* ${dataFormatada}\n⏰ *Novo Horário:* ${newTime}\n📍 *Modalidade:* ${finalType}\n\n`;
+         if (finalType === 'Online') {
+            if (reschedulingAppt.meet_link) {
+               msg += `💻 *Acesso à Sessão Online:*\n🔗 ${reschedulingAppt.meet_link}\n\n`;
+            } else {
+               msg += `💻 *Sessão Online:*\nO link seguro do Google Meet será gerado pelo seu terapeuta e enviado logo antes da sessão. Fique de olho!\n\n`;
+            }
+         } else {
+            msg += `📍 *Local Presencial:*\n${localAddress}\n\n`;
          }
          msg += `Qualquer dúvida, estamos à disposição! 💙`;
          await sendWhatsAppMessage(reschedulingAppt.patient_id, patientData.phone, msg, 'appointment_rescheduled');
@@ -292,9 +316,9 @@ export default function ReceptionView() {
 
       if (therapistData && therapistData.phone) {
          const firstNameT = therapistData.name.split(' ')[0];
-         let msg = `Olá, *${firstNameT}*! 🔄\n\nA sessão do paciente *${patientData?.name || patientName}* foi reagendada.\n\n📅 *Novo horário:* ${dataFormatada} às ${newTime}\n📍 *Modalidade:* ${reschedulingAppt.type}\n`;
-         if (reschedulingAppt.type === 'Online' && reschedulingAppt.meet_link) {
-            msg += `🔗 *Link do Meet da Sessão:*\n${reschedulingAppt.meet_link}`;
+         let msg = `Olá, *${firstNameT}*! 🔄\n\nA sessão do paciente *${patientData?.name || patientName}* foi reagendada.\n\n📅 *Novo horário:* ${dataFormatada} às ${newTime}\n📍 *Modalidade:* ${finalType}\n`;
+         if (finalType === 'Online' && reschedulingAppt.meet_link) {
+            msg += `\n🔗 *Link do Meet da Sessão:*\n${reschedulingAppt.meet_link}`;
          }
          await sendWhatsAppMessage(null, therapistData.phone, msg, 'appointment_rescheduled_therapist');
       }
@@ -587,6 +611,32 @@ export default function ReceptionView() {
                  </button>
               </div>
               <div className="p-8 space-y-6 overflow-y-auto">
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Modalidade</label>
+                    <div className="grid grid-cols-2 gap-4">
+                       <button 
+                          type="button"
+                          onClick={() => setRescheduleData({...rescheduleData, type: 'Presencial'} as any)}
+                          className={cn(
+                            "py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all",
+                            (rescheduleData as any).type === 'Presencial' ? "bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm" : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                          )}
+                        >
+                          <MapPin className="w-5 h-5" /> Presencial
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => setRescheduleData({...rescheduleData, type: 'Online'} as any)}
+                          className={cn(
+                            "py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all",
+                            (rescheduleData as any).type === 'Online' ? "bg-blue-50 border-blue-500 text-blue-700 shadow-sm" : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                          )}
+                        >
+                          <Video className="w-5 h-5" /> Online
+                        </button>
+                    </div>
+                 </div>
+
                  <div className="space-y-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nova Data</label>
                     <input 

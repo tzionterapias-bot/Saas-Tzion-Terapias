@@ -107,19 +107,31 @@ serve(async (req) => {
         await supabase.from("patients").update({ asaas_customer_id: asaasCustomerId }).eq("id", pacienteId);
       }
 
+      const { data: settsData } = await supabase
+        .from("settings")
+        .select("value")
+        .eq("key", "integrations")
+        .maybeSingle();
+
       const dueDate = new Date().toISOString().split("T")[0];
+      const maxInstallments = Number(settsData?.value?.asaas_max_installments) || 12;
+      const interestFreeInstallments = Number(settsData?.value?.asaas_interest_free_installments) || 6;
+
+      const paymentPayload: any = {
+        customer: asaasCustomerId,
+        billingType: billingType || "UNDEFINED",
+        value: Number(valor),
+        dueDate: dueDate,
+        description: description || "Tzion Terapias - Serviços Terapêuticos",
+        postalService: false,
+        maxInstallmentCount: maxInstallments,
+        maxInterestFreeInstallmentCount: interestFreeInstallments
+      };
 
       const createPaymentRes = await fetch(`${asaasBaseUrl}/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "access_token": asaasApiKey },
-        body: JSON.stringify({
-          customer: asaasCustomerId,
-          billingType: billingType || "UNDEFINED",
-          value: Number(valor),
-          dueDate: dueDate,
-          description: description || "Tzion Terapias - Serviços Terapêuticos",
-          postalService: false
-        })
+        body: JSON.stringify(paymentPayload)
       });
 
       if (!createPaymentRes.ok) {

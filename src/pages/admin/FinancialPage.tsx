@@ -5,7 +5,7 @@ import {
   FileText, CheckCircle2, AlertCircle, Loader2, Link as LinkIcon, X, Save,
   Users, Briefcase, PieChart, Wallet, Clock, UserCheck, Percent,
   MessageCircle, ChevronLeft, ChevronRight, Ban, Receipt, BarChart2, Settings,
-  Award, Check, Pencil, Trash2, Package
+  Award, Check, Pencil, Trash2, Package, Search
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -193,6 +193,21 @@ function Toast({ toast }: { toast: ToastState }) {
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 
+const addMonthsToDate = (baseDateStr: string, monthsToAdd: number): string => {
+  const base = baseDateStr ? new Date(baseDateStr + 'T12:00:00') : new Date();
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const day = base.getDate();
+  const targetDate = new Date(year, month + monthsToAdd, day);
+  if (targetDate.getDate() !== day) {
+    targetDate.setDate(0);
+  }
+  const yyyy = targetDate.getFullYear();
+  const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
+  const dd = String(targetDate.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 export default function FinancialPage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -246,12 +261,48 @@ export default function FinancialPage() {
   const [uploadingFile, setUploadingFile] = useState(false);
 
   // ── Form State ──────────────────────────────────────────────────────────────
-  const emptyEntry = { amount: '', description: '', type: 'income' as const, status: 'paid' as const, category: 'Sessão', payment_method: 'pix', due_date: '', is_fixed: false };
+  const emptyEntry = {
+    amount: '',
+    description: '',
+    type: 'income' as const,
+    status: 'paid' as const,
+    category: 'Sessão',
+    payment_method: 'pix',
+    due_date: '',
+    is_fixed: false,
+    is_installment: false,
+    installments_count: '2',
+  };
   const [newEntry, setNewEntry] = useState(emptyEntry);
+  const [customInstallmentsList, setCustomInstallmentsList] = useState<{
+    number: number;
+    amount: string;
+    dueDate: string;
+    status: 'paid' | 'pending';
+  }[]>([]);
+
+  useEffect(() => {
+    if (!newEntry.is_installment) return;
+    const count = Math.max(2, Math.min(36, parseInt(newEntry.installments_count, 10) || 2));
+    const rawVal = Number(newEntry.amount.toString().replace(',', '.'));
+    const totalVal = isNaN(rawVal) ? 0 : rawVal;
+    const baseVal = totalVal > 0 ? (totalVal / count).toFixed(2) : '0.00';
+    const baseDate = newEntry.due_date || new Date().toISOString().split('T')[0];
+
+    const items = Array.from({ length: count }, (_, i) => ({
+      number: i + 1,
+      amount: baseVal,
+      dueDate: addMonthsToDate(baseDate, i),
+      status: (i === 0 ? newEntry.status : 'pending') as 'paid' | 'pending',
+    }));
+    setCustomInstallmentsList(items);
+  }, [newEntry.is_installment, newEntry.installments_count, newEntry.amount, newEntry.due_date, newEntry.status]);
+
   const [showEditModal, setShowEditModal] = useState<Payment | null>(null);
   const [editEntry, setEditEntry] = useState(emptyEntry);
   const emptySell = { patient_id: '', service_id: '', payment_method: 'asaas_pix', therapist_id: '', referral_source: 'therapist' as const };
   const [sellData, setSellData] = useState(emptySell);
+  const [patientSearchSell, setPatientSearchSell] = useState('');
   const [cardFeeRateInput, setCardFeeRateInput] = useState('0');
   const [multimodalItems, setMultimodalItems] = useState<{ service_id: string; sessions: number }[]>([]);
   const [newStaff, setNewStaff] = useState({ name: '', role: '', commission_rate: '0', base_salary: '0' });
@@ -445,6 +496,18 @@ export default function FinancialPage() {
     [payments]
   );
 
+  const filteredPatientsForSell = useMemo(() => {
+    if (!patientSearchSell.trim()) return patients;
+    const term = patientSearchSell.toLowerCase().trim();
+    const cleanTerm = term.replace(/\D/g, '');
+    return patients.filter(p => {
+      const matchName = (p.name || '').toLowerCase().includes(term);
+      const pCpfClean = (p.cpf || '').replace(/\D/g, '');
+      const matchCpf = (p.cpf || '').toLowerCase().includes(term) || (cleanTerm.length > 0 && pCpfClean.includes(cleanTerm));
+      return matchName || matchCpf;
+    });
+  }, [patients, patientSearchSell]);
+
   const dashboardStats = useMemo(() => {
     const paidIncomes = monthlyPaid.filter(p => p.type === 'income');
     const grossIncome = paidIncomes.reduce((s, p) => s + (p.net_amount !== null && p.net_amount !== undefined ? Math.abs(p.net_amount) : Math.abs(p.amount)), 0);
@@ -598,24 +661,56 @@ export default function FinancialPage() {
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from('payments').insert([{
-      amount: amountVal,
-      type: newEntry.type,
-      status: newEntry.status,
-      description: newEntry.description,
-      category: newEntry.category,
-      payment_method: newEntry.payment_method,
-      due_date: newEntry.due_date || null,
-      is_fixed: newEntry.is_fixed,
-      created_at: new Date().toISOString(),
-    }]);
-    if (error) { showToast('Erro ao salvar lançamento.', 'error'); }
-    else {
-      showToast('Lançamento salvo com sucesso!');
-      setShowEntryModal(false);
-      setNewEntry(emptyEntry);
-      fetchAll();
+
+    if (newEntry.is_installment && customInstallmentsList.length > 1) {
+      const count = customInstallmentsList.length;
+      const rowsToInsert = customInstallmentsList.map(inst => {
+        const itemAmount = Number(inst.amount.toString().replace(',', '.')) || (amountVal / count);
+        return {
+          amount: itemAmount,
+          type: newEntry.type,
+          status: inst.status,
+          description: `${newEntry.description} (${inst.number}/${count})`,
+          category: newEntry.category,
+          payment_method: newEntry.payment_method,
+          due_date: inst.dueDate || null,
+          is_fixed: false,
+          installments: count,
+          created_at: new Date().toISOString(),
+        };
+      });
+
+      const { error } = await supabase.from('payments').insert(rowsToInsert);
+      if (error) {
+        console.error('Erro ao parcelar lançamento:', error);
+        showToast('Erro ao salvar parcelamento.', 'error');
+      } else {
+        showToast(`Lançadas ${count} parcelas com sucesso!`);
+        setShowEntryModal(false);
+        setNewEntry(emptyEntry);
+        fetchAll();
+      }
+    } else {
+      const { error } = await supabase.from('payments').insert([{
+        amount: amountVal,
+        type: newEntry.type,
+        status: newEntry.status,
+        description: newEntry.description,
+        category: newEntry.category,
+        payment_method: newEntry.payment_method,
+        due_date: newEntry.due_date || null,
+        is_fixed: newEntry.is_fixed,
+        created_at: new Date().toISOString(),
+      }]);
+      if (error) { showToast('Erro ao salvar lançamento.', 'error'); }
+      else {
+        showToast('Lançamento salvo com sucesso!');
+        setShowEntryModal(false);
+        setNewEntry(emptyEntry);
+        fetchAll();
+      }
     }
+
     setSaving(false);
   };
 
@@ -2350,7 +2445,97 @@ export default function FinancialPage() {
                 </div>
               </div>
               
-              {newEntry.type === 'expense' && (
+              {/* Opção de Parcelamento Programável */}
+              <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="is_installment" className="flex items-center gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      id="is_installment"
+                      checked={newEntry.is_installment}
+                      onChange={e => setNewEntry({ ...newEntry, is_installment: e.target.checked })}
+                      className="w-5 h-5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <span className="text-sm font-bold text-indigo-950">
+                      Parcelar lançamento (dividir em parcelas)
+                    </span>
+                  </label>
+                  {newEntry.is_installment && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-indigo-700">Parcelas:</span>
+                      <input
+                        type="number"
+                        min="2"
+                        max="36"
+                        value={newEntry.installments_count}
+                        onChange={e => setNewEntry({ ...newEntry, installments_count: e.target.value })}
+                        className="w-16 p-2 bg-white border border-indigo-200 rounded-xl text-sm font-black text-indigo-900 text-center outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {newEntry.is_installment && customInstallmentsList.length > 0 && (
+                  <div className="space-y-3 pt-2 border-t border-indigo-100">
+                    <div className="flex justify-between items-center text-xs font-bold text-indigo-900">
+                      <span>Programação por Parcela:</span>
+                      <span>Total: R$ {newEntry.amount || '0,00'}</span>
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                      {customInstallmentsList.map((inst, idx) => (
+                        <div key={idx} className="p-3 bg-white border border-indigo-100 rounded-xl flex items-center justify-between gap-2 text-xs shadow-sm">
+                          <span className="font-bold text-indigo-900 shrink-0">
+                            {inst.number}/{customInstallmentsList.length}
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-slate-400 font-bold text-[10px]">R$</span>
+                            <input
+                              type="text"
+                              value={inst.amount}
+                              onChange={e => {
+                                const newArr = [...customInstallmentsList];
+                                newArr[idx].amount = e.target.value;
+                                setCustomInstallmentsList(newArr);
+                              }}
+                              className="w-20 p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black text-slate-800 outline-none text-right"
+                            />
+                          </div>
+                          <input
+                            type="date"
+                            value={inst.dueDate}
+                            onChange={e => {
+                              const newArr = [...customInstallmentsList];
+                              newArr[idx].dueDate = e.target.value;
+                              setCustomInstallmentsList(newArr);
+                            }}
+                            className="p-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none"
+                          />
+                          <select
+                            value={inst.status}
+                            onChange={e => {
+                              const newArr = [...customInstallmentsList];
+                              newArr[idx].status = e.target.value as 'paid' | 'pending';
+                              setCustomInstallmentsList(newArr);
+                            }}
+                            className={cn(
+                              "p-1.5 rounded-lg font-bold text-[10px] outline-none border cursor-pointer uppercase tracking-wider",
+                              inst.status === 'paid'
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                            )}
+                          >
+                            <option value="paid">Pago</option>
+                            <option value="pending">Pendente</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {newEntry.type === 'expense' && !newEntry.is_installment && (
                 <div className="flex items-center gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
                   <input type="checkbox" id="is_fixed" checked={newEntry.is_fixed} onChange={e => setNewEntry({ ...newEntry, is_fixed: e.target.checked })}
                     className="w-5 h-5 rounded border-rose-300 text-rose-600 focus:ring-rose-500 cursor-pointer" />
@@ -2477,11 +2662,41 @@ export default function FinancialPage() {
             <div className="p-8 space-y-5">
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Paciente *</label>
+                <div className="relative mb-1.5">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por Nome ou CPF..."
+                    value={patientSearchSell}
+                    onChange={e => setPatientSearchSell(e.target.value)}
+                    className="w-full pl-11 pr-10 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                  />
+                  {patientSearchSell && (
+                    <button
+                      type="button"
+                      onClick={() => setPatientSearchSell('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
                 <select value={sellData.patient_id} onChange={e => setSellData({ ...sellData, patient_id: e.target.value })}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none">
-                  <option value="">Selecione o paciente...</option>
-                  {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none cursor-pointer">
+                  <option value="">
+                    {patientSearchSell.trim()
+                      ? `Selecione (${filteredPatientsForSell.length} encontrado${filteredPatientsForSell.length === 1 ? '' : 's'})...`
+                      : 'Selecione o paciente...'}
+                  </option>
+                  {filteredPatientsForSell.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}{p.cpf ? ` — CPF: ${p.cpf}` : ''}
+                    </option>
+                  ))}
                 </select>
+                {patientSearchSell.trim() && filteredPatientsForSell.length === 0 && (
+                  <p className="text-[11px] text-rose-500 font-bold ml-1 mt-1">Nenhum paciente encontrado para "{patientSearchSell}".</p>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Serviço ou Pacote *</label>

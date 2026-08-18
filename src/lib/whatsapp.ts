@@ -65,8 +65,7 @@ export async function sendWhatsAppMessage(
         } else {
           // Texto: envia via nó ATENDIMENTO DASHBOARD do n8n (que chama a Evolution API internamente)
           const dashboardWebhookUrl = import.meta.env.VITE_N8N_DASHBOARD_WEBHOOK_URL || n8nWebhookUrl;
-          console.log('[WHATSAPP] Enviando via Webhook ATENDIMENTO DASHBOARD n8n...');
-          const response = await fetch('/api/n8n-proxy', {
+          let response = await fetch('/api/n8n-proxy', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -80,6 +79,18 @@ export async function sendWhatsAppMessage(
               }
             })
           });
+
+          if (!response.ok && dashboardWebhookUrl) {
+            console.warn('[WHATSAPP] Proxy retornou erro, tentando envio direto ao webhook n8n...');
+            response = await fetch(dashboardWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                phone: waNumber,
+                message: message
+              })
+            });
+          }
 
           if (response.ok) {
             status = 'sent';
@@ -100,6 +111,7 @@ export async function sendWhatsAppMessage(
       type: 'whatsapp',
       trigger_event: triggerEvent,
       status: status,
+      recipient_phone: phone,
       content: mediaAttachment ? `[Anexo Enviado] ${message}` : message
     }]);
 

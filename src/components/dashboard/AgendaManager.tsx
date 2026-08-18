@@ -81,13 +81,22 @@ export default function AgendaManager() {
       const endStr = end.toISOString().split('T')[0] + 'T23:59:59';
 
       let myTherapistId = '';
-      if (user?.role === 'terapeuta' && user?.id) {
+      if (user?.id) {
         const { data: tData } = await supabase
           .from('therapists')
           .select('id')
           .eq('user_id', user.id)
           .maybeSingle();
-        if (tData?.id) myTherapistId = tData.id;
+        if (tData?.id) {
+          myTherapistId = tData.id;
+        } else if (user.email) {
+          const { data: tEmail } = await supabase
+            .from('therapists')
+            .select('id')
+            .eq('email', user.email)
+            .maybeSingle();
+          if (tEmail?.id) myTherapistId = tEmail.id;
+        }
       }
 
       let apptQuery = supabase.from('appointments')
@@ -96,8 +105,12 @@ export default function AgendaManager() {
         .lte('start_time', endStr)
         .order('start_time', { ascending: true });
 
-      if (user?.role === 'terapeuta' && myTherapistId) {
-        apptQuery = apptQuery.eq('therapist_id', myTherapistId);
+      if (user?.role === 'terapeuta') {
+        if (myTherapistId) {
+          apptQuery = apptQuery.eq('therapist_id', myTherapistId);
+        } else {
+          apptQuery = apptQuery.eq('therapist_id', '00000000-0000-0000-0000-000000000000');
+        }
       }
 
       const promises: Promise<any>[] = [
@@ -126,7 +139,7 @@ export default function AgendaManager() {
         let rawPats = (patientsRes?.data || []).filter((p: any) => p.status?.toLowerCase() !== 'lead');
         let rawTherapists = therapistsRes?.data || [];
 
-        if (user?.role === 'terapeuta' && myTherapistId) {
+        if (user?.role === 'terapeuta') {
           rawTherapists = rawTherapists.filter((t: any) => t.id === myTherapistId);
           const apptPIds = new Set((apptsRes?.data || []).map((a: any) => a.patient_id).filter(Boolean));
           rawPats = rawPats.filter((p: any) => apptPIds.has(p.id));
@@ -803,8 +816,9 @@ export default function AgendaManager() {
      const initialDate = app.start_time ? app.start_time.split('T')[0] : new Date().toISOString().split('T')[0];
      setRescheduleData({
         date: initialDate,
-        time: ''
-     });
+        time: '',
+        type: app.type || 'Presencial'
+     } as any);
   };
 
   const handleRescheduleAppointment = async () => {
@@ -820,17 +834,34 @@ export default function AgendaManager() {
 
       const startTime = `${rescheduleData.date}T${rescheduleData.time}:00${tzOffset}`;
       const endTime = new Date(new Date(startTime).getTime() + 60 * 60 * 1000).toISOString();
+      const finalType = (rescheduleData as any).type || reschedulingAppt.type || 'Presencial';
 
       const { error } = await supabase
         .from('appointments')
         .update({
           start_time: startTime,
           end_time: endTime,
+          type: finalType,
           status: 'scheduled'
         })
         .eq('id', reschedulingAppt.id);
 
       if (error) throw error;
+
+      // Buscar endereço no perfil da clínica para agendamento presencial
+      let localAddress = 'Nosso consultório está de portas abertas para te receber.';
+      try {
+          const { data: clinicProfileSett } = await supabase
+              .from('settings')
+              .select('value')
+              .eq('key', 'clinic_profile')
+              .maybeSingle();
+          if (clinicProfileSett?.value?.address && clinicProfileSett.value.address.trim() !== '') {
+              localAddress = clinicProfileSett.value.address.trim();
+          }
+      } catch (err) {
+          console.error("Erro ao buscar endereço da clínica:", err);
+      }
 
       // Busca contatos para enviar avisos
       const { data: patientData } = await supabase.from('patients').select('phone, name').eq('id', reschedulingAppt.patient_id).single();
@@ -858,7 +889,7 @@ export default function AgendaManager() {
                       new_date_iso: rescheduleData.date,
                       new_date_br: dataFormatada,
                       new_time: rescheduleData.time,
-                      type: reschedulingAppt.type
+                      type: finalType
                    }
                 })
              });
@@ -871,19 +902,25 @@ export default function AgendaManager() {
       const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
       if (patientData && patientData.phone) {
          const firstName = patientData.name.split(' ')[0];
-         let msg = `Olá, *${firstName}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* ${dataFormatada}\n⏰ *Novo Horário:* ${newTime}\n📍 *Modalidade:* ${reschedulingAppt.type}\n`;
-         if (reschedulingAppt.type === 'Online' && reschedulingAppt.meet_link) {
-            msg += `💻 *Acesso à Sessão Online:*\n🔗 ${reschedulingAppt.meet_link}\n\n`;
+         let msg = `Olá, *${firstName}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* ${dataFormatada}\n⏰ *Novo Horário:* ${newTime}\n📍 *Modalidade:* ${finalType}\n\n`;
+         if (finalType === 'Online') {
+            if (reschedulingAppt.meet_link) {
+               msg += `💻 *Acesso à Sessão Online:*\n🔗 ${reschedulingAppt.meet_link}\n\n`;
+            } else {
+               msg += `💻 *Sessão Online:*\nO link seguro do Google Meet será gerado pelo seu terapeuta e enviado logo antes da sessão. Fique de olho!\n\n`;
+            }
+         } else {
+            msg += `📍 *Local Presencial:*\n${localAddress}\n\n`;
          }
-         msg += `Qualquer dúvida, estamos à disposição! 💙`;
+         msg += `Um abraço e te esperamos! 💙`;
          await sendWhatsAppMessage(reschedulingAppt.patient_id, patientData.phone, msg, 'appointment_rescheduled');
       }
 
       if (therapistData && therapistData.phone) {
          const firstNameT = therapistData.name.split(' ')[0];
-         let msg = `Olá, *${firstNameT}*! 🔄\n\nA sessão do paciente *${patientData?.name || reschedulingAppt.patient_name}* foi reagendada.\n\n📅 *Novo horário:* ${dataFormatada} às ${newTime}\n📍 *Modalidade:* ${reschedulingAppt.type}\n`;
-         if (reschedulingAppt.type === 'Online' && reschedulingAppt.meet_link) {
-            msg += `🔗 *Link do Meet da Sessão:*\n${reschedulingAppt.meet_link}`;
+         let msg = `Olá, *${firstNameT}*! 🔄\n\nA sessão do paciente *${patientData?.name || reschedulingAppt.patient_name}* foi reagendada.\n\n📅 *Novo horário:* ${dataFormatada} às ${newTime}\n📍 *Modalidade:* ${finalType}\n`;
+         if (finalType === 'Online' && reschedulingAppt.meet_link) {
+            msg += `\n🔗 *Link do Meet da Sessão:*\n${reschedulingAppt.meet_link}`;
          }
          await sendWhatsAppMessage(null, therapistData.phone, msg, 'appointment_rescheduled_therapist');
       }
@@ -1385,7 +1422,7 @@ export default function AgendaManager() {
                   </div>
                )}
 
-               {wizardStep === 2 && (
+                {wizardStep === 2 && (
                   <div className="space-y-8 animate-in slide-in-from-right-4 duration-300 h-full flex flex-col">
                      <div className="space-y-4">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data da Sessão</label>
@@ -1948,17 +1985,43 @@ export default function AgendaManager() {
               </div>
               <div className="p-8 space-y-6 overflow-y-auto">
                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nova Data</label>
-                    <input 
-                       type="date" 
-                       value={rescheduleData.date}
-                       min={new Date().toISOString().split('T')[0]}
-                       className="w-full p-5 bg-white border-2 border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl outline-none font-bold text-slate-700 text-lg transition-all" 
-                       onChange={(e) => {
-                          setRescheduleData({...rescheduleData, date: e.target.value, time: ''});
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Modalidade</label>
+                     <div className="grid grid-cols-2 gap-4">
+                        <button 
+                           type="button"
+                           onClick={() => setRescheduleData({...rescheduleData, type: 'Presencial'} as any)}
+                           className={cn(
+                             "py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all",
+                             (rescheduleData as any).type === 'Presencial' ? "bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm" : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                           )}
+                         >
+                           <MapPin className="w-5 h-5" /> Presencial
+                         </button>
+                         <button 
+                           type="button"
+                           onClick={() => setRescheduleData({...rescheduleData, type: 'Online'} as any)}
+                           className={cn(
+                             "py-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all",
+                             (rescheduleData as any).type === 'Online' ? "bg-blue-50 border-blue-500 text-blue-700 shadow-sm" : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                           )}
+                         >
+                           <Video className="w-5 h-5" /> Online
+                         </button>
+                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nova Data</label>
+                     <input 
+                        type="date" 
+                        value={rescheduleData.date}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full p-5 bg-white border-2 border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl outline-none font-bold text-slate-700 text-lg transition-all" 
+                        onChange={(e) => {
+                           setRescheduleData({...rescheduleData, date: e.target.value, time: ''});
                        }}
-                    />
-                 </div>
+                     />
+                  </div>
                  
                  <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">

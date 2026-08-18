@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, User, Calendar, CreditCard, ClipboardList, Activity, 
-  Award, Clock, CheckCircle2, ChevronRight, DollarSign, Loader2, FileText
+  Award, Clock, CheckCircle2, ChevronRight, DollarSign, Loader2, FileText,
+  Upload, Trash2, Paperclip, Image, ExternalLink
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -16,13 +17,19 @@ interface PatientProfileModalProps {
 }
 
 function PatientProfileModalContent({ patient, onClose }: PatientProfileModalProps) {
-  const [activeTab, setActiveTab] = useState<'timeline' | 'records' | 'finance'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'records' | 'documents'>('timeline');
   const [loading, setLoading] = useState(true);
   
   // Data
   const [timeline, setTimeline] = useState<any[]>([]);
   const [packages, setPackages] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
   const [generatingContractId, setGeneratingContractId] = useState<string | null>(null);
+
+  // Upload Form State
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [docTitle, setDocTitle] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   
   // Pagination
   const [timelinePage, setTimelinePage] = useState(1);
@@ -32,13 +39,14 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
     if (!patient?.id) return;
     setLoading(true);
     try {
-      const [appRes, recRes, evoRes, payRes, packRes, conRes] = await Promise.all([
+      const [appRes, recRes, evoRes, payRes, packRes, conRes, docRes] = await Promise.all([
         supabase.from('appointments').select('*, therapists(name)').eq('patient_id', patient.id),
         supabase.from('medical_records').select('*, therapists(name)').eq('patient_id', patient.id),
         supabase.from('patient_evolutions').select('*, therapists(name)').eq('patient_id', patient.id),
         supabase.from('payments').select('*').eq('patient_id', patient.id).order('created_at', { ascending: false }),
         supabase.from('patient_packages').select('*, services(name, price, type)').eq('patient_id', patient.id),
-        supabase.from('patient_contracts').select('*').eq('patient_id', patient.id).order('created_at', { ascending: false })
+        supabase.from('patient_contracts').select('*').eq('patient_id', patient.id).order('created_at', { ascending: false }),
+        supabase.from('patient_documents').select('*').eq('patient_id', patient.id).order('created_at', { ascending: false })
       ]);
 
       const appointments = appRes.data || [];
@@ -47,8 +55,10 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
       const payments = payRes.data || [];
       const pkgs = packRes.data || [];
       const contracts = conRes.data || [];
+      const docs = docRes.data || [];
 
       setPackages(pkgs);
+      setDocuments(docs);
 
       // Normalize events for the timeline
       let events: any[] = [];
@@ -119,6 +129,19 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
           });
       });
 
+      // 5. Patient Documents / Attachments
+      docs.forEach(doc => {
+          const date = new Date(doc.created_at || new Date());
+          events.push({
+              id: `doc-${doc.id}`,
+              type: 'document',
+              date: isNaN(date.getTime()) ? new Date() : date,
+              title: `Anexo no Prontuário: ${doc.title}`,
+              description: `Documento/Imagem anexado. Clique na aba Documentos para abrir ou baixar.`,
+              fileUrl: doc.file_url
+          });
+      });
+
       // Sort by date (newest first)
       events.sort((a, b) => b.date.getTime() - a.date.getTime());
       setTimeline(events);
@@ -127,6 +150,80 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
       console.error('Error fetching profile', err);
     }
     setLoading(false);
+  };
+
+  const handleUploadDocument = async () => {
+    if (!selectedFile || !patient?.id) return;
+
+    // Trava de Segurança: Limite de 5 MB (5 * 1024 * 1024 bytes)
+    if (selectedFile.size > 5 * 1024 * 1024) {
+      alert('⚠️ Arquivo excede o limite de 5MB para preservar o sistema. Por favor selecione uma imagem ou documento menor.');
+      return;
+    }
+
+    setUploadingDoc(true);
+    try {
+      const cleanFileName = selectedFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const filePath = `${patient.id}/${Date.now()}_${cleanFileName}`;
+
+      const { data: uploadData, error: uploadErr } = await supabase
+        .storage
+        .from('patient-documents')
+        .upload(filePath, selectedFile, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadErr) {
+        console.error('Erro no upload para o storage:', uploadErr);
+        throw new Error('Falha ao enviar o arquivo para o armazenamento.');
+      }
+
+      const { data: pubUrlData } = supabase
+        .storage
+        .from('patient-documents')
+        .getPublicUrl(filePath);
+
+      const title = docTitle.trim() || selectedFile.name;
+
+      const { error: dbErr } = await supabase
+        .from('patient_documents')
+        .insert({
+          patient_id: patient.id,
+          title: title,
+          file_url: pubUrlData.publicUrl,
+          file_type: selectedFile.type || 'application/octet-stream',
+          file_path: filePath
+        });
+
+      if (dbErr) throw dbErr;
+
+      alert('Documento/Imagem anexado com sucesso!');
+      setDocTitle('');
+      setSelectedFile(null);
+      fetchPatientData();
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao salvar documento: ' + (err.message || err));
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
+  const handleDeleteDocument = async (doc: any) => {
+    if (!confirm(`Deseja realmente remover o documento "${doc.title}"?`)) return;
+
+    try {
+      if (doc.file_path) {
+        await supabase.storage.from('patient-documents').remove([doc.file_path]);
+      }
+      await supabase.from('patient_documents').delete().eq('id', doc.id);
+      alert('Documento removido com sucesso!');
+      fetchPatientData();
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao excluir documento.');
+    }
   };
 
   useEffect(() => {
@@ -139,6 +236,7 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
           case 'record': return <ClipboardList className="w-5 h-5 text-emerald-600" />;
           case 'finance': return <DollarSign className="w-5 h-5 text-rose-600" />;
           case 'contract': return <FileText className="w-5 h-5 text-amber-600" />;
+          case 'document': return <Paperclip className="w-5 h-5 text-indigo-600" />;
           default: return <Activity className="w-5 h-5 text-slate-600" />;
       }
   };
@@ -149,6 +247,7 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
         case 'record': return "bg-emerald-50 border-emerald-200 text-emerald-900";
         case 'finance': return "bg-rose-50 border-rose-200 text-rose-900";
         case 'contract': return "bg-amber-50 border-amber-200 text-amber-900";
+        case 'document': return "bg-indigo-50 border-indigo-200 text-indigo-900";
         default: return "bg-slate-50 border-slate-200 text-slate-900";
     }
   };
@@ -222,6 +321,7 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
                 {[
                     { id: 'timeline', label: 'Linha do Tempo 360º', icon: Activity },
                     { id: 'records', label: 'Pacotes & Créditos', icon: Award },
+                    { id: 'documents', label: 'Documentos & Anexos', icon: FileText },
                 ].map(t => (
                     <button 
                         key={t.id}
@@ -345,6 +445,121 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
                                     </div>
                                 )}
                             </div>
+                        )}
+
+                        {activeTab === 'documents' && (
+                          <div className="space-y-6">
+                            {/* Form de Upload com limite de 5MB */}
+                            <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-4">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h4 className="text-base font-black text-slate-900">Anexar Novo Documento ou Imagem</h4>
+                                  <p className="text-xs text-slate-500 font-medium">Suba laudos, exames ou fotos de evolução (Máx 5MB para preservar o sistema).</p>
+                                </div>
+                                <span className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[10px] font-black uppercase">
+                                  ⚡ Limite: 5MB
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Título / Descrição do Documento</label>
+                                  <input
+                                    type="text"
+                                    value={docTitle}
+                                    onChange={e => setDocTitle(e.target.value)}
+                                    placeholder="Ex: Laudo Médico / Fotos de Evolução"
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                  />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Selecione o Arquivo (PDF, Imagem, DOC)</label>
+                                  <input
+                                    type="file"
+                                    accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt"
+                                    onChange={e => {
+                                      if (e.target.files && e.target.files[0]) {
+                                        const f = e.target.files[0];
+                                        if (f.size > 5 * 1024 * 1024) {
+                                          alert('⚠️ Arquivo muito grande! O limite máximo é de 5MB para preservar o sistema.');
+                                          e.target.value = '';
+                                          return;
+                                        }
+                                        setSelectedFile(f);
+                                      }
+                                    }}
+                                    className="w-full text-xs text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex justify-end pt-2">
+                                <button
+                                  onClick={handleUploadDocument}
+                                  disabled={uploadingDoc || !selectedFile}
+                                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-indigo-100 transition-all flex items-center gap-2 disabled:opacity-50"
+                                >
+                                  {uploadingDoc ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                                  Anexar ao Prontuário
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Lista de Documentos Anexados */}
+                            <div className="space-y-3">
+                              <h4 className="text-sm font-black text-slate-900 ml-1">Documentos & Imagens do Prontuário ({documents.length})</h4>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {documents.map(doc => {
+                                  const isImg = doc.file_type?.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif)$/i.test(doc.file_url);
+                                  return (
+                                    <div key={doc.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-all flex items-center justify-between gap-4">
+                                      <div className="flex items-center gap-3.5 overflow-hidden">
+                                        <div className={cn(
+                                          "w-11 h-11 rounded-2xl flex items-center justify-center shrink-0",
+                                          isImg ? "bg-emerald-50 text-emerald-600" : "bg-indigo-50 text-indigo-600"
+                                        )}>
+                                          {isImg ? <Image className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                                        </div>
+                                        <div className="truncate">
+                                          <h5 className="font-bold text-sm text-slate-900 truncate" title={doc.title}>{doc.title}</h5>
+                                          <p className="text-[11px] text-slate-400 font-medium">
+                                            Anexado em {new Date(doc.created_at).toLocaleDateString('pt-BR')}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <a
+                                          href={doc.file_url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="p-2.5 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 rounded-xl transition-colors"
+                                          title="Visualizar / Baixar Arquivo"
+                                        >
+                                          <ExternalLink className="w-4 h-4" />
+                                        </a>
+                                        <button
+                                          onClick={() => handleDeleteDocument(doc)}
+                                          className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-colors"
+                                          title="Excluir Documento"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+
+                                {documents.length === 0 && (
+                                  <div className="col-span-full text-center py-12 text-slate-400 font-medium bg-white rounded-[2.5rem] border border-dashed border-slate-200">
+                                    Nenhum documento ou imagem anexado ao prontuário ainda.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
                         )}
                     </>
                 )}

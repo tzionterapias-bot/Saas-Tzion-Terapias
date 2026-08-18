@@ -39,13 +39,13 @@ export default function PatientList() {
 
   // New Data State
   const [newPatient, setNewPatient] = useState({
-    name: '', email: '', phone: '', cpf: '', rg: '', rg_issuer: '', rg_issue_date: '',
+    name: '', email: '', phone: '', cpf: '',
     cep: '', address: '', address_number: '', neighborhood: '', city: '', state: '',
     gender: '', birth_date: '', profession: '', marital_status: '', guardian_name: '', guardian_cpf: ''
   });
   const [showEditModal, setShowEditModal] = useState(false);
   const [editPatient, setEditPatient] = useState({
-    id: '', name: '', email: '', phone: '', cpf: '', rg: '', rg_issuer: '', rg_issue_date: '',
+    id: '', name: '', email: '', phone: '', cpf: '',
     cep: '', address: '', address_number: '', neighborhood: '', city: '', state: '',
     gender: '', birth_date: '', profession: '', marital_status: '', guardian_name: '', guardian_cpf: '', status: 'Ativo'
   });
@@ -94,6 +94,16 @@ export default function PatientList() {
         if (tData?.id) {
           myTId = tData.id;
           setTherapistId(tData.id);
+        } else if (user.email) {
+          const { data: tEmail } = await supabase
+            .from('therapists')
+            .select('id')
+            .eq('email', user.email)
+            .maybeSingle();
+          if (tEmail?.id) {
+            myTId = tEmail.id;
+            setTherapistId(tEmail.id);
+          }
         }
       }
 
@@ -122,20 +132,24 @@ export default function PatientList() {
           return { ...p, last_note: lastNote };
         });
 
-        if (user?.role === 'terapeuta' && myTId) {
-          const { data: appts } = await supabase
-            .from('appointments')
-            .select('patient_id')
-            .eq('therapist_id', myTId);
+        if (user?.role === 'terapeuta') {
+          if (myTId) {
+            const { data: appts } = await supabase
+              .from('appointments')
+              .select('patient_id')
+              .eq('therapist_id', myTId);
 
-          const allowedPatientIds = new Set((appts || []).map((a: any) => a.patient_id).filter(Boolean));
+            const allowedPatientIds = new Set((appts || []).map((a: any) => a.patient_id).filter(Boolean));
 
-          const filtered = enrichedData.filter((p: any) => 
-            allowedPatientIds.has(p.id) || 
-            p.therapist_id === myTId || 
-            p.responsible_therapist_id === myTId
-          );
-          setPatients(filtered);
+            const filtered = enrichedData.filter((p: any) => 
+              allowedPatientIds.has(p.id) || 
+              p.therapist_id === myTId || 
+              p.responsible_therapist_id === myTId
+            );
+            setPatients(filtered);
+          } else {
+            setPatients([]);
+          }
         } else {
           setPatients(enrichedData);
         }
@@ -464,9 +478,6 @@ export default function PatientList() {
         email: newPatient.email,
         phone: newPatient.phone,
         cpf: newPatient.cpf,
-        rg: newPatient.rg?.trim() || null,
-        rg_issuer: newPatient.rg_issuer?.trim() || null,
-        rg_issue_date: cleanDate(newPatient.rg_issue_date),
         profession: newPatient.profession?.trim() || null,
         marital_status: newPatient.marital_status?.trim() || null,
         guardian_name: newPatient.guardian_name?.trim() || null,
@@ -486,9 +497,6 @@ export default function PatientList() {
 
       if (patientError && (patientError.message?.includes('column') || patientError.code === '42703' || (patientError as any).status === 400)) {
         console.warn("Retrying patient insert without optional contract columns:", patientError);
-        delete patientPayload.rg;
-        delete patientPayload.rg_issuer;
-        delete patientPayload.rg_issue_date;
         delete patientPayload.profession;
         delete patientPayload.marital_status;
         delete patientPayload.guardian_name;
@@ -515,7 +523,7 @@ export default function PatientList() {
 
       setShowModal(false);
       setNewPatient({
-        name: '', email: '', phone: '', cpf: '', rg: '', rg_issuer: '', rg_issue_date: '',
+        name: '', email: '', phone: '', cpf: '',
         cep: '', address: '', address_number: '', neighborhood: '', city: '', state: '',
         gender: '', birth_date: '', profession: '', marital_status: '', guardian_name: '', guardian_cpf: ''
       });
@@ -539,9 +547,6 @@ export default function PatientList() {
         email: editPatient.email,
         phone: editPatient.phone,
         cpf: editPatient.cpf,
-        rg: editPatient.rg?.trim() || null,
-        rg_issuer: editPatient.rg_issuer?.trim() || null,
-        rg_issue_date: cleanDate(editPatient.rg_issue_date),
         profession: editPatient.profession?.trim() || null,
         marital_status: editPatient.marital_status?.trim() || null,
         guardian_name: editPatient.guardian_name?.trim() || null,
@@ -584,9 +589,6 @@ export default function PatientList() {
       // Se falhar por colunas de contrato ainda inexistentes no banco, remove-as e tenta atualizar os dados padrão
       if (patientError && (patientError.message?.includes('column') || patientError.code === '42703' || (patientError as any).status === 400)) {
         console.warn("Retrying patient update without contract columns:", patientError);
-        delete updatePayload.rg;
-        delete updatePayload.rg_issuer;
-        delete updatePayload.rg_issue_date;
         delete updatePayload.profession;
         delete updatePayload.marital_status;
         delete updatePayload.guardian_name;
@@ -595,7 +597,6 @@ export default function PatientList() {
         const retryCols = await supabase.from('patients').update(updatePayload).eq('id', editPatient.id);
         if (!retryCols.error) {
           patientError = null;
-          setToastMessage("Dados salvos! (Para salvar RG/Contrato, execute o SQL 'supabase_contract_patient_fields.sql' no Supabase).");
         } else {
           patientError = retryCols.error;
         }
@@ -629,9 +630,6 @@ export default function PatientList() {
         email: editPatient.email,
         phone: editPatient.phone,
         cpf: editPatient.cpf,
-        rg: editPatient.rg,
-        rg_issuer: editPatient.rg_issuer,
-        rg_issue_date: editPatient.rg_issue_date,
         profession: editPatient.profession,
         marital_status: editPatient.marital_status,
         guardian_name: editPatient.guardian_name,
@@ -1311,9 +1309,6 @@ export default function PatientList() {
                       email: selectedPatient.email || '',
                       phone: selectedPatient.phone || '',
                       cpf: selectedPatient.cpf || '',
-                      rg: selectedPatient.rg || '',
-                      rg_issuer: selectedPatient.rg_issuer || '',
-                      rg_issue_date: selectedPatient.rg_issue_date || '',
                       profession: selectedPatient.profession || '',
                       marital_status: selectedPatient.marital_status || '',
                       guardian_name: selectedPatient.guardian_name || '',
@@ -2286,32 +2281,20 @@ export default function PatientList() {
                   <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
                     <Shield className="w-4 h-4 text-indigo-500" /> Documentação & Contrato
                   </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                     <div className="space-y-2 md:col-span-2">
-                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">RG / Identidade</label>
-                       <input value={newPatient.rg} onChange={e => setNewPatient({...newPatient, rg: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="00.000.000-0" />
-                     </div>
-                     <div className="space-y-2 md:col-span-2">
-                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Órgão Expedidor</label>
-                       <input value={newPatient.rg_issuer} onChange={e => setNewPatient({...newPatient, rg_issuer: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="SSP-TO" />
-                     </div>
-                     <div className="space-y-2 md:col-span-2">
-                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Data Expedição RG</label>
-                       <input type="date" value={newPatient.rg_issue_date} onChange={e => setNewPatient({...newPatient, rg_issue_date: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" />
-                     </div>
-                     <div className="space-y-2 md:col-span-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div className="space-y-2">
                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Profissão / Ocupação</label>
                        <input value={newPatient.profession} onChange={e => setNewPatient({...newPatient, profession: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Ex: Professor(a)" />
                      </div>
-                     <div className="space-y-2 md:col-span-3">
+                     <div className="space-y-2">
                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Estado Civil</label>
                        <input value={newPatient.marital_status} onChange={e => setNewPatient({...newPatient, marital_status: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Solteiro(a), Casado(a)..." />
                      </div>
-                     <div className="space-y-2 md:col-span-3">
+                     <div className="space-y-2">
                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nome do Responsável (se menor)</label>
                        <input value={newPatient.guardian_name} onChange={e => setNewPatient({...newPatient, guardian_name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Nome do pai/mãe/responsável" />
                      </div>
-                     <div className="space-y-2 md:col-span-3">
+                     <div className="space-y-2">
                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">CPF do Responsável</label>
                        <input value={newPatient.guardian_cpf} onChange={e => setNewPatient({...newPatient, guardian_cpf: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="000.000.000-00" />
                      </div>
@@ -2434,7 +2417,7 @@ export default function PatientList() {
                     </div>
                     <div className="space-y-2 md:col-span-1">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">UF *</label>
-                      <input required value={editPatient.state} onChange={e => setEditPatient({...editPatient, state: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700 text-center uppercase" placeholder="UF" maxLength={2} />
+                  <input required value={editPatient.state} onChange={e => setEditPatient({...editPatient, state: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700 text-center uppercase" placeholder="UF" maxLength={2} />
                     </div>
                  </div>
               </div>
@@ -2443,32 +2426,20 @@ export default function PatientList() {
                  <h4 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
                    <Shield className="w-4 h-4 text-indigo-500" /> Documentação & Contrato
                  </h4>
-                 <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">RG / Identidade</label>
-                      <input value={editPatient.rg} onChange={e => setEditPatient({...editPatient, rg: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="00.000.000-0" />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Órgão Expedidor</label>
-                      <input value={editPatient.rg_issuer} onChange={e => setEditPatient({...editPatient, rg_issuer: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="SSP-TO" />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Data Expedição RG</label>
-                      <input type="date" value={editPatient.rg_issue_date} onChange={e => setEditPatient({...editPatient, rg_issue_date: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" />
-                    </div>
-                    <div className="space-y-2 md:col-span-3">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Profissão / Ocupação</label>
                       <input value={editPatient.profession} onChange={e => setEditPatient({...editPatient, profession: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Ex: Professor(a)" />
                     </div>
-                    <div className="space-y-2 md:col-span-3">
+                    <div className="space-y-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Estado Civil</label>
                       <input value={editPatient.marital_status} onChange={e => setEditPatient({...editPatient, marital_status: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Solteiro(a), Casado(a)..." />
                     </div>
-                    <div className="space-y-2 md:col-span-3">
+                    <div className="space-y-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Nome do Responsável (se menor)</label>
                       <input value={editPatient.guardian_name} onChange={e => setEditPatient({...editPatient, guardian_name: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="Nome do pai/mãe/responsável" />
                     </div>
-                    <div className="space-y-2 md:col-span-3">
+                    <div className="space-y-2">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">CPF do Responsável</label>
                       <input value={editPatient.guardian_cpf} onChange={e => setEditPatient({...editPatient, guardian_cpf: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700" placeholder="000.000.000-00" />
                     </div>

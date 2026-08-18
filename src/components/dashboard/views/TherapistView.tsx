@@ -25,11 +25,24 @@ export default function TherapistView() {
       const today = now.toISOString().split('T')[0];
 
       // Busca o ID do terapeuta associado ao usuário logado
-      const { data: therapist } = await supabase
-        .from('therapists')
-        .select('id')
-        .eq('user_id', user?.id)
-        .maybeSingle();
+      let therapistId = '';
+      if (user?.id) {
+        const { data: tData } = await supabase
+          .from('therapists')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (tData?.id) {
+          therapistId = tData.id;
+        } else if (user.email) {
+          const { data: tEmail } = await supabase
+            .from('therapists')
+            .select('id')
+            .eq('email', user.email)
+            .maybeSingle();
+          if (tEmail?.id) therapistId = tEmail.id;
+        }
+      }
 
       let monthlyQuery = supabase.from('appointments')
         .select('id, patient_id')
@@ -43,9 +56,14 @@ export default function TherapistView() {
         .order('start_time', { ascending: true })
         .limit(6);
 
-      if (therapist?.id) {
-        monthlyQuery = monthlyQuery.eq('therapist_id', therapist.id);
-        todayQuery = todayQuery.eq('therapist_id', therapist.id);
+      if (user?.role === 'terapeuta') {
+        if (therapistId) {
+          monthlyQuery = monthlyQuery.eq('therapist_id', therapistId);
+          todayQuery = todayQuery.eq('therapist_id', therapistId);
+        } else {
+          monthlyQuery = monthlyQuery.eq('therapist_id', '00000000-0000-0000-0000-000000000000');
+          todayQuery = todayQuery.eq('therapist_id', '00000000-0000-0000-0000-000000000000');
+        }
       }
 
       // Execute queries in parallel for high performance

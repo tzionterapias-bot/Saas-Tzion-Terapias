@@ -97,14 +97,43 @@ export default function MobileDashboard() {
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
+      let myTherapistId = '';
+      if (user?.id) {
+        const { data: tData } = await supabase
+          .from('therapists')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (tData?.id) {
+          myTherapistId = tData.id;
+        } else if (user.email) {
+          const { data: tEmail } = await supabase
+            .from('therapists')
+            .select('id')
+            .eq('email', user.email)
+            .maybeSingle();
+          if (tEmail?.id) myTherapistId = tEmail.id;
+        }
+      }
+
       // Sessions today
-      const { data: sessions } = await supabase
+      let sessionQuery = supabase
         .from('appointments')
         .select('*, patients(name)')
         .gte('start_time', `${todayBRT}T00:00:00`)
         .lte('start_time', `${todayBRT}T23:59:59`)
         .order('start_time', { ascending: true })
         .limit(8);
+
+      if (user?.role === 'terapeuta') {
+        if (myTherapistId) {
+          sessionQuery = sessionQuery.eq('therapist_id', myTherapistId);
+        } else {
+          sessionQuery = sessionQuery.eq('therapist_id', '00000000-0000-0000-0000-000000000000');
+        }
+      }
+
+      const { data: sessions } = await sessionQuery;
 
       setTodaySessions(sessions || []);
 

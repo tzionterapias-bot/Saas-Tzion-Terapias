@@ -50,13 +50,22 @@ export default function SessionLogger() {
       const today = new Date().toISOString().split('T')[0];
       
       let myTherapistId = '';
-      if (user?.role === 'terapeuta' && user?.id) {
+      if (user?.id) {
         const { data: tData } = await supabase
           .from('therapists')
           .select('id')
           .eq('user_id', user.id)
           .maybeSingle();
-        if (tData?.id) myTherapistId = tData.id;
+        if (tData?.id) {
+          myTherapistId = tData.id;
+        } else if (user.email) {
+          const { data: tEmail } = await supabase
+            .from('therapists')
+            .select('id')
+            .eq('email', user.email)
+            .maybeSingle();
+          if (tEmail?.id) myTherapistId = tEmail.id;
+        }
       }
 
       let apptQuery = supabase
@@ -66,8 +75,12 @@ export default function SessionLogger() {
         .lte('start_time', `${today}T23:59:59`)
         .order('start_time', { ascending: true });
 
-      if (user?.role === 'terapeuta' && myTherapistId) {
-        apptQuery = apptQuery.eq('therapist_id', myTherapistId);
+      if (user?.role === 'terapeuta') {
+        if (myTherapistId) {
+          apptQuery = apptQuery.eq('therapist_id', myTherapistId);
+        } else {
+          apptQuery = apptQuery.eq('therapist_id', '00000000-0000-0000-0000-000000000000');
+        }
       }
 
       const [apptsRes, patientsRes, therapistsRes] = await Promise.all([
