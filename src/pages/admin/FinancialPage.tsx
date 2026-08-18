@@ -497,14 +497,31 @@ export default function FinancialPage() {
   );
 
   const filteredPatientsForSell = useMemo(() => {
-    if (!patientSearchSell.trim()) return patients;
-    const term = patientSearchSell.toLowerCase().trim();
-    const cleanTerm = term.replace(/\D/g, '');
+    if (!patientSearchSell || !patientSearchSell.trim()) return patients;
+
+    const normalize = (str: string) =>
+      (str || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
+    const searchTerm = normalize(patientSearchSell);
+    const searchTokens = searchTerm.split(/\s+/).filter(Boolean);
+    const searchDigits = patientSearchSell.replace(/\D/g, '');
+
     return patients.filter(p => {
-      const matchName = (p.name || '').toLowerCase().includes(term);
-      const pCpfClean = (p.cpf || '').replace(/\D/g, '');
-      const matchCpf = (p.cpf || '').toLowerCase().includes(term) || (cleanTerm.length > 0 && pCpfClean.includes(cleanTerm));
-      return matchName || matchCpf;
+      const patientName = normalize(p.name || '');
+      const patientCpf = (p.cpf || '').toLowerCase();
+      const patientCpfDigits = (p.cpf || '').replace(/\D/g, '');
+      const patientPhoneDigits = (p.phone || '').replace(/\D/g, '');
+
+      const matchesName = searchTokens.every(token => patientName.includes(token));
+      const matchesCpf = patientCpf.includes(searchTerm) || 
+        (searchDigits.length > 0 && patientCpfDigits.includes(searchDigits));
+      const matchesPhone = searchDigits.length > 0 && patientPhoneDigits.includes(searchDigits);
+
+      return matchesName || matchesCpf || matchesPhone;
     });
   }, [patients, patientSearchSell]);
 

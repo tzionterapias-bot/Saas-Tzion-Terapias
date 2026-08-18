@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   CreditCard, DollarSign, CheckCircle2, AlertCircle, Loader2, X, Save, 
   Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus, Search, ChevronDown, Check
@@ -86,6 +86,41 @@ export default function QuickSellPage() {
 
   const [catalogPrice, setCatalogPrice] = useState<string>('');
   const [catalogSessions, setCatalogSessions] = useState<string>('');
+
+  const filteredPatients = useMemo(() => {
+    if (!patientSearch || !patientSearch.trim()) return patients;
+    
+    // Remove acentos e normaliza para minúsculas
+    const normalize = (str: string) =>
+      (str || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
+    const searchTerm = normalize(patientSearch);
+    const searchTokens = searchTerm.split(/\s+/).filter(Boolean);
+    const searchDigits = patientSearch.replace(/\D/g, '');
+
+    return patients.filter(p => {
+      const patientName = normalize(p.name || '');
+      const patientCpf = (p.cpf || '').toLowerCase();
+      const patientCpfDigits = (p.cpf || '').replace(/\D/g, '');
+      const patientPhoneDigits = (p.phone || '').replace(/\D/g, '');
+
+      // 1. Busca por nome (todos os termos digitados devem constar no nome)
+      const matchesName = searchTokens.every(token => patientName.includes(token));
+
+      // 2. Busca por CPF
+      const matchesCpf = patientCpf.includes(searchTerm) || 
+        (searchDigits.length > 0 && patientCpfDigits.includes(searchDigits));
+
+      // 3. Busca por telefone
+      const matchesPhone = searchDigits.length > 0 && patientPhoneDigits.includes(searchDigits);
+
+      return matchesName || matchesCpf || matchesPhone;
+    });
+  }, [patients, patientSearch]);
 
   // Modal Novo Lançamento (Identico ao Financeiro)
   const [showEntryModal, setShowEntryModal] = useState(false);
@@ -224,61 +259,75 @@ export default function QuickSellPage() {
     return () => clearInterval(interval);
   }, [createdPixQrCode?.paymentId, createdAsaasPayment?.paymentId]);
 
-  const selectedSvc = services.find(s => s.id === sellData.service_id);
-
-  const handleAddToCart = () => {
-    if (isCustomEntry) {
-      if (!customTitle.trim()) {
-        showToast('Digite a descrição do lançamento avulso.', 'error');
-        return;
-      }
-      if (!customPrice || parseFloat(customPrice) <= 0) {
-        showToast('Digite o valor do lançamento avulso.', 'error');
-        return;
-      }
-    } else {
-      if (!sellData.service_id) {
-        showToast('Selecione o serviço do catálogo.', 'error');
-        return;
-      }
-    }
-
-    const service = !isCustomEntry ? services.find(s => s.id === sellData.service_id) : null;
-
-    const price = isCustomEntry 
-      ? (parseCurrency(customPrice) || 0) 
-      : (catalogPrice !== '' ? parseCurrency(catalogPrice) : (service?.price || 0)) || 0;
-
-    const description = isCustomEntry ? customTitle.trim() : (service?.name || 'Serviço');
-
-    let totalSessions = isCustomEntry 
-      ? (parseInt(customSessions) || 1) 
-      : (catalogSessions !== '' ? parseInt(catalogSessions) : (service?.sessions_count || 1)) || 1;
+  const handleSelectCatalogService = (serviceId: string) => {
+    if (!serviceId) return;
+    const svc = services.find(s => s.id === serviceId);
+    if (!svc) return;
 
     const newItem: CartItem = {
       id: Math.random().toString(36).substring(7),
-      isCustomEntry,
-      customTitle,
-      customPrice,
-      customSessions,
-      service_id: sellData.service_id,
-      catalogPrice,
-      catalogSessions,
-      service_name: description,
-      service_type: service?.type,
-      priceNum: price,
-      sessionsNum: totalSessions
+      isCustomEntry: false,
+      customTitle: '',
+      customPrice: '',
+      customSessions: '',
+      service_id: svc.id,
+      catalogPrice: formatCurrencyInput(svc.price.toFixed(2)),
+      catalogSessions: String(svc.sessions_count || 1),
+      service_name: svc.name,
+      service_type: svc.type,
+      priceNum: svc.price || 0,
+      sessionsNum: svc.sessions_count || 1
     };
 
-    setCartItems([...cartItems, newItem]);
-    
-    setSellData({ ...sellData, service_id: '' });
+    setCartItems(prev => [...prev, newItem]);
+    setSellData(prev => ({ ...prev, service_id: '' }));
+    showToast(`✅ "${svc.name}" adicionado à venda!`);
+  };
+
+  const handleAddCustomEntry = () => {
+    if (!customTitle.trim()) {
+      showToast('Digite a descrição do lançamento avulso.', 'error');
+      return;
+    }
+    const price = parseCurrency(customPrice) || 0;
+    if (price <= 0) {
+      showToast('Digite um valor válido para o lançamento.', 'error');
+      return;
+    }
+
+    const newItem: CartItem = {
+      id: Math.random().toString(36).substring(7),
+      isCustomEntry: true,
+      customTitle: customTitle.trim(),
+      customPrice,
+      customSessions,
+      service_id: null,
+      catalogPrice: '',
+      catalogSessions: '',
+      service_name: customTitle.trim(),
+      priceNum: price,
+      sessionsNum: parseInt(customSessions) || 1
+    };
+
+    setCartItems(prev => [...prev, newItem]);
     setCustomTitle('');
     setCustomPrice('');
     setCustomSessions('1');
-    setCatalogPrice('');
-    setCatalogSessions('');
-    showToast('Item adicionado à venda!');
+    showToast('✅ Item avulso adicionado!');
+  };
+
+  const updateCartItemPrice = (id: string, formattedVal: string) => {
+    const num = parseCurrency(formattedVal) || 0;
+    setCartItems(prev => prev.map(item => 
+      item.id === id ? { ...item, catalogPrice: formattedVal, priceNum: num } : item
+    ));
+  };
+
+  const updateCartItemSessions = (id: string, sessionsStr: string) => {
+    const num = parseInt(sessionsStr) || 1;
+    setCartItems(prev => prev.map(item => 
+      item.id === id ? { ...item, catalogSessions: sessionsStr, sessionsNum: num } : item
+    ));
   };
 
   const handleFinalizeSale = async () => {
@@ -287,9 +336,55 @@ export default function QuickSellPage() {
       return;
     }
 
-    if (cartItems.length === 0) {
-      showToast('Adicione pelo menos um item à venda.', 'error');
-      return;
+    // Se o usuário não clicou em "+ Adicionar", mas preencheu o formulário de serviço/avulso, inclui automaticamente
+    let effectiveItems = [...cartItems];
+    if (effectiveItems.length === 0) {
+      if (isCustomEntry) {
+        if (!customTitle.trim()) {
+          showToast('Preencha a descrição do lançamento ou adicione um item à venda.', 'error');
+          return;
+        }
+        const price = parseCurrency(customPrice) || 0;
+        if (price <= 0) {
+          showToast('Informe um valor válido para o lançamento.', 'error');
+          return;
+        }
+        effectiveItems.push({
+          id: Math.random().toString(36).substring(7),
+          isCustomEntry: true,
+          customTitle,
+          customPrice,
+          customSessions,
+          service_id: null,
+          catalogPrice: '',
+          catalogSessions: '',
+          service_name: customTitle.trim(),
+          priceNum: price,
+          sessionsNum: parseInt(customSessions) || 1
+        });
+      } else {
+        if (!sellData.service_id) {
+          showToast('Selecione um serviço do catálogo ou adicione um item à venda.', 'error');
+          return;
+        }
+        const service = services.find(s => s.id === sellData.service_id);
+        const price = (catalogPrice !== '' ? parseCurrency(catalogPrice) : (service?.price || 0)) || 0;
+        const totalSessions = (catalogSessions !== '' ? parseInt(catalogSessions) : (service?.sessions_count || 1)) || 1;
+        effectiveItems.push({
+          id: Math.random().toString(36).substring(7),
+          isCustomEntry: false,
+          customTitle: '',
+          customPrice: '',
+          customSessions: '',
+          service_id: sellData.service_id,
+          catalogPrice,
+          catalogSessions,
+          service_name: service?.name || 'Serviço',
+          service_type: service?.type,
+          priceNum: price,
+          sessionsNum: totalSessions
+        });
+      }
     }
 
     setSaving(true);
@@ -299,8 +394,8 @@ export default function QuickSellPage() {
 
     if (!patient) { setSaving(false); return; }
 
-    const totalPrice = cartItems.reduce((sum, item) => sum + item.priceNum, 0);
-    const itemNames = cartItems.map(i => i.service_name).join(' + ');
+    const totalPrice = effectiveItems.reduce((sum, item) => sum + item.priceNum, 0);
+    const itemNames = effectiveItems.map(i => i.service_name).join(' + ');
     const description = `${itemNames} — ${patient.name}${therapist ? ` (${therapist.name})` : ''}`;
 
     let asaasId: string | null = null;
@@ -308,6 +403,9 @@ export default function QuickSellPage() {
 
     const isAsaas = sellData.payment_method.startsWith('asaas_');
     const isAsaasPix = sellData.payment_method === 'asaas_pix';
+
+    // Pagamentos manuais / maquininha física já entram como pagos imediatamente
+    const paymentStatus = isAsaas ? 'pending' : 'paid';
 
     if (isAsaas) {
       try {
@@ -346,7 +444,7 @@ export default function QuickSellPage() {
     const { data: payData, error: payErr } = await supabase.from('payments').insert([{
       amount: totalPrice,
       type: 'income',
-      status: 'pending',
+      status: paymentStatus,
       description,
       category: 'Serviço',
       payment_method: isAsaas ? 'asaas' : sellData.payment_method,
@@ -367,13 +465,13 @@ export default function QuickSellPage() {
       return; 
     }
 
-    for (const item of cartItems) {
+    for (const item of effectiveItems) {
       const { data: pkgData, error: pkgErr } = await supabase.from('patient_packages').insert([{
         patient_id: sellData.patient_id,
         service_id: !item.isCustomEntry ? item.service_id : null,
         total_sessions: item.sessionsNum,
         used_sessions: 0,
-        status: 'pending',
+        status: isAsaas ? 'pending' : 'active',
       }]).select().single();
 
       if (pkgErr) {
@@ -428,11 +526,17 @@ export default function QuickSellPage() {
         showToast('Cobrança gerada com sucesso! Copie o link abaixo.');
       }
     } else {
-      showToast('Venda registrada com sucesso!');
+      showToast('✅ Venda registrada com sucesso!');
       setSellData(emptySell);
       setCartItems([]);
+      setCustomTitle('');
+      setCustomPrice('');
+      setCustomSessions('1');
+      setCatalogPrice('');
+      setCatalogSessions('');
     }
 
+    fetchData();
     setSaving(false);
   };
 
@@ -518,16 +622,10 @@ export default function QuickSellPage() {
                             />
                           </div>
                           <div className="max-h-60 overflow-y-auto p-2 space-y-1">
-                            {patients.filter(p => 
-                              p.name?.toLowerCase().includes(patientSearch.toLowerCase()) || 
-                              (p.cpf && p.cpf.replace(/\D/g, '').includes(patientSearch.replace(/\D/g, '')))
-                            ).length === 0 ? (
+                            {filteredPatients.length === 0 ? (
                               <div className="p-4 text-center text-sm text-slate-400 font-medium">Nenhum paciente encontrado.</div>
                             ) : (
-                              patients.filter(p => 
-                                p.name?.toLowerCase().includes(patientSearch.toLowerCase()) || 
-                                (p.cpf && p.cpf.replace(/\D/g, '').includes(patientSearch.replace(/\D/g, '')))
-                              ).map(p => (
+                              filteredPatients.map(p => (
                                 <div 
                                   key={p.id}
                                   onClick={() => {
@@ -624,95 +722,116 @@ export default function QuickSellPage() {
                         />
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddCustomEntry}
+                      className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-md shadow-indigo-100 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" /> Adicionar Item Avulso à Venda
+                    </button>
                   </div>
                 ) : (
-                  /* Serviço do Catálogo */
-                  <div className="space-y-4">
+                  /* Serviço do Catálogo - Adiciona automaticamente ao selecionar */
+                  <div className="space-y-3">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Serviço ou Pacote *</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                        Selecione o Serviço ou Pacote (Adiciona Automaticamente) *
+                      </label>
                       <select 
-                        value={sellData.service_id} 
-                        onChange={e => {
-                          const svcId = e.target.value;
-                          setSellData({ ...sellData, service_id: svcId });
-                          const svc = services.find(s => s.id === svcId);
-                          if (svc) {
-                            setCatalogPrice(formatCurrencyInput(svc.price.toFixed(2)));
-                            setCatalogSessions(String(svc.sessions_count || 1));
-                          } else {
-                            setCatalogPrice('');
-                            setCatalogSessions('');
-                          }
-                        }}
+                        value="" 
+                        onChange={e => handleSelectCatalogService(e.target.value)}
                         className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg outline-none font-bold text-slate-700 appearance-none focus:bg-white focus:border-indigo-400 transition-all cursor-pointer text-sm"
                       >
-                        <option value="">Selecione o serviço...</option>
-                        {services.map(s => <option key={s.id} value={s.id}>{s.name} — R$ {fmt(s.price)} ({s.type === 'pacote' ? `${s.sessions_count} sessões` : 'Avulso'})</option>)}
+                        <option value="">+ Clique aqui para escolher um serviço...</option>
+                        {services.map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} — R$ {fmt(s.price)} ({s.type === 'pacote' ? `${s.sessions_count} sessões` : 'Avulso'})
+                          </option>
+                        ))}
                       </select>
                     </div>
-
-                    {sellData.service_id && (
-                      <div className="grid grid-cols-2 gap-4 p-5 bg-indigo-50/50 border border-indigo-100 rounded-lg animate-in fade-in">
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Personalizar Valor Total (R$)</label>
-                          <input
-                            type="text"
-                            value={catalogPrice}
-                            onChange={e => setCatalogPrice(formatCurrencyInput(e.target.value))}
-                            className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none font-black text-indigo-700 text-sm shadow-sm focus:ring-2 focus:ring-indigo-500"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Qtd. Sessões / Créditos</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={catalogSessions}
-                            onChange={e => setCatalogSessions(e.target.value)}
-                            className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none font-bold text-indigo-900 text-sm shadow-sm focus:ring-2 focus:ring-indigo-500"
-                          />
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
 
-            {/* Botão Adicionar ao Carrinho */}
-            <button
-              onClick={handleAddToCart}
-              className="w-full py-4 bg-slate-800 text-white rounded-lg font-black shadow-lg shadow-slate-200 hover:bg-slate-900 transition-all flex items-center justify-center gap-2"
-            >
-              <Plus className="w-5 h-5" /> Adicionar à Venda
-            </button>
+                {/* Lista de Itens na Venda com edição direta de valores e remoção */}
+                <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
+                      🛒 Itens na Venda ({cartItems.length})
+                    </h4>
+                    {cartItems.length > 0 && (
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">
+                        Valores e sessões podem ser ajustados abaixo
+                      </span>
+                    )}
+                  </div>
 
-            {/* Carrinho UI */}
-            {cartItems.length > 0 && (
-              <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-4 animate-in fade-in">
-                <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-                  🛒 Itens na Venda ({cartItems.length})
-                </h4>
-                <div className="space-y-2">
-                  {cartItems.map(item => (
-                    <div key={item.id} className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
-                      <div>
-                        <p className="font-bold text-slate-800 text-sm">{item.service_name}</p>
-                        <p className="text-xs text-slate-500 font-medium">{item.sessionsNum} {item.sessionsNum === 1 ? 'Sessão/Unid' : 'Sessões/Unids'}</p>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className="font-black text-indigo-600">R$ {fmt(item.priceNum)}</span>
-                        <button onClick={() => setCartItems(cartItems.filter(i => i.id !== item.id))} className="text-rose-500 hover:text-rose-700 p-1 bg-rose-50 rounded-lg hover:bg-rose-100 transition-colors">
-                          <X className="w-4 h-4" />
-                        </button>
+                  {cartItems.length === 0 ? (
+                    <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-white/60">
+                      <p className="text-xs font-bold text-slate-400">Nenhum serviço selecionado ainda.</p>
+                      <p className="text-[11px] text-slate-400 mt-1">Escolha um serviço no catálogo acima para incluir na venda automaticamente.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {cartItems.map((item, idx) => (
+                        <div key={item.id} className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 font-black text-xs flex items-center justify-center">
+                                  {idx + 1}
+                                </span>
+                                <p className="font-black text-slate-800 text-sm">{item.service_name}</p>
+                              </div>
+                              <p className="text-[11px] text-slate-400 font-medium ml-7 mt-0.5">
+                                {item.isCustomEntry ? 'Lançamento Avulso' : 'Catálogo'} • {item.sessionsNum} {item.sessionsNum === 1 ? 'Sessão/Unidade' : 'Sessões/Unidades'}
+                              </p>
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => setCartItems(cartItems.filter(i => i.id !== item.id))} 
+                              className="text-rose-500 hover:text-rose-700 p-1.5 bg-rose-50 hover:bg-rose-100 rounded-lg transition-colors cursor-pointer"
+                              title="Remover item da venda"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Ajustes rápidos inline do item */}
+                          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                            <div>
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Valor (R$)</label>
+                              <input
+                                type="text"
+                                value={item.catalogPrice || formatCurrencyInput(item.priceNum.toFixed(2))}
+                                onChange={e => updateCartItemPrice(item.id, formatCurrencyInput(e.target.value))}
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-black text-indigo-600 text-sm outline-none focus:bg-white focus:border-indigo-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Sessões / Créditos</label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.catalogSessions || item.sessionsNum}
+                                onChange={e => updateCartItemSessions(item.id, e.target.value)}
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-700 text-sm outline-none focus:bg-white focus:border-indigo-400"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+
+                      <div className="flex justify-between items-center pt-3 border-t border-slate-200/80 px-1">
+                        <span className="font-black text-slate-600 text-xs uppercase tracking-wider">Total a Pagar</span>
+                        <span className="font-black text-indigo-950 text-xl">
+                          R$ {fmt(cartItems.reduce((acc, curr) => acc + curr.priceNum, 0))}
+                        </span>
                       </div>
                     </div>
-                  ))}
+                  )}
                 </div>
-                <div className="flex justify-between items-center pt-4 border-t border-slate-200/60">
-                  <span className="font-black text-slate-600 text-sm">TOTAL</span>
-                  <span className="font-black text-slate-900 text-xl">R$ {fmt(cartItems.reduce((acc, curr) => acc + curr.priceNum, 0))}</span>
-                </div>
-              </div>
-            )}
 
             {/* Forma de Pagamento e Terapeuta */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
