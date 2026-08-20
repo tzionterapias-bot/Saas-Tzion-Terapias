@@ -15,6 +15,7 @@ import { useAuth } from '@/src/contexts/AuthContext';
 import { useActiveSession } from '@/src/contexts/ActiveSessionContext';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
 import { getSystemBaseUrl } from '@/src/utils/systemUrl';
+import { playCheckinChime } from '@/src/lib/soundAlerts';
 
 export default function TherapistPage() {
   const navigate = useNavigate();
@@ -287,7 +288,12 @@ export default function TherapistPage() {
           table: 'appointments', 
           filter: `therapist_id=eq.${defaultTherapistId}` 
         },
-        () => {
+        (payload: any) => {
+          if (payload.eventType === 'UPDATE' && payload.new?.status === 'arrived' && payload.old?.status !== 'arrived') {
+            playCheckinChime();
+            setToastMessage('🔔 Paciente acabou de fazer o check-in na recepção e está te aguardando!');
+            setTimeout(() => setToastMessage(null), 5000);
+          }
           fetchData(false);
         }
       )

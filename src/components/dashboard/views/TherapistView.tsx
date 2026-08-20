@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
+import { playCheckinChime } from '@/src/lib/soundAlerts';
 
 export default function TherapistView() {
   const { user } = useAuth();
@@ -104,6 +105,29 @@ export default function TherapistView() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchStats();
+
+    const channel = supabase
+      .channel('therapist_view_appointments')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments' },
+        (payload: any) => {
+          if (payload.eventType === 'UPDATE' && payload.new?.status === 'arrived' && payload.old?.status !== 'arrived') {
+            playCheckinChime();
+            showToast('🔔 Paciente acabou de fazer o check-in na recepção e está te aguardando!');
+          }
+          fetchStats();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
 
   const handleCancelAppointment = async () => {
     if (!cancelModalAppt) return;
@@ -285,9 +309,14 @@ export default function TherapistView() {
                       "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase",
                       session.status === 'completed' ? "bg-emerald-50 text-emerald-600" :
                       session.status === 'cancelled' ? "bg-rose-50 text-rose-600" :
-                      "bg-amber-50 text-amber-700"
+                      session.status === 'arrived' ? "bg-amber-100 text-amber-800 animate-pulse font-black" :
+                      session.status === 'calling' ? "bg-emerald-100 text-emerald-700 font-bold" :
+                      "bg-slate-100 text-slate-700"
                     )}>
-                      {session.status === 'completed' ? 'Concluída' : session.status === 'cancelled' ? 'Cancelada' : 'Agendada'}
+                      {session.status === 'completed' ? 'Concluída' : 
+                       session.status === 'cancelled' ? 'Cancelada' : 
+                       session.status === 'arrived' ? '🔔 Chegou na Recepção' : 
+                       session.status === 'calling' ? 'Sala Liberada' : 'Agendada'}
                     </span>
                   </p>
                 </div>

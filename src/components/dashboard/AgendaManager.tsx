@@ -4,6 +4,7 @@ import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
+import { playRoomReleasedChime, playCheckinChime } from '@/src/lib/soundAlerts';
 
 interface Appointment {
   id: string;
@@ -651,7 +652,12 @@ export default function AgendaManager() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'appointments' },
-        () => {
+        (payload: any) => {
+          if (payload.eventType === 'UPDATE' && payload.new?.status === 'calling' && payload.old?.status !== 'calling') {
+            playRoomReleasedChime();
+            setToastMessage('🚪 Sala Liberada! O terapeuta chamou o próximo paciente.');
+            setTimeout(() => setToastMessage(null), 5000);
+          }
           fetchData(false);
         }
       )
@@ -1019,6 +1025,7 @@ export default function AgendaManager() {
              console.error('Erro ao enviar notificação de check-in para o terapeuta:', notifyError);
          }
          
+         playCheckinChime();
          setToastMessage('Check-in realizado! Terapeuta notificado.');
          setTimeout(() => setToastMessage(null), 3500);
          fetchData(); 

@@ -7,6 +7,7 @@ import {
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
+import { playRoomReleasedChime, playCheckinChime } from '@/src/lib/soundAlerts';
 
 export default function ReceptionView() {
   const { user } = useAuth();
@@ -79,6 +80,25 @@ export default function ReceptionView() {
 
   useEffect(() => {
     fetchStats();
+
+    const channel = supabase
+      .channel('reception_view_appointments')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'appointments' },
+        (payload: any) => {
+          if (payload.eventType === 'UPDATE' && payload.new?.status === 'calling' && payload.old?.status !== 'calling') {
+            playRoomReleasedChime();
+            showToast('🚪 Sala Liberada! O terapeuta chamou o próximo paciente.');
+          }
+          fetchStats();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Calcula horários disponíveis no reagendamento
@@ -147,6 +167,7 @@ export default function ReceptionView() {
             console.error('Erro ao enviar notificação de check-in:', notifyError);
         }
         
+        playCheckinChime();
         showToast('Check-in realizado com sucesso! Terapeuta notificado.');
         fetchStats(); 
     } catch(e: any) {
@@ -496,7 +517,11 @@ export default function ReceptionView() {
 
                   <div className="flex items-center gap-2 justify-end">
                     {/* Checkin / Status */}
-                    {session.status === 'arrived' ? (
+                    {session.status === 'calling' ? (
+                      <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl font-bold text-xs flex items-center gap-1.5 animate-pulse shadow-sm" title="Sala Liberada pelo Terapeuta!">
+                        <CheckCircle2 className="w-4 h-4" /> Sala Liberada!
+                      </div>
+                    ) : session.status === 'arrived' ? (
                       <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl font-bold text-xs flex items-center gap-1">
                         <Clock className="w-4 h-4" /> Chegou
                       </div>
