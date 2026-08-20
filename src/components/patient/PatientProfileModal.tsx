@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, User, Calendar, CreditCard, ClipboardList, Activity, 
   Award, Clock, CheckCircle2, ChevronRight, DollarSign, Loader2, FileText,
-  Upload, Trash2, Paperclip, Image, ExternalLink
+  Upload, Trash2, Paperclip, Image, ExternalLink, StickyNote, Send, Sparkles
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -10,6 +10,7 @@ import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
 import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 import { fillContractTemplate, DEFAULT_CONTRACT_TEMPLATE } from '@/src/lib/contract';
 import ErrorBoundary from '@/src/components/ErrorBoundary';
+import { useAuth } from '@/src/contexts/AuthContext';
 
 interface PatientProfileModalProps {
   patient: any;
@@ -17,14 +18,21 @@ interface PatientProfileModalProps {
 }
 
 function PatientProfileModalContent({ patient, onClose }: PatientProfileModalProps) {
-  const [activeTab, setActiveTab] = useState<'timeline' | 'records' | 'documents'>('timeline');
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'timeline' | 'records' | 'documents' | 'notes'>('timeline');
   const [loading, setLoading] = useState(true);
   
   // Data
   const [timeline, setTimeline] = useState<any[]>([]);
   const [packages, setPackages] = useState<any[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
+  const [patientNotes, setPatientNotes] = useState<any[]>([]);
   const [generatingContractId, setGeneratingContractId] = useState<string | null>(null);
+
+  // New Note State
+  const [newNoteText, setNewNoteText] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('Geral');
+  const [savingNote, setSavingNote] = useState(false);
 
   // Upload Form State
   const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -59,6 +67,7 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
 
       setPackages(pkgs);
       setDocuments(docs);
+      setPatientNotes(evolutions);
 
       // Normalize events for the timeline
       let events: any[] = [];
@@ -230,6 +239,54 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
     fetchPatientData();
   }, [patient]);
 
+  const handleAddPatientNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newNoteText.trim() || !patient?.id) return;
+    try {
+      setSavingNote(true);
+      const authorRoleLabel = user?.role === 'terapeuta' 
+        ? 'Terapeuta' 
+        : user?.role === 'admin' 
+          ? 'Administração' 
+          : 'Recepção / Secretária';
+      
+      const authorName = user?.name || user?.email?.split('@')[0] || authorRoleLabel;
+      const formattedNote = `[${selectedCategory}] ${newNoteText.trim()}\n— Por ${authorName} (${authorRoleLabel})`;
+
+      const { error } = await supabase
+        .from('patient_evolutions')
+        .insert([{
+          patient_id: patient.id,
+          therapist_id: user?.role === 'terapeuta' ? (user as any)?.therapist_id || null : null,
+          type: user?.role === 'terapeuta' ? 'Anotação do Terapeuta' : 'Anotação da Recepção',
+          notes: formattedNote
+        }]);
+
+      if (error) throw error;
+      setNewNoteText('');
+      await fetchPatientData();
+    } catch (err: any) {
+      alert('Erro ao salvar anotação: ' + err.message);
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleDeletePatientNote = async (noteId: string) => {
+    if (!confirm('Deseja realmente remover esta anotação?')) return;
+    try {
+      const { error } = await supabase
+        .from('patient_evolutions')
+        .delete()
+        .eq('id', noteId);
+
+      if (error) throw error;
+      await fetchPatientData();
+    } catch (err: any) {
+      alert('Erro ao excluir anotação: ' + err.message);
+    }
+  };
+
   const renderIcon = (type: string) => {
       switch(type) {
           case 'appointment': return <Calendar className="w-5 h-5 text-indigo-600" />;
@@ -317,9 +374,10 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
             </div>
 
             {/* Content Tabs */}
-            <div className="flex border-b border-slate-100 px-8">
+            <div className="flex border-b border-slate-100 px-8 overflow-x-auto no-scrollbar">
                 {[
                     { id: 'timeline', label: 'Linha do Tempo 360º', icon: Activity },
+                    { id: 'notes', label: 'Anotações da Recepção', icon: StickyNote },
                     { id: 'records', label: 'Pacotes & Créditos', icon: Award },
                     { id: 'documents', label: 'Documentos & Anexos', icon: FileText },
                 ].map(t => (
@@ -558,6 +616,117 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
                                   </div>
                                 )}
                               </div>
+                            </div>
+                          </div>
+                        {activeTab === 'notes' && (
+                          <div className="space-y-6">
+                            {/* Form Nova Anotação */}
+                            <form onSubmit={handleAddPatientNote} className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm space-y-4">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Nova Anotação / Observação
+                                </h4>
+                                <span className="text-[10px] text-slate-400 font-bold">Visível para toda a equipe</span>
+                              </div>
+
+                              {/* Categorias */}
+                              <div className="flex flex-wrap gap-1.5">
+                                {[
+                                  { id: 'Geral', label: '📌 Geral' },
+                                  { id: 'Atendimento', label: '💙 Atendimento' },
+                                  { id: 'Horários / Atraso', label: '⏰ Horários / Atraso' },
+                                  { id: 'Financeiro', label: '💳 Financeiro / Recibo' },
+                                  { id: 'Preferência', label: '⭐ Preferência' },
+                                  { id: 'Importante', label: '⚠️ Importante' },
+                                ].map(cat => (
+                                  <button
+                                    key={cat.id}
+                                    type="button"
+                                    onClick={() => setSelectedCategory(cat.id)}
+                                    className={cn(
+                                      "px-3 py-1 rounded-xl text-xs font-bold transition-all border",
+                                      selectedCategory === cat.id
+                                        ? "bg-amber-100 text-amber-900 border-amber-300 font-black shadow-sm"
+                                        : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
+                                    )}
+                                  >
+                                    {cat.label}
+                                  </button>
+                                ))}
+                              </div>
+
+                              <textarea
+                                value={newNoteText}
+                                onChange={(e) => setNewNoteText(e.target.value)}
+                                placeholder="Escreva a anotação da secretaria, observação de atendimento, recado ou preferência..."
+                                rows={3}
+                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-amber-500 font-medium text-sm text-slate-800 placeholder-slate-400 resize-none transition-all shadow-inner"
+                              />
+
+                              <div className="flex justify-end">
+                                <button
+                                  type="submit"
+                                  disabled={savingNote || !newNoteText.trim()}
+                                  className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-amber-200 flex items-center gap-2 disabled:opacity-50"
+                                >
+                                  {savingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                  Salvar Anotação
+                                </button>
+                              </div>
+                            </form>
+
+                            {/* Lista de Anotações */}
+                            <div className="space-y-3">
+                              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <Clock className="w-4 h-4 text-slate-400" /> Histórico de Anotações ({patientNotes.length})
+                              </h4>
+
+                              {patientNotes.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400 font-medium bg-white rounded-[2.5rem] border border-dashed border-slate-200 p-8 space-y-2">
+                                  <StickyNote className="w-10 h-10 text-slate-300 mx-auto" />
+                                  <p className="font-bold text-slate-600 text-sm">Nenhuma anotação registrada ainda.</p>
+                                  <p className="text-xs text-slate-400">Adicione recados ou observações usando o formulário acima.</p>
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  {patientNotes.map((note) => {
+                                    const isReception = note.type === 'Anotação da Recepção' || !note.therapist_id;
+                                    const formattedDate = new Date(note.created_at).toLocaleDateString('pt-BR');
+                                    const formattedTime = new Date(note.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+                                    return (
+                                      <div key={note.id} className="p-5 bg-white rounded-2xl border border-slate-200 hover:border-slate-300 shadow-sm transition-all space-y-2 group">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <span className={cn(
+                                              "px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider",
+                                              isReception 
+                                                ? "bg-amber-50 text-amber-800 border border-amber-200" 
+                                                : "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                            )}>
+                                              {isReception ? 'Recepção / Secretária' : `Terapeuta: ${note.therapists?.name || 'Clínico'}`}
+                                            </span>
+                                            <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1">
+                                              <Clock className="w-3 h-3" /> {formattedDate} às {formattedTime}
+                                            </span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeletePatientNote(note.id)}
+                                            className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                            title="Excluir anotação"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                        <p className="text-sm font-medium text-slate-700 whitespace-pre-wrap leading-relaxed">
+                                          {note.notes || '(Sem conteúdo)'}
+                                        </p>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}

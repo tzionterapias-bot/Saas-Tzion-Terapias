@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Users, Calendar, Clock, Target, Loader2, Phone, MessageSquare, Plus, ArrowRight, CheckCircle2, User, X,
-  Calendar as CalendarIcon, Video, MapPin, Activity, Trash2
+  Calendar as CalendarIcon, Video, MapPin, Activity, Trash2, StickyNote
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { playRoomReleasedChime, playCheckinChime } from '@/src/lib/soundAlerts';
+import PatientNotesModal from '@/src/components/patient/PatientNotesModal';
 
 export default function ReceptionView() {
   const { user } = useAuth();
@@ -33,6 +34,9 @@ export default function ReceptionView() {
   // Cancel / Delete State
   const [cancelConfirmationAppt, setCancelConfirmationAppt] = useState<any | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
+
+  // Notes Modal State
+  const [notesPatient, setNotesPatient] = useState<{ id: string; name: string; phone?: string } | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -539,6 +543,15 @@ export default function ReceptionView() {
                       </button>
                     )}
 
+                    {/* Anotações / Recados da Secretaria */}
+                    <button 
+                      onClick={() => setNotesPatient({ id: session.patient_id, name: patientName, phone: session.patients?.phone })} 
+                      className="p-2.5 bg-white text-slate-400 hover:text-amber-600 rounded-xl shadow-sm border border-slate-100 transition-all" 
+                      title="Anotações / Recados do Paciente"
+                    >
+                      <StickyNote className="w-4.5 h-4.5" />
+                    </button>
+
                     {/* Lembrete WhatsApp */}
                     <button 
                       onClick={() => handleSendReminder(session)} 
@@ -771,6 +784,14 @@ export default function ReceptionView() {
            </div>
         </div>
       )}
+
+      {/* Modal de Anotações da Secretaria / Recepção */}
+      <PatientNotesModal
+        patient={notesPatient}
+        isOpen={!!notesPatient}
+        onClose={() => setNotesPatient(null)}
+        onNoteAdded={() => fetchStats()}
+      />
 
       {/* Toast Notification */}
       {toastMessage && (

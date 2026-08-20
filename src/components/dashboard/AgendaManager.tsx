@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search, Trash2, StickyNote } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { playRoomReleasedChime, playCheckinChime } from '@/src/lib/soundAlerts';
+import PatientNotesModal from '@/src/components/patient/PatientNotesModal';
 
 interface Appointment {
   id: string;
@@ -47,6 +48,7 @@ export default function AgendaManager() {
   const [isCreatingPatient, setIsCreatingPatient] = useState(false);
   const [newPatientData, setNewPatientData] = useState({ name: '', phone: '', email: '' });
   const [savingPatient, setSavingPatient] = useState(false);
+  const [notesPatient, setNotesPatient] = useState<{ id: string; name: string; phone?: string } | null>(null);
 
   
   const [newAppt, setNewAppt] = useState({
@@ -1258,6 +1260,13 @@ export default function AgendaManager() {
                     {event.type}
                   </div>
                   <button 
+                    onClick={() => setNotesPatient({ id: event.patient_id, name: event.patient_name })}
+                    title="Anotações / Recados do Paciente (Secretaria)"
+                    className="p-2 hover:bg-amber-100 hover:text-amber-700 rounded-xl transition-colors text-slate-400 shrink-0"
+                  >
+                    <StickyNote className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </button>
+                  <button 
                     onClick={() => handleSendReminder(event)}
                     title="Enviar Lembrete por WhatsApp"
                     className="p-2 hover:bg-emerald-100 hover:text-emerald-600 rounded-xl transition-colors text-slate-400 shrink-0"
@@ -2124,6 +2133,14 @@ export default function AgendaManager() {
            </div>
         </div>
       )}
+
+      {/* Modal de Anotações da Secretaria / Recepção */}
+      <PatientNotesModal
+        patient={notesPatient}
+        isOpen={!!notesPatient}
+        onClose={() => setNotesPatient(null)}
+        onNoteAdded={() => fetchData(false)}
+      />
 
       {/* Native Toast */}
       {toastMessage && (

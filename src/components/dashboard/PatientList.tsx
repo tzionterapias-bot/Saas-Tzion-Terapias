@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Filter, MoreVertical, Phone, Mail, Calendar, X, Save, User, MapPin, FileText, History, AlertCircle, Heart, Clock, Download, Loader2, Activity, Award, DollarSign, ClipboardList, Send, CheckCircle2, Shield, TrendingUp, MessageCircle, File, Trash2, Edit, Copy, Check, ExternalLink } from 'lucide-react';
+import { Search, Plus, Filter, MoreVertical, Phone, Mail, Calendar, X, Save, User, MapPin, FileText, History, AlertCircle, Heart, Clock, Download, Loader2, Activity, Award, DollarSign, ClipboardList, Send, CheckCircle2, Shield, TrendingUp, MessageCircle, File, Trash2, Edit, Copy, Check, ExternalLink, StickyNote } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -8,6 +8,7 @@ import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
 import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { fillContractTemplate, DEFAULT_CONTRACT_TEMPLATE } from '@/src/lib/contract';
+import PatientNotesModal from '@/src/components/patient/PatientNotesModal';
 
 export default function PatientList() {
   const [patients, setPatients] = useState<any[]>([]);
@@ -22,6 +23,7 @@ export default function PatientList() {
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [notesPatient, setNotesPatient] = useState<{ id: string; name: string; phone?: string } | null>(null);
 
   // Evolution Editing State
   const [editingEvolution, setEditingEvolution] = useState<{ id: string; notes: string } | null>(null);
@@ -1309,6 +1311,17 @@ export default function PatientList() {
                       </td>
                       <td className="px-8 py-5 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setNotesPatient({ id: patient.id, name: patient.name, phone: patient.phone });
+                            }}
+                            className="p-2 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-xl transition-colors shadow-sm"
+                            title="Anotações / Recados da Recepção"
+                          >
+                            <StickyNote className="w-4 h-4" />
+                          </button>
                           <a 
                             href={`https://wa.me/55${patient.phone?.replace(/\D/g, '')}`}
                             target="_blank"
@@ -2984,6 +2997,14 @@ export default function PatientList() {
           </div>
         </div>
       )}
+
+      {/* Modal de Anotações e Observações da Secretaria */}
+      <PatientNotesModal
+        patient={notesPatient}
+        isOpen={!!notesPatient}
+        onClose={() => setNotesPatient(null)}
+        onNoteAdded={() => fetchPatients()}
+      />
 
     </div>
   );
