@@ -312,7 +312,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://evolution.agenciahigher.com.br/message/sendText/tzion",
+        "url": "https://evo2.agenciahigher.com.br/message/sendText/tzion",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -402,7 +402,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://evolution.agenciahigher.com.br/message/sendText/tzion",
+        "url": "https://evo2.agenciahigher.com.br/message/sendText/tzion",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -580,7 +580,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://evolution.agenciahigher.com.br/chat/sendPresence/tzion",
+        "url": "https://evo2.agenciahigher.com.br/chat/sendPresence/tzion",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -642,7 +642,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://evolution.agenciahigher.com.br/message/sendText/tzion",
+        "url": "https://evo2.agenciahigher.com.br/message/sendText/tzion",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
