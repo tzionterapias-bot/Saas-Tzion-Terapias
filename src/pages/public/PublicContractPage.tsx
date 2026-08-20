@@ -247,7 +247,9 @@ export default function PublicContractPage() {
 
     // Destaque de dados-chave (Nomes, Clínicas, CNPJ, CPF, Datas, Valores e Sessões)
     const formatKeyData = (str: string) => {
-      const parts = str.split(/(TZION TERAPIAS INTEGRATIVAS|CNPJ\s*[\d./-]+|CRTH-BR\s*\d+|Marcos Dany Teixeira Magalh[ãa]es|CPF\s*(?:N[º°]|sob o n[úu]mero)?\s*[\d.-]+|R\$\s*[\d.,]+|\b\d+\s*\([^)]+\)\s*sess[õo]es|\b\d+\s*sess[õo]es|\b\d{2}\/\d{2}\/\d{4}\b)/gi);
+      // Remove marcas de markdown simples para evitar duplicidade de asteriscos
+      const cleanStr = str.replace(/\*\*/g, '');
+      const parts = cleanStr.split(/(TZION TERAPIAS INTEGRATIVAS|CNPJ\s*[\d./-]+|CRTH-BR\s*\d+|Marcos Dany Teixeira Magalh[ãa]es|CPF\s*(?:N[º°]|sob o n[úu]mero)?\s*[\d.-]+|R\$\s*[\d.,]+|\b\d+\s*\([^)]+\)\s*sess[õo]es|\b\d+\s*sess[õo]es|\b\d{2}\/\d{2}\/\d{4}\b)/gi);
 
       return parts.map((part, idx) => {
         if (/(TZION TERAPIAS INTEGRATIVAS|CNPJ|CRTH-BR|Marcos Dany|CPF|R\$|\bsess[õo]es\b|\b\d{2}\/\d{2}\/\d{4}\b)/i.test(part)) {
@@ -260,7 +262,9 @@ export default function PublicContractPage() {
     return (
       <div className="space-y-6 text-slate-700 text-sm md:text-base leading-relaxed">
         {paragraphs.map((para, idx) => {
-          const upper = para.toUpperCase();
+          // Versão limpa sem asteriscos para testes de pattern
+          const cleanPara = para.replace(/\*\*/g, '').trim();
+          const upper = cleanPara.toUpperCase();
 
           // Título principal do documento (qualquer formato de título)
           if (
@@ -271,15 +275,15 @@ export default function PublicContractPage() {
             return (
               <div key={idx} className="text-center pb-5 mb-6 border-b border-slate-200">
                 <h2 className="text-lg md:text-xl font-black text-slate-900 uppercase tracking-tight">
-                  {para.split('\n')[0].trim()}
+                  {cleanPara.split('\n')[0].trim()}
                 </h2>
               </div>
             );
           }
 
           // Bloco de Identificação: Interagente / Responsável
-          if (para.startsWith('Interagente:') || para.startsWith('Responsável(is):')) {
-            const lines = para.split('\n').filter(Boolean);
+          if (cleanPara.startsWith('Interagente:') || cleanPara.startsWith('Responsável(is):') || cleanPara.startsWith('Responsável:')) {
+            const lines = cleanPara.split('\n').filter(Boolean);
             return (
               <div key={idx} className="patient-box bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-2 mb-6">
                 {lines.map((line, lIdx) => {
@@ -290,7 +294,7 @@ export default function PublicContractPage() {
                   return (
                     <div key={lIdx} className="patient-row flex flex-wrap items-center gap-1.5">
                       <span className="font-bold text-slate-700">{label}:</span>{' '}
-                      <span className="badge font-black text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">{val}</span>
+                      <span className="badge font-black text-slate-900 bg-white px-2.5 py-0.5 rounded-lg border border-slate-200 shadow-sm">{val}</span>
                     </div>
                   );
                 })}
@@ -299,16 +303,16 @@ export default function PublicContractPage() {
           }
 
           // Data e local final (Ex: "Araguaína...", "São Paulo...", etc.)
-          if (/^(Aragua[íi]na|S[ãa]o Paulo|[A-Z][a-z]+(\s+[A-Z][a-z]+)*,\s*\d{1,2}\s+de\s+[a-z]+)/i.test(para)) {
+          if (/^(Aragua[íi]na|S[ãa]o Paulo|[A-Z][a-z]+(\s+[A-Z][a-z]+)*,\s*\d{1,2}\s+de\s+[a-z]+)/i.test(cleanPara)) {
             return (
               <div key={idx} className="date-final text-right pt-6 font-bold text-slate-900 text-sm md:text-base">
-                {para}
+                {cleanPara}
               </div>
             );
           }
 
           // Cláusulas numeradas (Ex: "1. DO OBJETO E FUNCIONAMENTO\n..." ou "1. Das partes\n...")
-          const matchClause = para.match(/^(\d+\.\s+[^\n\r]+)(?:\n\s*|\:\s*|\.\s*)(.*)$/s);
+          const matchClause = cleanPara.match(/^(\d+\.\s+[^\n\r]+)(?:\n\s*|\:\s*|\.\s*)(.*)$/s);
           if (matchClause) {
             const title = matchClause[1].trim();
             const rest = matchClause[2]?.trim();
@@ -343,7 +347,7 @@ export default function PublicContractPage() {
           // Parágrafo comum
           return (
             <p key={idx} className="text-justify [text-align-last:left] text-slate-700 leading-relaxed font-normal">
-              {formatKeyData(para)}
+              {formatKeyData(cleanPara)}
             </p>
           );
         })}
