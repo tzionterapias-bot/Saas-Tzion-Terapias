@@ -618,6 +618,8 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
                               </div>
                             </div>
                           </div>
+                        )}
+
                         {activeTab === 'notes' && (
                           <div className="space-y-6">
                             {/* Form Nova Anotação */}
