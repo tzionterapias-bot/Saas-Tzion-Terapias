@@ -17,6 +17,10 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABAS
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+const DEFAULT_EVOLUTION_API_URL = process.env.VITE_EVOLUTION_API_URL || "https://evo2.agenciahigher.com.br";
+const DEFAULT_EVOLUTION_GLOBAL_KEY = process.env.VITE_EVOLUTION_GLOBAL_KEY || process.env.VITE_EVOLUTION_API_KEY || "Lumina2026";
+const DEFAULT_EVOLUTION_INSTANCE_NAME = process.env.VITE_EVOLUTION_INSTANCE_NAME || "tzion";
+
 export const app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -148,8 +152,8 @@ async function startServer() {
   // --- SECURE WHATSAPP PROXY ---
   app.get("/api/whatsapp/instances", requireStaffAuth, async (req, res) => {
     try {
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
+      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
       const response = await fetch(`${apiUrl}/instance/fetchInstances`, {
         headers: { 'apikey': apiKey }
       });
@@ -164,8 +168,8 @@ async function startServer() {
   app.post("/api/whatsapp/setup", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.body;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
+      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
       
       console.log(`[PROXY SETUP] URL: ${apiUrl}/instance/create`);
       console.log(`[PROXY SETUP] Instance Name: ${instanceName}`);
@@ -196,8 +200,8 @@ async function startServer() {
   app.post("/api/whatsapp/settings/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
+      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
       
       const settingsRes = await fetch(`${apiUrl}/settings/set/${instanceName}`, {
         method: 'POST',
@@ -218,8 +222,8 @@ async function startServer() {
   app.post("/api/whatsapp/webhook/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
+      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
       
       const webhookRes = await fetch(`${apiUrl}/webhook/set/${instanceName}`, {
         method: 'POST',
@@ -240,8 +244,8 @@ async function startServer() {
   app.get("/api/whatsapp/qrcode/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
+      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
       
       const response = await fetch(`${apiUrl}/instance/connect/${instanceName}`, {
         headers: { 'apikey': apiKey }
@@ -257,8 +261,8 @@ async function startServer() {
   app.get("/api/whatsapp/status/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
+      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
       
       const response = await fetch(`${apiUrl}/instance/connectionState/${instanceName}`, {
         headers: { 'apikey': apiKey }
@@ -337,8 +341,8 @@ async function startServer() {
   app.delete("/api/whatsapp/instance/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
+      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
       
       const response = await fetch(`${apiUrl}/instance/delete/${instanceName}`, {
         method: 'DELETE',
@@ -363,8 +367,8 @@ async function startServer() {
   app.delete("/api/whatsapp/logout/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
+      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
       
       const response = await fetch(`${apiUrl}/instance/logout/${instanceName}`, {
         method: 'DELETE',
@@ -389,8 +393,8 @@ async function startServer() {
   app.post("/api/whatsapp/sendText/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
+      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
       
       console.log(`[PROXY SEND_TEXT] Instance: ${instanceName}, URL: ${apiUrl}/message/sendText/${instanceName}`);
       console.log(`[PROXY SEND_TEXT] Body:`, JSON.stringify(req.body));
@@ -418,8 +422,8 @@ async function startServer() {
   app.post("/api/whatsapp/sendMedia/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
+      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
       
       const isAudio = req.body.mediatype === 'audio';
       const endpoint = isAudio 
@@ -913,10 +917,10 @@ async function startServer() {
 }
 
 export async function runCampaignCycleSingle(limitMs: number = 8000) {
-  const isProduction = !!process.env.VITE_EVOLUTION_API_URL;
-  const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-  const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
-  const instance = process.env.VITE_EVOLUTION_INSTANCE_NAME || "";
+  const isProduction = true;
+  const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+  const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
+  const instance = process.env.VITE_EVOLUTION_INSTANCE_NAME || DEFAULT_EVOLUTION_INSTANCE_NAME;
 
   const startTime = Date.now();
   let processedCount = 0;
@@ -1469,10 +1473,10 @@ async function startRetentionWorker() {
 }
 
 async function sendWhatsAppBackend(patientId: string | null, phone: string, message: string, triggerEvent: string) {
-  const isProduction = !!process.env.VITE_EVOLUTION_API_URL;
-  const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || "";
-  const apiUrl = process.env.VITE_EVOLUTION_API_URL || "";
-  const instance = process.env.VITE_EVOLUTION_INSTANCE_NAME || "";
+  const isProduction = true;
+  const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+  const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
+  const instance = process.env.VITE_EVOLUTION_INSTANCE_NAME || DEFAULT_EVOLUTION_INSTANCE_NAME;
 
   let status = 'failed';
 
