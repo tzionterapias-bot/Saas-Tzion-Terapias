@@ -271,6 +271,69 @@ async function startServer() {
     }
   });
 
+  // --- FAST PATIENTS LIST ENDPOINT ---
+  app.get("/api/patients", requireStaffAuth, async (req: any, res) => {
+    try {
+      const user = (req as any).user;
+      let myTId = '';
+      if (user.role === 'terapeuta') {
+        const { data: tData } = await supabase
+          .from('therapists')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (tData?.id) {
+          myTId = tData.id;
+        } else if (user.email) {
+          const { data: tEmail } = await supabase
+            .from('therapists')
+            .select('id')
+            .eq('email', user.email)
+            .maybeSingle();
+          if (tEmail?.id) myTId = tEmail.id;
+        }
+      }
+
+      const { data: patients, error } = await supabase
+        .from('patients')
+        .select(`
+          id, name, email, phone, cpf, cep, gender, birth_date, status, created_at,
+          address, address_number, neighborhood, city, state, profession, marital_status,
+          guardian_name, guardian_cpf,
+          patient_anamnesis ( id ),
+          patient_contracts ( status )
+        `)
+        .neq('status', 'Lead')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      let result = patients || [];
+
+      if (user.role === 'terapeuta') {
+        if (myTId) {
+          const { data: appts } = await supabase
+            .from('appointments')
+            .select('patient_id')
+            .eq('therapist_id', myTId);
+
+          const allowedPatientIds = new Set((appts || []).map((a: any) => a.patient_id).filter(Boolean));
+
+          result = result.filter((p: any) => allowedPatientIds.has(p.id));
+        } else {
+          result = [];
+        }
+      }
+
+      res.json(result);
+    } catch (err: any) {
+      console.error("[API PATIENTS] Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.delete("/api/whatsapp/instance/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;

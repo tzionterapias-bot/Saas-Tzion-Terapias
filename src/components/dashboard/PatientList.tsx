@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Filter, MoreVertical, Phone, Mail, Calendar, X, Save, User, MapPin, FileText, History, AlertCircle, Heart, Clock, Download, Loader2, Activity, Award, DollarSign, ClipboardList, Send, CheckCircle2, Shield, TrendingUp, MessageCircle, File, Trash2, Edit } from 'lucide-react';
+import { Search, Plus, Filter, MoreVertical, Phone, Mail, Calendar, X, Save, User, MapPin, FileText, History, AlertCircle, Heart, Clock, Download, Loader2, Activity, Award, DollarSign, ClipboardList, Send, CheckCircle2, Shield, TrendingUp, MessageCircle, File, Trash2, Edit, Copy, Check, ExternalLink } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
 import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 import { useAuth } from '@/src/contexts/AuthContext';
+import { fillContractTemplate, DEFAULT_CONTRACT_TEMPLATE } from '@/src/lib/contract';
 
 export default function PatientList() {
   const [patients, setPatients] = useState<any[]>([]);
@@ -65,73 +66,62 @@ export default function PatientList() {
   const [activeTemplate, setActiveTemplate] = useState<any>(null);
   const [isResponsible, setIsResponsible] = useState<boolean>(false);
 
+  // Contract Modal & Generator State
+  const [showContractModal, setShowContractModal] = useState(false);
+  const [contractData, setContractData] = useState({
+    package_id: '',
+    service_name: 'Pacote de Sessões Terapêuticas',
+    total_sessions: '8',
+    extension_sessions: '0',
+    price: '',
+    therapist_name: 'Marcos Dany Teixeira Magalhães',
+  });
+  const [generatingContract, setGeneratingContract] = useState(false);
+
   useEffect(() => {
-    const fetchTherapistId = async () => {
-      if (user && user.role === 'terapeuta') {
+    const initData = async () => {
+      let currentTId = therapistId;
+      if (user && user.role === 'terapeuta' && !currentTId) {
         const { data } = await supabase
           .from('therapists')
           .select('id')
           .eq('user_id', user.id)
           .maybeSingle();
         if (data?.id) {
+          currentTId = data.id;
           setTherapistId(data.id);
         }
       }
+      fetchPatients(currentTId);
     };
-    fetchTherapistId();
+
+    if (user) {
+      initData();
+    }
   }, [user]);
 
-  const fetchPatients = async () => {
+  const fetchPatients = async (currentTId?: string) => {
     setLoading(true);
     try {
-      let myTId = therapistId;
-      if (user?.role === 'terapeuta' && !myTId && user?.id) {
-        const { data: tData } = await supabase
-          .from('therapists')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        if (tData?.id) {
-          myTId = tData.id;
-          setTherapistId(tData.id);
-        } else if (user.email) {
-          const { data: tEmail } = await supabase
-            .from('therapists')
-            .select('id')
-            .eq('email', user.email)
-            .maybeSingle();
-          if (tEmail?.id) {
-            myTId = tEmail.id;
-            setTherapistId(tEmail.id);
-          }
-        }
-      }
+      const myTId = currentTId !== undefined ? currentTId : therapistId;
 
-      const { data, error } = await supabase.from('patients').select(`
-        *,
-        patient_anamnesis ( id ),
-        patient_contracts ( status ),
-        appointments ( notes, start_time )
-      `).neq('status', 'Lead').order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('patients')
+        .select(`
+          id, name, email, phone, cpf, cep, gender, birth_date, status, created_at,
+          address, address_number, neighborhood, city, state, profession, marital_status,
+          guardian_name, guardian_cpf,
+          patient_anamnesis ( id ),
+          patient_contracts ( status )
+        `)
+        .neq('status', 'Lead')
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error("Error fetching patients:", error);
       }
 
       if (!error && data) {
-        const enrichedData = data.map((p: any) => {
-          let lastNote = null;
-          if (p.appointments && p.appointments.length > 0) {
-            const sorted = [...p.appointments]
-              .filter((a: any) => a.notes && a.notes.trim() !== '')
-              .sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
-            if (sorted.length > 0) {
-              lastNote = sorted[0].notes;
-            }
-          }
-          return { ...p, last_note: lastNote };
-        });
-
         if (user?.role === 'terapeuta') {
           if (myTId) {
             const { data: appts } = await supabase
@@ -141,17 +131,13 @@ export default function PatientList() {
 
             const allowedPatientIds = new Set((appts || []).map((a: any) => a.patient_id).filter(Boolean));
 
-            const filtered = enrichedData.filter((p: any) => 
-              allowedPatientIds.has(p.id) || 
-              p.therapist_id === myTId || 
-              p.responsible_therapist_id === myTId
-            );
+            const filtered = data.filter((p: any) => allowedPatientIds.has(p.id));
             setPatients(filtered);
           } else {
             setPatients([]);
           }
         } else {
-          setPatients(enrichedData);
+          setPatients(data);
         }
       }
     } catch (err) {
@@ -160,10 +146,6 @@ export default function PatientList() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchPatients();
-  }, [user, therapistId]);
 
   useEffect(() => {
     if (selectedPatient?.id) {
@@ -1002,6 +984,102 @@ export default function PatientList() {
     }
   };
 
+  const handleOpenManualContractModal = (pkg?: any) => {
+    if (pkg) {
+      setContractData({
+        package_id: pkg.id || '',
+        service_name: pkg.services?.name || 'Pacote de Sessões Terapêuticas',
+        total_sessions: String(pkg.total_sessions || 8),
+        extension_sessions: '0',
+        price: pkg.services?.price ? String(pkg.services.price) : '',
+        therapist_name: 'Marcos Dany Teixeira Magalhães',
+      });
+    } else {
+      setContractData({
+        package_id: '',
+        service_name: 'Pacote de Sessões Terapêuticas',
+        total_sessions: '8',
+        extension_sessions: '0',
+        price: '',
+        therapist_name: 'Marcos Dany Teixeira Magalhães',
+      });
+    }
+    setShowContractModal(true);
+  };
+
+  const handleGenerateContract = async () => {
+    if (!selectedPatient) return;
+    try {
+      setGeneratingContract(true);
+      const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').maybeSingle();
+      const rawTemplate = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
+
+      const filledContent = fillContractTemplate(rawTemplate, {
+        patient: selectedPatient,
+        package: {
+          total_sessions: Number(contractData.total_sessions) || 8,
+          extension_sessions: Number(contractData.extension_sessions) || 0,
+          price: parseFloat(contractData.price.replace(',', '.')) || 0,
+          service_name: contractData.service_name || 'Terapias Integrativas',
+          title: contractData.service_name || 'Terapias Integrativas',
+        },
+        therapist: {
+          name: contractData.therapist_name || 'Marcos Dany Teixeira Magalhães',
+          professional_registration: 'CRTH-BR 6793'
+        }
+      });
+
+      const { data: contract, error } = await supabase.from('patient_contracts').insert({
+        patient_id: selectedPatient.id,
+        content: filledContent,
+        status: 'pending'
+      }).select().single();
+
+      if (error) throw error;
+
+      const baseUrl = await getSystemBaseUrl();
+      const link = `${baseUrl}/contrato/${contract.id}`;
+      const firstName = selectedPatient.name?.split(' ')[0] || 'Paciente';
+      const msg = `Olá, *${firstName}*! ✨\n\nO seu termo de compromisso de serviço terapêutico foi gerado pela Clínica Tzion Terapias.\n\nPor favor, leia e assine digitalmente no link seguro abaixo:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
+
+      if (selectedPatient.phone) {
+        try {
+          await sendWhatsAppMessage(selectedPatient.id, selectedPatient.phone, msg, 'contract_sent');
+          setToastMessage('✅ Contrato gerado e enviado via WhatsApp!');
+        } catch (err) {
+          console.warn('Erro ao enviar WhatsApp:', err);
+          setToastMessage('✅ Contrato gerado! Copie o link na aba de Documentos.');
+        }
+      } else {
+        setToastMessage('✅ Contrato gerado com sucesso! Link pronto para assinatura.');
+      }
+
+      setShowContractModal(false);
+      await loadTabContent(activeTab, selectedPatient.id);
+      fetchPatients();
+    } catch (err: any) {
+      console.error('Erro ao gerar contrato:', err);
+      setToastMessage('Erro ao gerar contrato: ' + err.message);
+    } finally {
+      setGeneratingContract(false);
+    }
+  };
+
+  const handleDeleteContract = async (contractId: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este contrato?')) return;
+    try {
+      const { error } = await supabase.from('patient_contracts').delete().eq('id', contractId);
+      if (error) throw error;
+      setToastMessage('Contrato excluído com sucesso!');
+      if (selectedPatient) {
+        await loadTabContent(activeTab, selectedPatient.id);
+        fetchPatients();
+      }
+    } catch (err: any) {
+      setToastMessage('Erro ao excluir contrato: ' + err.message);
+    }
+  };
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -1010,9 +1088,28 @@ export default function PatientList() {
   }, [searchTerm, filterStatus]);
 
   const filteredPatients = patients.filter(p => {
-    const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          p.email?.toLowerCase().includes(searchTerm.toLowerCase());
-    if (!matchesSearch) return false;
+    if (!searchTerm.trim()) {
+      // continua para checar filtros de status
+    } else {
+      const normalize = (str: string) => (str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      const term = normalize(searchTerm);
+      const digits = searchTerm.replace(/\D/g, '');
+
+      const name = normalize(p.name);
+      const email = (p.email || '').toLowerCase();
+      const cpf = (p.cpf || '').toLowerCase();
+      const cpfDigits = (p.cpf || '').replace(/\D/g, '');
+      const phoneDigits = (p.phone || '').replace(/\D/g, '');
+
+      const matchesSearch = 
+        name.includes(term) ||
+        email.includes(term) ||
+        cpf.includes(term) ||
+        (digits.length > 0 && cpfDigits.includes(digits)) ||
+        (digits.length > 0 && phoneDigits.includes(digits));
+
+      if (!matchesSearch) return false;
+    }
 
     if (filterStatus === 'ativo') return p.status === 'Ativo';
     if (filterStatus === 'inativo') return p.status !== 'Ativo';
@@ -1858,8 +1955,8 @@ export default function PatientList() {
                             <TrendingUp className="w-6 h-6 text-indigo-600"/> Gráfico de Evolução Emocional e Física
                           </h4>
                           <p className="text-sm text-slate-500 font-medium">Acompanhe o progresso das avaliações do paciente ao longo do tempo (escala de 0 a 10).</p>
-                          <div className="w-full h-80 pt-4">
-                            <ResponsiveContainer width="100%" height="100%">
+                          <div className="w-full h-80 pt-4 min-h-[250px]">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
                               <LineChart data={patientIndicators.map(ind => ({
                                 date: new Date(ind.created_at).toLocaleDateString('pt-BR'),
                                 ansiedade: ind.anxiety,
@@ -1884,13 +1981,22 @@ export default function PatientList() {
 
                       {/* Pacotes Ativos */}
                       <div>
-                        <h4 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2"><Award className="w-6 h-6 text-indigo-600"/> Créditos & Pacotes</h4>
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+                          <h4 className="text-xl font-bold text-slate-900 flex items-center gap-2"><Award className="w-6 h-6 text-indigo-600"/> Créditos & Pacotes</h4>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenManualContractModal()}
+                            className="px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-xl transition-all flex items-center gap-2 shadow-sm active:scale-95"
+                          >
+                            <FileText className="w-4 h-4" /> Gerar Contrato Manual / Forçado
+                          </button>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {patientPackages.map(pkg => {
                                 const progress = Math.min((pkg.used_sessions / pkg.total_sessions) * 100, 100);
                                 return (
-                                    <div key={pkg.id} className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 shadow-sm">
-                                        <div className="flex justify-between items-start mb-4">
+                                    <div key={pkg.id} className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                                        <div className="flex justify-between items-start">
                                             <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center"><Award className="w-5 h-5"/></div>
                                             <span className={cn(
                                                 "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
@@ -1899,8 +2005,10 @@ export default function PatientList() {
                                                 {pkg.status === 'active' ? 'Ativo' : 'Concluído'}
                                             </span>
                                         </div>
-                                        <h5 className="font-bold text-slate-900 mb-1">{pkg.services?.name || 'Pacote'}</h5>
-                                        <p className="text-xs text-slate-500 font-medium mb-4">{pkg.services?.type || 'Sessão'}</p>
+                                        <div>
+                                          <h5 className="font-bold text-slate-900 mb-1">{pkg.services?.name || 'Pacote de Terapias'}</h5>
+                                          <p className="text-xs text-slate-500 font-medium">{pkg.services?.type || `${pkg.total_sessions} Sessões`}</p>
+                                        </div>
                                         
                                         <div className="space-y-2">
                                             <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase">
@@ -1910,6 +2018,16 @@ export default function PatientList() {
                                             <div className="w-full bg-slate-200 rounded-full h-2">
                                                 <div className="bg-indigo-600 h-2 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
                                             </div>
+                                        </div>
+
+                                        <div className="pt-3 border-t border-slate-200/60 flex items-center gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenManualContractModal(pkg)}
+                                            className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-100 active:scale-95"
+                                          >
+                                            <FileText className="w-3.5 h-3.5" /> Gerar / Emitir Contrato Deste Pacote
+                                          </button>
                                         </div>
                                     </div>
                                 );
@@ -2128,69 +2246,169 @@ export default function PatientList() {
 
               {activeTab === 'docs' && (
                 <div className="space-y-8 animate-in fade-in duration-500">
-                  <div className="flex flex-col gap-6">
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      className="hidden" 
-                      onChange={handleFileUpload} 
-                    />
-                    <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingDoc}
-                      className="w-full py-12 border-2 border-dashed border-slate-200 rounded-[2.5rem] text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all flex flex-col items-center justify-center gap-3 disabled:opacity-50"
-                    >
-                       <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center">
-                          {uploadingDoc ? <Loader2 className="w-8 h-8 animate-spin" /> : <Plus className="w-8 h-8" />}
-                       </div>
-                       {uploadingDoc ? 'Enviando documento...' : 'Anexar Novo Documento (Ex: Contrato, Laudo ou Receita)'}
-                    </button>
-                  </div>
+                  {/* Seção de Contratos de Prestação de Serviços */}
+                  <div className="bg-slate-50 p-6 md:p-8 rounded-[2.5rem] border border-slate-100 space-y-6">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div>
+                        <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                          <Shield className="w-5 h-5 text-indigo-600" /> Contratos Digitais de Prestação de Serviços
+                        </h4>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">Emita termos de serviço com assinatura digital com validade jurídica e envio automático via WhatsApp.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenManualContractModal()}
+                        className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-2 active:scale-95"
+                      >
+                        <Plus className="w-4 h-4" /> Gerar Contrato (Venda / Manual)
+                      </button>
+                    </div>
 
-                  {documents.length > 0 && (
-                    <div className="space-y-4">
-                      <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest flex items-center gap-2 mb-4">
-                        <FileText className="w-4 h-4" /> Documentos Anexados
-                      </h4>
+                    {/* Lista de Contratos */}
+                    {documents.filter(d => d.source === 'contract').length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {documents.map(doc => (
-                          <div key={doc.id} className="p-5 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between group">
-                            <div className="flex items-center gap-4 overflow-hidden">
-                              <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm shrink-0">
-                                <File className="w-5 h-5" />
+                        {documents.filter(d => d.source === 'contract').map(doc => {
+                          const isSigned = doc.title?.toLowerCase().includes('assinado');
+                          return (
+                            <div key={doc.id} className="p-5 bg-white border border-slate-200/80 rounded-2xl flex flex-col justify-between gap-4 shadow-sm hover:border-indigo-200 transition-all">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                  <div className={cn(
+                                    "w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg shrink-0",
+                                    isSigned ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                                  )}>
+                                    📄
+                                  </div>
+                                  <div className="truncate">
+                                    <h5 className="font-bold text-slate-900 text-sm truncate">{doc.title}</h5>
+                                    <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                                      Emitido em {new Date(doc.created_at).toLocaleDateString('pt-BR')} às {new Date(doc.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className={cn(
+                                  "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0",
+                                  isSigned ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                                )}>
+                                  {isSigned ? 'Assinado' : 'Pendente'}
+                                </span>
                               </div>
-                              <div className="truncate">
-                                <h5 className="font-bold text-slate-900 text-sm truncate" title={doc.title}>{doc.title}</h5>
-                                <p className="text-xs text-slate-400 font-bold mt-1">
-                                  {new Date(doc.created_at).toLocaleDateString('pt-BR')} às {new Date(doc.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
-                                </p>
+
+                              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(doc.file_url);
+                                    setToastMessage('📋 Link do contrato copiado!');
+                                  }}
+                                  className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-200"
+                                  title="Copiar link de assinatura"
+                                >
+                                  <Copy className="w-3.5 h-3.5" /> Copiar Link
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleResendContract(doc.original_id, selectedPatient?.name, selectedPatient?.phone)}
+                                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-emerald-200"
+                                  title="Reenviar link no WhatsApp do paciente"
+                                >
+                                  <Send className="w-3.5 h-3.5" /> Reenviar WhatsApp
+                                </button>
+                                <a
+                                  href={doc.file_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-indigo-200"
+                                  title="Abrir contrato em nova aba"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" /> Visualizar
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteContract(doc.original_id)}
+                                  className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                                  title="Excluir contrato"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <a 
-                                href={doc.file_url} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="w-10 h-10 flex items-center justify-center bg-white rounded-xl text-slate-400 hover:text-indigo-600 hover:shadow-sm border border-slate-200 transition-all"
-                                title={doc.source === 'contract' ? 'Visualizar Contrato' : 'Visualizar / Baixar'}
-                              >
-                                <FileText className="w-4 h-4" />
-                              </a>
-                              {doc.source === 'upload' && (
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center bg-white rounded-2xl border border-dashed border-slate-200">
+                        <p className="text-3xl mb-1">📄</p>
+                        <p className="font-bold text-slate-700 text-sm">Nenhum contrato gerado para este paciente ainda.</p>
+                        <p className="text-xs text-slate-400 mt-1">Clique no botão acima ou no pacote do paciente para emitir o termo de serviço.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Seção de Upload de Arquivos / Laudos */}
+                  <div className="space-y-4">
+                    <div className="flex flex-col gap-4">
+                      <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        className="hidden" 
+                        onChange={handleFileUpload} 
+                      />
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingDoc}
+                        className="w-full py-10 border-2 border-dashed border-slate-200 rounded-[2rem] text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all flex flex-col items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                         <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center">
+                            {uploadingDoc ? <Loader2 className="w-6 h-6 animate-spin text-indigo-600" /> : <Plus className="w-6 h-6" />}
+                         </div>
+                         <span className="text-sm">{uploadingDoc ? 'Enviando documento...' : 'Anexar Novo Arquivo (Laudo, Exame ou Receita)'}</span>
+                      </button>
+                    </div>
+
+                    {documents.filter(d => d.source === 'upload').length > 0 && (
+                      <div className="space-y-3">
+                        <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest flex items-center gap-2 mb-2">
+                          <FileText className="w-4 h-4" /> Outros Documentos Anexados
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {documents.filter(d => d.source === 'upload').map(doc => (
+                            <div key={doc.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between group">
+                              <div className="flex items-center gap-3 overflow-hidden">
+                                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-indigo-600 shadow-sm shrink-0">
+                                  <File className="w-4 h-4" />
+                                </div>
+                                <div className="truncate">
+                                  <h5 className="font-bold text-slate-900 text-sm truncate" title={doc.title}>{doc.title}</h5>
+                                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                                    {new Date(doc.created_at).toLocaleDateString('pt-BR')} às {new Date(doc.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <a 
+                                  href={doc.file_url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="w-9 h-9 flex items-center justify-center bg-white rounded-xl text-slate-400 hover:text-indigo-600 hover:shadow-sm border border-slate-200 transition-all"
+                                  title="Visualizar / Baixar"
+                                >
+                                  <FileText className="w-4 h-4" />
+                                </a>
                                 <button 
                                   onClick={() => handleDeleteDocument(doc)}
-                                  className="w-10 h-10 flex items-center justify-center bg-white rounded-xl text-slate-400 hover:text-rose-600 hover:shadow-sm border border-slate-200 transition-all"
+                                  className="w-9 h-9 flex items-center justify-center bg-white rounded-xl text-slate-400 hover:text-rose-600 hover:shadow-sm border border-slate-200 transition-all"
                                   title="Excluir"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
-                              )}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -2464,6 +2682,134 @@ export default function PatientList() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Emissão Manual / Forçada de Contrato */}
+      {showContractModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 md:p-8 border-b border-slate-100 flex items-center justify-between shrink-0 bg-gradient-to-r from-indigo-50/50 to-white">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-md shadow-indigo-100">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Gerar Contrato de Serviço</h3>
+                  <p className="text-xs text-slate-400 font-bold mt-0.5">Paciente: {selectedPatient?.name}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowContractModal(false)} 
+                className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6 md:p-8 overflow-y-auto custom-scrollbar flex-1 space-y-6">
+              <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-start gap-3">
+                <span className="text-2xl shrink-0">💡</span>
+                <p className="text-xs text-indigo-900 font-medium leading-relaxed">
+                  O sistema irá preencher o <strong>Termo de Compromisso Terapêutico</strong> com os dados cadastrais do paciente (CPF, endereço, telefone), número de sessões e valor acordado, gerando o link seguro de assinatura digital.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Descrição / Nome do Pacote ou Serviço</label>
+                  <input
+                    type="text"
+                    value={contractData.service_name}
+                    onChange={e => setContractData({ ...contractData, service_name: e.target.value })}
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Ex: Pacote 8 Sessões Terapêuticas, Terapia Integrativa..."
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Qtd. de Sessões Contratadas</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={contractData.total_sessions}
+                      onChange={e => setContractData({ ...contractData, total_sessions: e.target.value })}
+                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Ex: 8"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Sessões Bônus / Extensão</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={contractData.extension_sessions}
+                      onChange={e => setContractData({ ...contractData, extension_sessions: e.target.value })}
+                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Ex: 0"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Valor Total do Pacote (R$)</label>
+                    <input
+                      type="text"
+                      value={contractData.price}
+                      onChange={e => setContractData({ ...contractData, price: e.target.value })}
+                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black text-emerald-600 outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Ex: 7200.00"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Terapeuta Responsável</label>
+                    <input
+                      type="text"
+                      value={contractData.therapist_name}
+                      onChange={e => setContractData({ ...contractData, therapist_name: e.target.value })}
+                      className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Nome do terapeuta..."
+                    />
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 border border-slate-200/70 rounded-2xl space-y-1 text-xs text-slate-600">
+                  <div className="flex justify-between">
+                    <span className="font-bold">CPF do Paciente:</span>
+                    <span>{selectedPatient?.cpf || 'Não cadastrado'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold">WhatsApp:</span>
+                    <span>{selectedPatient?.phone || 'Não cadastrado'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 md:p-8 border-t border-slate-100 bg-slate-50/50 flex gap-4 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowContractModal(false)}
+                disabled={generatingContract}
+                className="flex-1 py-4 bg-white hover:bg-slate-100 text-slate-600 rounded-2xl font-bold transition-all border border-slate-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGenerateContract}
+                disabled={generatingContract}
+                className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+              >
+                {generatingContract ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                {generatingContract ? 'Emitindo...' : 'Emitir e Enviar Contrato'}
+              </button>
+            </div>
           </div>
         </div>
       )}

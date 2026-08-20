@@ -497,7 +497,29 @@ export default function FinancialPage() {
   );
 
   const filteredPatientsForSell = useMemo(() => {
-    if (!patientSearchSell || !patientSearchSell.trim()) return patients;
+    // 1. Deduplica e prioriza pacientes com status 'Ativo', ocultando leads duplicados
+    const uniqueMap = new Map<string, typeof patients[0]>();
+    
+    // Primeiro insere todos os ativos
+    patients.filter(p => p.status === 'Ativo' || (p.status !== 'lead' && p.status !== 'Lead')).forEach(p => {
+      const cpfDigits = p.cpf ? p.cpf.replace(/\D/g, '') : '';
+      const email = p.email ? p.email.toLowerCase().trim() : '';
+      const key = cpfDigits ? `cpf_${cpfDigits}` : (email ? `email_${email}` : `id_${p.id}`);
+      uniqueMap.set(key, p);
+    });
+
+    // Se a lista estiver vazia, usa todos os pacientes deduplicados
+    if (uniqueMap.size === 0) {
+      patients.forEach(p => {
+        const cpfDigits = p.cpf ? p.cpf.replace(/\D/g, '') : '';
+        const key = cpfDigits ? `cpf_${cpfDigits}` : `id_${p.id}`;
+        if (!uniqueMap.has(key)) uniqueMap.set(key, p);
+      });
+    }
+
+    const uniquePatients = Array.from(uniqueMap.values());
+
+    if (!patientSearchSell || !patientSearchSell.trim()) return uniquePatients;
 
     const normalize = (str: string) =>
       (str || '')
@@ -510,7 +532,7 @@ export default function FinancialPage() {
     const searchTokens = searchTerm.split(/\s+/).filter(Boolean);
     const searchDigits = patientSearchSell.replace(/\D/g, '');
 
-    return patients.filter(p => {
+    return uniquePatients.filter(p => {
       const patientName = normalize(p.name || '');
       const patientCpf = (p.cpf || '').toLowerCase();
       const patientCpfDigits = (p.cpf || '').replace(/\D/g, '');
@@ -1015,7 +1037,8 @@ export default function FinancialPage() {
       } else if (pendingPkgs && pendingPkgs.length > 0) {
         for (const pkg of pendingPkgs) {
           const service = pkg.services;
-          if (service && service.type === 'pacote') {
+          const isPackage = (pkg.total_sessions && pkg.total_sessions > 0) || (service && service.type === 'pacote') || confirmingPayment.category === 'Pacote';
+          if (isPackage) {
             try {
               const { data: patient } = await supabase
                 .from('patients')
@@ -1028,7 +1051,12 @@ export default function FinancialPage() {
                 let rawTpl = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
                 const filledTpl = fillContractTemplate(rawTpl, {
                   patient,
-                  package: pkg
+                  package: {
+                    ...pkg,
+                    total_sessions: pkg.total_sessions || 8,
+                    price: confirmingPayment.amount || 0,
+                    service_name: service?.name || confirmingPayment.description || 'Pacote de Sessões Terapêuticas'
+                  }
                 });
 
                 const { data: contract } = await supabase.from('patient_contracts').insert({
@@ -1506,30 +1534,37 @@ export default function FinancialPage() {
               (() => {
                 const { grossIncome, grossExpense, totalTherapistShare, clinicShareGross, clinicNetRealized, suppliesTotalValue, suppliesLowStockCount } = dashboardStats;
                 return [
-                  { label: 'Faturamento Bruto', value: grossIncome, icon: TrendingUp, color: 'emerald', sub: `Clínica: R$ ${fmt(clinicShareGross)} | Terapeutas: R$ ${fmt(totalTherapistShare)}` },
-                  { label: 'Despesas Pagas', value: grossExpense, icon: TrendingDown, color: 'rose', sub: 'Saídas operacionais do período' },
-                  { label: 'Lucro Líquido Clínica', value: clinicNetRealized, icon: DollarSign, color: clinicNetRealized >= 0 ? 'indigo' : 'rose', sub: 'Faturamento Clínica − Despesas' },
-                  { label: 'A Receber', value: pendingIncome, icon: Clock, color: 'amber', sub: 'Lançamentos pendentes' },
-                  { label: 'Capital em Insumos', value: suppliesTotalValue, icon: Package, color: 'sky', sub: suppliesLowStockCount > 0 ? `⚠️ ${suppliesLowStockCount} item(ns) em nível crítico` : 'Insumos estocados na clínica' },
+                  { label: 'Faturamento Bruto (Entradas)', value: grossIncome, icon: TrendingUp, color: 'emerald', tooltip: 'Entradas: Total faturado e recebido no período', sub: `Clínica: R$ ${fmt(clinicShareGross)} | Terapeutas: R$ ${fmt(totalTherapistShare)}` },
+                  { label: 'Despesas Pagas (Saídas)', value: grossExpense, icon: TrendingDown, color: 'orange', tooltip: 'Saídas: Despesas e pagamentos efetuados', sub: 'Saídas operacionais do período' },
+                  { label: 'Lucro Líquido Clínica', value: clinicNetRealized, icon: DollarSign, color: clinicNetRealized >= 0 ? 'indigo' : 'rose', tooltip: 'Lucro real da clínica após despesas', sub: 'Faturamento Clínica − Despesas' },
+                  { label: 'A Receber (Previsão)', value: pendingIncome, icon: Clock, color: 'blue', tooltip: 'A Receber: Receitas pendentes de pagamento', sub: 'Lançamentos pendentes' },
+                  { label: 'Capital em Insumos', value: suppliesTotalValue, icon: Package, color: 'purple', tooltip: 'Valor total de estoque estocado na clínica', sub: suppliesLowStockCount > 0 ? `⚠️ ${suppliesLowStockCount} item(ns) em nível crítico` : 'Insumos estocados na clínica' },
                 ].map((c, i) => (
-                  <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group">
+                  <div key={i} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group cursor-help transition-all hover:shadow-md" title={c.tooltip}>
                     <div className={cn(
                       "w-11 h-11 rounded-2xl flex items-center justify-center mb-3 shadow-lg",
                       c.color === 'emerald' ? "bg-emerald-500 shadow-emerald-100 text-white" :
+                      c.color === 'orange' ? "bg-orange-500 shadow-orange-100 text-white" :
+                      c.color === 'blue' ? "bg-blue-500 shadow-blue-100 text-white" :
+                      c.color === 'purple' ? "bg-purple-500 shadow-purple-100 text-white" :
                       c.color === 'rose' ? "bg-rose-500 shadow-rose-100 text-white" :
-                      c.color === 'amber' ? "bg-amber-500 shadow-amber-100 text-white" :
-                      c.color === 'sky' ? "bg-sky-500 shadow-sky-100 text-white" :
                       "bg-indigo-500 shadow-indigo-100 text-white"
                     )}>
                       <c.icon className="w-5 h-5" />
                     </div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{c.label}</p>
-                    <h3 className={cn("text-xl font-black mb-1", c.color === 'rose' && c.label !== 'Despesas Pagas' ? "text-rose-600" : "text-slate-900")}>
+                    <h3 className={cn(
+                      "text-xl font-black mb-1", 
+                      c.color === 'emerald' ? "text-emerald-600" :
+                      c.color === 'orange' ? "text-orange-600" :
+                      c.color === 'blue' ? "text-blue-600" :
+                      c.color === 'rose' ? "text-rose-600" : "text-slate-900"
+                    )}>
                       R$ {fmt(c.value)}
                     </h3>
                     <p className={cn(
                       "text-[10px] font-medium leading-relaxed",
-                      c.label === 'Capital em Insumos' && suppliesLowStockCount > 0 ? "text-amber-600 font-bold" : "text-slate-400"
+                      c.label.includes('Insumos') && suppliesLowStockCount > 0 ? "text-amber-600 font-bold" : "text-slate-400"
                     )}>{c.sub}</p>
                   </div>
                 ));
@@ -1541,7 +1576,7 @@ export default function FinancialPage() {
           <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm">
             <h3 className="text-xl font-bold text-slate-900 mb-6">Fluxo de Caixa Consolidado ({filterYear})</h3>
             <div className="h-[350px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
@@ -1574,11 +1609,14 @@ export default function FinancialPage() {
       {/* FLUXO DE CAIXA                                                          */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'cashflow' && (
-        <div className="bg-white border border-slate-100 rounded-[3rem] shadow-sm overflow-hidden">
-          <div className="p-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h3 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              <Wallet className="w-6 h-6 text-indigo-600" /> Fluxo de Caixa Realizado
-            </h3>
+        <div className="bg-white border border-slate-100 rounded-[3rem] shadow-sm overflow-hidden space-y-6">
+          <div className="p-8 pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <Wallet className="w-6 h-6 text-indigo-600" /> Fluxo de Caixa Realizado
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Extrato de todas as movimentações financeiras concretizadas no período.</p>
+            </div>
             <div className="flex items-center gap-3">
               <select
                 value={filterMonth}
@@ -1595,6 +1633,26 @@ export default function FinancialPage() {
               </button>
             </div>
           </div>
+
+          {/* Guia de Acessibilidade e Legenda de Cores */}
+          <div className="mx-8 p-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-wrap items-center gap-3 text-xs">
+            <span className="font-bold text-slate-700 mr-2 flex items-center gap-1.5">
+              <span>🎨</span> Padrão de Cores:
+            </span>
+            <span 
+              className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-bold cursor-help transition-all hover:scale-105" 
+              title="ENTRADA (VERDE): Receita confirmada e recebida em caixa."
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Entrada (Verde)
+            </span>
+            <span 
+              className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-full font-bold cursor-help transition-all hover:scale-105" 
+              title="SAÍDA (LARANJA): Despesa ou pagamento efetuado."
+            >
+              <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span> Saída (Laranja)
+            </span>
+          </div>
+
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
             <table className="w-full text-left">
               <thead className="bg-slate-50 sticky top-0 z-10">
@@ -1628,7 +1686,10 @@ export default function FinancialPage() {
                     <td className="px-8 py-5">
                       <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-wider">{p.category || 'Geral'}</span>
                     </td>
-                    <td className={cn("px-8 py-5 font-black", p.type === 'income' ? "text-emerald-600" : "text-rose-600")}>
+                    <td 
+                      className={cn("px-8 py-5 font-black cursor-help text-base", p.type === 'income' ? "text-emerald-600" : "text-orange-600")}
+                      title={p.type === 'income' ? 'Entrada confirmada em caixa' : 'Saída / Pagamento efetuado'}
+                    >
                       {p.type === 'income' ? '+' : '-'} R$ {fmt(Math.abs(p.amount))}
                     </td>
                     <td className="px-8 py-5 text-right text-slate-400 font-medium text-xs uppercase">
@@ -1659,7 +1720,7 @@ export default function FinancialPage() {
                             });
                           }}
                           className="p-1.5 bg-slate-100 text-slate-500 rounded-lg hover:bg-indigo-100 hover:text-indigo-600 transition-colors"
-                          title="Editar"
+                          title="Editar lançamento"
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
@@ -1692,25 +1753,62 @@ export default function FinancialPage() {
         <div className="space-y-8">
           {user?.role !== 'atendimento' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Total a Receber</p>
-                <p className="text-4xl font-black text-emerald-600">R$ {fmt(totalReceivable)}</p>
+              <div 
+                className="bg-white p-8 rounded-[2.5rem] border border-blue-100 shadow-sm cursor-help hover:border-blue-300 transition-all group"
+                title="Total a Receber: Receitas pendentes de pagamento por parte dos clientes."
+              >
+                <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> Total a Receber (Azul)
+                </p>
+                <p className="text-4xl font-black text-blue-600">R$ {fmt(totalReceivable)}</p>
                 <p className="text-xs text-slate-400 mt-2 font-medium">{pendingPayments.filter(p => p.type === 'income').length} lançamento(s) pendente(s)</p>
               </div>
-              <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Total a Pagar</p>
-                <p className="text-4xl font-black text-rose-600">R$ {fmt(totalPayable)}</p>
+              <div 
+                className="bg-white p-8 rounded-[2.5rem] border border-orange-100 shadow-sm cursor-help hover:border-orange-300 transition-all group"
+                title="Total a Pagar: Despesas ou compromissos financeiros pendentes de liquidação."
+              >
+                <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span> Total a Pagar (Laranja)
+                </p>
+                <p className="text-4xl font-black text-orange-600">R$ {fmt(totalPayable)}</p>
                 <p className="text-xs text-slate-400 mt-2 font-medium">{pendingPayments.filter(p => p.type === 'expense').length} lançamento(s) pendente(s)</p>
               </div>
             </div>
           )}
 
-          <div className="bg-white border border-slate-100 rounded-[3rem] shadow-sm overflow-hidden">
-            <div className="p-8 border-b border-slate-100">
+          <div className="bg-white border border-slate-100 rounded-[3rem] shadow-sm overflow-hidden space-y-4">
+            <div className="p-8 pb-0">
               <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                 <Clock className="w-6 h-6 text-indigo-600" /> Agenda de Vencimentos Pendentes
               </h3>
+              <p className="text-xs text-slate-400 mt-1">Monitore e confirme lançamentos a receber, despesas a pagar e identifique contas em atraso.</p>
             </div>
+
+            {/* Guia de Acessibilidade e Legenda de Cores para Pendentes */}
+            <div className="mx-8 p-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-wrap items-center gap-3 text-xs">
+              <span className="font-bold text-slate-700 mr-2 flex items-center gap-1.5">
+                <span>🎨</span> Legenda:
+              </span>
+              <span 
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full font-bold cursor-help transition-all hover:scale-105" 
+                title="A RECEBER (AZUL): Receita prevista / pendente de pagamento do paciente."
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> A Receber (Azul)
+              </span>
+              <span 
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-full font-bold cursor-help transition-all hover:scale-105" 
+                title="A PAGAR (LARANJA): Despesa ou conta pendente de quitação."
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span> A Pagar (Laranja)
+              </span>
+              <span 
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full font-bold cursor-help transition-all hover:scale-105" 
+                title="ATRASADO (VERMELHO): Data de vencimento ultrapassada sem registro de quitação."
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span> Atrasado (Vermelho)
+              </span>
+            </div>
+
             <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
               <table className="w-full text-left">
                 <thead className="bg-slate-50 sticky top-0 z-10">
@@ -1718,7 +1816,7 @@ export default function FinancialPage() {
                     <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Criado Em</th>
                     <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vencimento</th>
                     <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Descrição</th>
-                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo</th>
+                    <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo / Status</th>
                     <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor</th>
                     <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ações</th>
                   </tr>
@@ -1727,12 +1825,26 @@ export default function FinancialPage() {
                   {visiblePendingPayments.slice((payablesPage - 1) * ITEMS, payablesPage * ITEMS).map(p => {
                     const isOverdue = p.due_date && new Date(p.due_date) < new Date();
                     return (
-                      <tr key={p.id} className={cn("hover:bg-slate-50/50 transition-colors", isOverdue && "bg-rose-50/30")}>
+                      <tr 
+                        key={p.id} 
+                        className={cn("transition-colors", isOverdue ? "bg-rose-50/40 hover:bg-rose-100/30" : "hover:bg-slate-50/50")}
+                      >
                         <td className="px-8 py-5 text-sm text-slate-500 font-medium">{new Date(p.created_at).toLocaleDateString('pt-BR')}</td>
                         <td className="px-8 py-5 text-sm font-bold">
-                          {p.due_date
-                            ? <span className={cn(isOverdue ? "text-rose-600" : "text-slate-700")}>{new Date(p.due_date).toLocaleDateString('pt-BR')} {isOverdue && '⚠️'}</span>
-                            : <span className="text-slate-400 text-xs">—</span>}
+                          {p.due_date ? (
+                            isOverdue ? (
+                              <span 
+                                className="text-rose-600 font-black inline-flex items-center gap-1 cursor-help" 
+                                title={`ATRASADO: Vencimento expirado em ${new Date(p.due_date).toLocaleDateString('pt-BR')}`}
+                              >
+                                {new Date(p.due_date).toLocaleDateString('pt-BR')} ⚠️
+                              </span>
+                            ) : (
+                              <span className="text-slate-700">{new Date(p.due_date).toLocaleDateString('pt-BR')}</span>
+                            )
+                          ) : (
+                            <span className="text-slate-400 text-xs">—</span>
+                          )}
                         </td>
                         <td className="px-8 py-5 font-bold text-slate-900">
                           <div className="flex flex-col">
@@ -1750,13 +1862,38 @@ export default function FinancialPage() {
                           </div>
                         </td>
                         <td className="px-8 py-5">
-                          <span className={cn("px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
-                            p.type === 'income' ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"
-                          )}>
-                            {p.type === 'income' ? 'A Receber' : 'A Pagar'}
-                          </span>
+                          {isOverdue ? (
+                            <span 
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-rose-100 text-rose-700 border border-rose-200 rounded-full text-[10px] font-black uppercase tracking-wider animate-pulse cursor-help"
+                              title="ATRASADO: A data de vencimento foi ultrapassada sem quitação."
+                            >
+                              ⚠️ ATRASADO
+                            </span>
+                          ) : p.type === 'income' ? (
+                            <span 
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-[10px] font-black uppercase tracking-wider cursor-help"
+                              title="A RECEBER: Receita prevista / pendente de pagamento do paciente."
+                            >
+                              A RECEBER
+                            </span>
+                          ) : (
+                            <span 
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-orange-50 text-orange-700 border border-orange-200 rounded-full text-[10px] font-black uppercase tracking-wider cursor-help"
+                              title="A PAGAR: Despesa pendente de quitação."
+                            >
+                              A PAGAR
+                            </span>
+                          )}
                         </td>
-                        <td className="px-8 py-5 font-black text-slate-900">R$ {fmt(Math.abs(p.amount))}</td>
+                        <td 
+                          className={cn(
+                            "px-8 py-5 font-black cursor-help text-base", 
+                            isOverdue ? "text-rose-600" : p.type === 'income' ? "text-blue-600" : "text-orange-600"
+                          )}
+                          title={isOverdue ? "Valor em atraso" : p.type === 'income' ? "Valor a receber" : "Valor a pagar"}
+                        >
+                          R$ {fmt(Math.abs(p.amount))}
+                        </td>
                         <td className="px-8 py-5 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
@@ -1784,7 +1921,7 @@ export default function FinancialPage() {
                                 });
                               }}
                               className="p-1.5 bg-slate-50 text-slate-400 rounded-lg hover:bg-indigo-100 hover:text-indigo-600 transition-colors"
-                              title="Editar"
+                              title="Editar lançamento"
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
@@ -1798,13 +1935,14 @@ export default function FinancialPage() {
                               }}
                               disabled={saving}
                               className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all disabled:opacity-50"
+                              title="Confirmar quitação do lançamento"
                             >
                               Confirmar
                             </button>
                             <button
                               onClick={() => cancelPayment(p.id)}
                               className="p-2 bg-slate-50 text-slate-400 rounded-xl hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                              title="Cancelar"
+                              title="Cancelar lançamento"
                             >
                               <Ban className="w-4 h-4" />
                             </button>
@@ -2246,7 +2384,7 @@ export default function FinancialPage() {
               </button>
             </div>
             <div className="h-[350px]">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
@@ -2667,52 +2805,107 @@ export default function FinancialPage() {
       {/* MODAL: VENDER SERVIÇO                                                    */}
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {showSellModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
-          <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden max-h-[90vh] overflow-y-auto">
-            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-emerald-50/50">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-100 flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="p-6 sm:p-8 border-b border-slate-100 flex items-center justify-between bg-emerald-50/50 shrink-0">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-emerald-500 text-white rounded-2xl"><Briefcase className="w-6 h-6" /></div>
+                <div className="p-3 bg-emerald-500 text-white rounded-2xl shadow-sm"><Briefcase className="w-6 h-6" /></div>
                 <h3 className="text-2xl font-black text-slate-900">Vender Serviço</h3>
               </div>
-              <button onClick={() => setShowSellModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400"><X className="w-6 h-6" /></button>
+              <button onClick={() => setShowSellModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"><X className="w-6 h-6" /></button>
             </div>
-            <div className="p-8 space-y-5">
+            <div className="p-6 sm:p-8 space-y-5 overflow-y-auto custom-scrollbar flex-1">
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Paciente *</label>
-                <div className="relative mb-1.5">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Buscar por Nome ou CPF..."
-                    value={patientSearchSell}
-                    onChange={e => setPatientSearchSell(e.target.value)}
-                    className="w-full pl-11 pr-10 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-                  />
-                  {patientSearchSell && (
-                    <button
-                      type="button"
-                      onClick={() => setPatientSearchSell('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-                <select value={sellData.patient_id} onChange={e => setSellData({ ...sellData, patient_id: e.target.value })}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none cursor-pointer">
-                  <option value="">
-                    {patientSearchSell.trim()
-                      ? `Selecione (${filteredPatientsForSell.length} encontrado${filteredPatientsForSell.length === 1 ? '' : 's'})...`
-                      : 'Selecione o paciente...'}
-                  </option>
-                  {filteredPatientsForSell.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}{p.cpf ? ` — CPF: ${p.cpf}` : ''}
-                    </option>
-                  ))}
-                </select>
-                {patientSearchSell.trim() && filteredPatientsForSell.length === 0 && (
-                  <p className="text-[11px] text-rose-500 font-bold ml-1 mt-1">Nenhum paciente encontrado para "{patientSearchSell}".</p>
+                
+                {sellData.patient_id ? (
+                  (() => {
+                    const selP = patients.find(p => p.id === sellData.patient_id);
+                    return (
+                      <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex items-center justify-between shadow-sm animate-in fade-in">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0">
+                            {selP?.name?.charAt(0) || 'P'}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-slate-900 text-sm truncate">{selP?.name || 'Paciente selecionado'}</h4>
+                            <p className="text-xs text-slate-500 font-medium flex items-center gap-2">
+                              <span>CPF: <strong className="text-slate-700">{selP?.cpf || 'Não informado'}</strong></span>
+                              {selP?.phone && <span>• Tel: {selP.phone}</span>}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSellData({ ...sellData, patient_id: '' });
+                            setPatientSearchSell('');
+                          }}
+                          className="px-3 py-1.5 bg-white text-slate-700 hover:text-rose-600 border border-slate-200 rounded-xl text-xs font-bold transition-colors shrink-0 shadow-sm"
+                        >
+                          Trocar
+                        </button>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Buscar por Nome ou CPF (ex: 051 ou Rodrigo)..."
+                        value={patientSearchSell}
+                        onChange={e => setPatientSearchSell(e.target.value)}
+                        autoFocus
+                        className="w-full pl-11 pr-10 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                      />
+                      {patientSearchSell && (
+                        <button
+                          type="button"
+                          onClick={() => setPatientSearchSell('')}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto border border-slate-200/80 rounded-2xl bg-white divide-y divide-slate-50 shadow-inner custom-scrollbar">
+                      {filteredPatientsForSell.slice(0, 20).map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setSellData({ ...sellData, patient_id: p.id });
+                            setPatientSearchSell('');
+                          }}
+                          className="w-full text-left p-3 hover:bg-emerald-50/60 transition-colors flex items-center justify-between gap-2 group cursor-pointer"
+                        >
+                          <div className="min-w-0 flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-slate-100 group-hover:bg-emerald-100 group-hover:text-emerald-700 text-slate-500 flex items-center justify-center font-bold text-xs shrink-0 transition-colors">
+                              {p.name.charAt(0)}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-800 text-xs truncate group-hover:text-emerald-700 transition-colors">{p.name}</p>
+                              <p className="text-[10px] text-slate-400 font-medium">
+                                {p.cpf ? <span className="text-slate-600 font-semibold">CPF: {p.cpf}</span> : <span className="text-slate-400">Sem CPF</span>} {p.phone ? ` • Tel: ${p.phone}` : ''}
+                              </p>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-bold text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                            Selecionar →
+                          </span>
+                        </button>
+                      ))}
+
+                      {filteredPatientsForSell.length === 0 && (
+                        <div className="py-6 text-center text-xs text-slate-400 font-medium">
+                          Nenhum paciente encontrado para "{patientSearchSell}".
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
               <div className="space-y-2">

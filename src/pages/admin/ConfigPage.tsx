@@ -607,10 +607,17 @@ export default function ConfigPage() {
                 {editingItem.section === 'API & Integrações' && (
                   <div className="space-y-4">
                     {editingItem.item === 'API Asaas' && (
-                      <div className="space-y-6">
+                      <form onSubmit={e => e.preventDefault()} className="space-y-6">
                         <div className="space-y-2">
                           <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Token Asaas (Chave de API)</label>
-                          <input value={integrations.asaas_token} onChange={e => setIntegrations({...integrations, asaas_token: e.target.value})} type="password" placeholder="••••••••••••••••" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                          <input 
+                            value={integrations.asaas_token || ''} 
+                            onChange={e => setIntegrations({...integrations, asaas_token: e.target.value})} 
+                            type="password" 
+                            autoComplete="current-password"
+                            placeholder="••••••••••••••••" 
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
+                          />
                         </div>
                         
                         <div className="pt-4 border-t border-slate-100">
@@ -625,6 +632,7 @@ export default function ConfigPage() {
                               {import.meta.env.VITE_SUPABASE_URL}/functions/v1/asaas-integration/webhook
                             </code>
                             <button 
+                              type="button"
                               onClick={() => {
                                 navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/asaas-integration/webhook`);
                                 alert('URL copiada!');
@@ -641,6 +649,7 @@ export default function ConfigPage() {
                               value={integrations.asaas_webhook_token || ''} 
                               onChange={e => setIntegrations({...integrations, asaas_webhook_token: e.target.value})} 
                               type="password" 
+                              autoComplete="off"
                               placeholder="Token gerado na aba de Webhooks do Asaas..." 
                               className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-mono text-sm outline-none focus:ring-2 focus:ring-indigo-500" 
                             />
@@ -812,7 +821,7 @@ export default function ConfigPage() {
                             </div>
                           </div>
                         </div>
-                      </div>
+                      </form>
                     )}
                     {editingItem.item === 'Automação (n8n / Make)' && (
                       <div className="space-y-4">

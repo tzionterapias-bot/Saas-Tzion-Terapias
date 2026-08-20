@@ -44,53 +44,64 @@ export default function SessionLogger() {
     sessionStorage.setItem('@tzion:session-logger:secretary-note', secretaryNote);
   }, [secretaryNote]);
 
-  const fetchData = async () => {
+  const [therapistsList, setTherapistsList] = useState<any[]>([]);
+  const [selectedTherapistId, setSelectedTherapistId] = useState<string>(() => sessionStorage.getItem('@tzion:session-logger:therapistId') || '');
+  const [currentTherapistName, setCurrentTherapistName] = useState<string>('');
+
+  const fetchData = async (forcedTherapistId?: string) => {
     try {
       setLoading(true);
       const today = new Date().toISOString().split('T')[0];
       
+      // 1. Busca todos os terapeutas disponíveis
+      const { data: allTherapists } = await supabase.from('therapists').select('id, name, email, user_id').order('name');
+      const therapistsMap = new Map((allTherapists || []).map(t => [t.id, t.name]));
+      setTherapistsList(allTherapists || []);
+
+      // 2. Identifica o terapeuta do usuário logado (se houver)
       let myTherapistId = '';
       if (user?.id) {
-        const { data: tData } = await supabase
-          .from('therapists')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        if (tData?.id) {
-          myTherapistId = tData.id;
-        } else if (user.email) {
-          const { data: tEmail } = await supabase
-            .from('therapists')
-            .select('id')
-            .eq('email', user.email)
-            .maybeSingle();
-          if (tEmail?.id) myTherapistId = tEmail.id;
+        const matched = (allTherapists || []).find(t => 
+          t.user_id === user.id || 
+          (user.email && t.email && t.email.toLowerCase().trim() === user.email.toLowerCase().trim())
+        );
+        if (matched) {
+          myTherapistId = matched.id;
+          setCurrentTherapistName(matched.name);
         }
       }
 
-      let apptQuery = supabase
+      // 3. Define qual ID de terapeuta será consultado
+      const targetTherapistId = forcedTherapistId !== undefined 
+        ? forcedTherapistId 
+        : (user?.role === 'terapeuta' ? myTherapistId : (selectedTherapistId || myTherapistId));
+
+      if (user?.role === 'admin' && !selectedTherapistId && myTherapistId) {
+        setSelectedTherapistId(myTherapistId);
+      }
+
+      // Se nenhum terapeuta estiver selecionado ou vinculado, não exibe nenhuma sessão por segurança
+      if (!targetTherapistId) {
+        setAppointments([]);
+        setLoading(false);
+        return;
+      }
+
+      // 4. Consulta ESTRITAMENTE as sessões do terapeuta selecionado
+      const apptQuery = supabase
         .from('appointments')
         .select('*')
+        .eq('therapist_id', targetTherapistId)
         .gte('start_time', `${today}T00:00:00`)
         .lte('start_time', `${today}T23:59:59`)
         .order('start_time', { ascending: true });
 
-      if (user?.role === 'terapeuta') {
-        if (myTherapistId) {
-          apptQuery = apptQuery.eq('therapist_id', myTherapistId);
-        } else {
-          apptQuery = apptQuery.eq('therapist_id', '00000000-0000-0000-0000-000000000000');
-        }
-      }
-
-      const [apptsRes, patientsRes, therapistsRes] = await Promise.all([
+      const [apptsRes, patientsRes] = await Promise.all([
         apptQuery,
-        supabase.from('patients').select('id, name'),
-        supabase.from('therapists').select('id, name')
+        supabase.from('patients').select('id, name')
       ]);
 
       const patientsMap = new Map((patientsRes.data || []).map(p => [p.id, p.name]));
-      const therapistsMap = new Map((therapistsRes.data || []).map(t => [t.id, t.name]));
 
       const formatted = (apptsRes.data || []).filter(a => a.status !== 'completed').map(a => ({
         id: a.id,
@@ -156,8 +167,10 @@ export default function SessionLogger() {
   }, [activeSession]);
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (user) {
+      fetchData();
+    }
+  }, [user, selectedTherapistId]);
 
   // Update timer relative to session startTime (survives page refresh perfectly)
   useEffect(() => {
@@ -335,14 +348,61 @@ export default function SessionLogger() {
 
   if (!sessionActive) {
     return (
-      <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Próximos Atendimentos</h2>
-          <button onClick={fetchData} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+      <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-500">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Registros de Sessão</h2>
+            <p className="text-xs text-slate-500">Atendimentos e evolução clínica exclusivos por terapeuta</p>
+          </div>
+          <button onClick={() => fetchData()} className="p-2 hover:bg-slate-100 rounded-lg transition-colors self-end sm:self-auto" title="Recarregar">
             {loading ? <Loader2 className="w-5 h-5 animate-spin text-indigo-600" /> : <History className="w-5 h-5 text-slate-400" />}
           </button>
         </div>
 
+        {/* Barra de Seleção / Identificação do Terapeuta */}
+        {user?.role === 'admin' ? (
+          <div className="bg-white p-5 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+                <User className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Selecionar Terapeuta</h3>
+                <p className="text-xs text-slate-400">Exibindo apenas os agendamentos do profissional escolhido</p>
+              </div>
+            </div>
+            <select
+              value={selectedTherapistId}
+              onChange={(e) => {
+                const newId = e.target.value;
+                setSelectedTherapistId(newId);
+                sessionStorage.setItem('@tzion:session-logger:therapistId', newId);
+                fetchData(newId);
+              }}
+              className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none w-full sm:w-72"
+            >
+              <option value="">-- Escolha um Terapeuta --</option>
+              {therapistsList.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-bold">
+                <User className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-xs text-slate-400 font-medium block">Atendimentos de Hoje para</span>
+                <strong className="text-slate-800 text-sm">{currentTherapistName || user?.name}</strong>
+              </div>
+            </div>
+            <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-xs font-bold">Terapeuta Ativo</span>
+          </div>
+        )}
+
+        {/* Lista de Sessões */}
         <div className="grid grid-cols-1 gap-4">
           {appointments.map((apt) => (
             <div key={apt.id} className="bg-white p-4 sm:p-6 rounded-[2rem] border border-slate-200 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all group flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -358,11 +418,13 @@ export default function SessionLogger() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <h3 className="font-bold text-base sm:text-lg text-slate-900 group-hover:text-indigo-600 transition-colors truncate">{apt.patient}</h3>
-                    <p className="text-xs text-slate-500 font-medium flex flex-wrap items-center gap-1">
+                    <p className="text-xs text-slate-500 font-medium flex flex-wrap items-center gap-1.5 mt-0.5">
                       <FileText className="w-3 h-3 shrink-0" />
                       <span className="truncate max-w-[120px] sm:max-w-none">{apt.therapy}</span>
                       <span className="text-slate-300">•</span>
-                      <span className={cn(apt.type === 'Online' ? "text-blue-500" : "text-slate-500", "shrink-0")}>{apt.type}</span>
+                      <span className={cn(apt.type === 'Online' ? "text-blue-500 font-semibold" : "text-slate-500", "shrink-0")}>{apt.type}</span>
+                      <span className="text-slate-300">•</span>
+                      <span className="text-indigo-600 font-medium bg-indigo-50 px-2 py-0.5 rounded-md text-[11px]">Terapeuta: {apt.therapist}</span>
                     </p>
                   </div>
                 </div>
@@ -377,10 +439,20 @@ export default function SessionLogger() {
               </div>
             </div>
           ))}
-          {!loading && appointments.length === 0 && (
-            <div className="py-20 text-center text-slate-400 font-medium border-2 border-dashed border-slate-200 rounded-[2rem]">
-              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-4" />
-              Nenhum atendimento agendado para hoje.
+
+          {!loading && user?.role === 'admin' && !selectedTherapistId && (
+            <div className="py-16 text-center text-slate-400 font-medium border-2 border-dashed border-slate-200 rounded-[2rem] bg-white">
+              <User className="w-10 h-10 text-indigo-400 mx-auto mb-3 opacity-60" />
+              <p className="text-slate-700 font-bold text-base">Nenhum terapeuta selecionado</p>
+              <p className="text-slate-400 text-xs mt-1">Por favor, selecione um terapeuta no campo acima para carregar os atendimentos pertinentes.</p>
+            </div>
+          )}
+
+          {!loading && selectedTherapistId && appointments.length === 0 && (
+            <div className="py-16 text-center text-slate-400 font-medium border-2 border-dashed border-slate-200 rounded-[2rem] bg-white">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+              <p className="text-slate-700 font-bold text-base">Nenhum atendimento agendado para hoje</p>
+              <p className="text-slate-400 text-xs mt-1">O terapeuta selecionado não possui sessões pendentes para a data de hoje.</p>
             </div>
           )}
         </div>

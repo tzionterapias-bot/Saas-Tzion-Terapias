@@ -31,52 +31,76 @@ interface RegisterData {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+let cachedProfile: User | null = null;
+let profileInFlightPromise: Promise<User | null> | null = null;
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('@tzion:cached_profile');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
+  const [loading, setLoading] = useState(!user);
 
   const loadProfile = async (authUserId: string, email?: string): Promise<User | null> => {
-    console.log("AuthContext: loadProfile start for id:", authUserId, "email:", email);
+    // 1. Se já tiver em cache na memória, retorna de imediato
+    if (cachedProfile && cachedProfile.id === authUserId) {
+      return cachedProfile;
+    }
+
+    // 2. Se já tiver uma requisição em andamento para o mesmo usuário, reaproveita a Promise
+    if (profileInFlightPromise) {
+      return profileInFlightPromise;
+    }
 
     const isKnownAdmin = email === 'tzionterapias@gmail.com' || email === 'admin@tzion.com.br';
 
-    try {
-      const queryPromise = supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUserId)
-        .maybeSingle();
+    profileInFlightPromise = (async () => {
+      try {
+        const queryPromise = supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUserId)
+          .maybeSingle();
 
-      const timeoutPromise = new Promise<{ data: any; error: any; timeout: boolean }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: null, timeout: true }), 8000)
-      );
+        const timeoutPromise = new Promise<{ data: any; error: any; timeout: boolean }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: null, timeout: true }), 2500)
+        );
 
-      const res = await Promise.race([queryPromise, timeoutPromise]) as any;
-      
-      if (res?.timeout) {
-        console.warn("AuthContext: loadProfile query timed out after 8s for user", authUserId);
+        const res = await Promise.race([queryPromise, timeoutPromise]) as any;
+        const data = res?.data;
+
+        if (data) {
+          const profileUser: User = {
+            id: data.id,
+            name: data.name || email?.split('@')[0] || 'Usuário',
+            email: data.email || email || '',
+            role: (data.role || 'admin') as User['role'],
+            status: data.status,
+          };
+          cachedProfile = profileUser;
+          try { sessionStorage.setItem('@tzion:cached_profile', JSON.stringify(profileUser)); } catch {}
+          return profileUser;
+        }
+      } catch (err: any) {
+        console.error("AuthContext: loadProfile error", err);
+      } finally {
+        profileInFlightPromise = null;
       }
 
-      const data = res?.data;
-
-      if (data) {
-        return {
-          id: data.id,
-          name: data.name || email?.split('@')[0] || 'Usuário',
-          email: data.email || email || '',
-          role: (data.role || 'admin') as User['role'],
-          status: data.status,
-        };
+      if (isKnownAdmin) {
+        const adminUser: User = { id: authUserId, name: 'Administrador Tzion', email: email!, role: 'admin', status: 'active' };
+        cachedProfile = adminUser;
+        try { sessionStorage.setItem('@tzion:cached_profile', JSON.stringify(adminUser)); } catch {}
+        return adminUser;
       }
-    } catch (err: any) {
-      console.error("AuthContext: loadProfile query error", err);
-    }
 
-    if (isKnownAdmin) {
-      return { id: authUserId, name: 'Administrador Tzion', email: email!, role: 'admin' };
-    }
+      return null;
+    })();
 
-    return null;
+    return profileInFlightPromise;
   };
 
   useEffect(() => {

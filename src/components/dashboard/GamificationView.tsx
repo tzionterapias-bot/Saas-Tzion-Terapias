@@ -443,8 +443,8 @@ export default function GamificationView() {
                 </div>
               </div>
 
-              <div className="h-72 w-full pt-2">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-72 w-full pt-2 min-h-[250px]">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
                   <BarChart
                     data={rankedTherapists.map(item => ({
                       name: item.therapist.name.split(' ')[0] + (item.therapist.name.split(' ')[1] ? ' ' + item.therapist.name.split(' ')[1].charAt(0) + '.' : ''),

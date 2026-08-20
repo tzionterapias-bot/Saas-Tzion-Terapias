@@ -96,8 +96,8 @@ export default function FinancialDashboard() {
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4 text-indigo-600" />}
             </button>
           </div>
-          <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-80 w-full min-h-[250px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250}>
               <AreaChart data={[{name: 'Mai', value: stats.gross}]}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} />

@@ -206,8 +206,8 @@ export default function NpsDashboard() {
           <h3 className="text-lg font-black text-slate-900 mb-6 flex items-center gap-2">
             Distribuição de Notas
           </h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 min-h-[200px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
               <BarChart data={distributionData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
@@ -232,9 +232,9 @@ export default function NpsDashboard() {
             <TrendingUp className="w-5 h-5 text-indigo-500" />
             Tendência de Satisfação
           </h3>
-          <div className="h-64">
+          <div className="h-64 min-h-[200px]">
              {trendData.length > 1 ? (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
                 <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
