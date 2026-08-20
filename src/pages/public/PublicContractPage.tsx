@@ -227,7 +227,7 @@ export default function PublicContractPage() {
 
   const isSigned = contract?.status === 'signed';
 
-  // Parser preciso para renderizar todo o texto sem perdas e com formatação perfeita
+  // Parser preciso e universal para formatar perfeitamente qualquer contrato (antigo ou novo)
   const renderContractBlocks = () => {
     const raw = contract?.content || '';
     if (!raw.trim()) {
@@ -245,12 +245,12 @@ export default function PublicContractPage() {
       .map(p => p.trim())
       .filter(Boolean);
 
-    // Destaque cirúrgico dos dados da clínica, paciente, terapeuta, sessões e valores
+    // Destaque de dados-chave (Nomes, Clínicas, CNPJ, CPF, Datas, Valores e Sessões)
     const formatKeyData = (str: string) => {
-      const parts = str.split(/(TZION TERAPIAS INTEGRATIVAS|CNPJ\s*[\d./-]+|CRTH-BR\s*\d+|Marcos Dany Teixeira Magalh[ãa]es|CPF\s*(?:N[º°]|sob o n[úu]mero)?\s*[\d.-]+|R\$\s*[\d.,]+|\b\d+\s*\([^)]+\)\s*sess[õo]es|\b\d+\s*sess[õo]es)/gi);
+      const parts = str.split(/(TZION TERAPIAS INTEGRATIVAS|CNPJ\s*[\d./-]+|CRTH-BR\s*\d+|Marcos Dany Teixeira Magalh[ãa]es|CPF\s*(?:N[º°]|sob o n[úu]mero)?\s*[\d.-]+|R\$\s*[\d.,]+|\b\d+\s*\([^)]+\)\s*sess[õo]es|\b\d+\s*sess[õo]es|\b\d{2}\/\d{2}\/\d{4}\b)/gi);
 
       return parts.map((part, idx) => {
-        if (/(TZION TERAPIAS INTEGRATIVAS|CNPJ|CRTH-BR|Marcos Dany|CPF|R\$|\bsess[õo]es\b)/i.test(part)) {
+        if (/(TZION TERAPIAS INTEGRATIVAS|CNPJ|CRTH-BR|Marcos Dany|CPF|R\$|\bsess[õo]es\b|\b\d{2}\/\d{2}\/\d{4}\b)/i.test(part)) {
           return <strong key={idx} className="font-bold text-slate-900">{part}</strong>;
         }
         return part;
@@ -260,12 +260,18 @@ export default function PublicContractPage() {
     return (
       <div className="space-y-6 text-slate-700 text-sm md:text-base leading-relaxed">
         {paragraphs.map((para, idx) => {
-          // Título principal do documento
-          if (para.toUpperCase().includes('TERMO DE COMPROMISSO DE ATENDIMENTO TERAPÊUTICO')) {
+          const upper = para.toUpperCase();
+
+          // Título principal do documento (qualquer formato de título)
+          if (
+            upper.includes('TERMO DE COMPROMISSO') || 
+            upper.includes('CONTRATO DE PRESTAÇÃO DE SERVIÇOS') ||
+            (idx === 0 && (upper.startsWith('CONTRATO') || upper.startsWith('TERMO')))
+          ) {
             return (
-              <div key={idx} className="text-center pb-4 mb-6 border-b border-slate-200">
+              <div key={idx} className="text-center pb-5 mb-6 border-b border-slate-200">
                 <h2 className="text-lg md:text-xl font-black text-slate-900 uppercase tracking-tight">
-                  Termo de Compromisso de Atendimento Terapêutico
+                  {para.split('\n')[0].trim()}
                 </h2>
               </div>
             );
@@ -292,8 +298,8 @@ export default function PublicContractPage() {
             );
           }
 
-          // Data e local final
-          if (/^Aragua[íi]na/i.test(para)) {
+          // Data e local final (Ex: "Araguaína...", "São Paulo...", etc.)
+          if (/^(Aragua[íi]na|S[ãa]o Paulo|[A-Z][a-z]+(\s+[A-Z][a-z]+)*,\s*\d{1,2}\s+de\s+[a-z]+)/i.test(para)) {
             return (
               <div key={idx} className="date-final text-right pt-6 font-bold text-slate-900 text-sm md:text-base">
                 {para}
@@ -301,22 +307,34 @@ export default function PublicContractPage() {
             );
           }
 
-          // Cláusulas numeradas (ex: "1. Das partes\nAs partes..." ou "1. Das partes As partes...")
-          const matchClause = para.match(/^(\d+\.\s+[^\n\r.]+)(\.|\n|:)?\s*(.*)$/s);
+          // Cláusulas numeradas (Ex: "1. DO OBJETO E FUNCIONAMENTO\n..." ou "1. Das partes\n...")
+          const matchClause = para.match(/^(\d+\.\s+[^\n\r]+)(?:\n\s*|\:\s*|\.\s*)(.*)$/s);
           if (matchClause) {
             const title = matchClause[1].trim();
-            const rest = matchClause[3]?.trim();
+            const rest = matchClause[2]?.trim();
+
+            const subLines = rest ? rest.split('\n').map(l => l.trim()).filter(Boolean) : [];
 
             return (
-              <div key={idx} className="space-y-2 pt-2">
+              <div key={idx} className="space-y-3 pt-2">
                 <h3 className="font-black text-slate-900 text-sm md:text-base uppercase tracking-wide flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-indigo-600 inline-block print-hidden"></span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block shrink-0 print-hidden"></span>
                   {title}
                 </h3>
-                {rest && (
-                  <p className="text-justify [text-align-last:left] text-slate-700 leading-relaxed font-normal">
-                    {formatKeyData(rest)}
-                  </p>
+                {subLines.length > 0 && (
+                  <div className="space-y-2 pl-4 border-l-2 border-slate-100">
+                    {subLines.map((line, sIdx) => {
+                      const isBullet = line.startsWith('•') || line.startsWith('-');
+                      const cleanLine = isBullet ? line.replace(/^[•\-]\s*/, '') : line;
+
+                      return (
+                        <p key={sIdx} className="text-justify [text-align-last:left] text-slate-700 leading-relaxed font-normal flex items-start gap-2">
+                          {isBullet && <span className="text-indigo-600 font-bold mt-0.5 shrink-0">•</span>}
+                          <span>{formatKeyData(cleanLine)}</span>
+                        </p>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             );
@@ -368,15 +386,15 @@ export default function PublicContractPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={handleDownloadPdf}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition-all shadow-sm active:scale-95"
+            className="flex items-center gap-2 px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs transition-all shadow-sm active:scale-95 shrink-0 border border-indigo-100"
             title="Salvar ou Imprimir em PDF"
           >
-            <Download className="w-4 h-4 text-indigo-600" />
+            <Download className="w-4 h-4 text-indigo-600 shrink-0" />
             <span className="hidden sm:inline">Baixar Contrato (PDF)</span>
-            <span className="sm:hidden">PDF</span>
+            <span className="sm:hidden">Baixar PDF</span>
           </button>
 
           {isSigned && (
