@@ -95,6 +95,10 @@ export default function ReceptionView() {
             playRoomReleasedChime();
             showToast('🚪 Sala Liberada! O terapeuta chamou o próximo paciente.');
           }
+          if (payload.eventType === 'UPDATE' && payload.new?.status === 'arrived' && payload.old?.status !== 'arrived') {
+            playCheckinChime();
+            showToast('🔔 Paciente Chegou! Check-in registrado na recepção.');
+          }
           fetchStats();
         }
       )

@@ -214,7 +214,7 @@ export default function QuickSellPage() {
       const [servicesRes, patientsRes, paymentsRes] = await Promise.all([
         supabase.from('services').select('*').order('name'),
         supabase.from('patients').select('id, name, phone, cpf').eq('status', 'Ativo').order('name'),
-        supabase.from('payments').select('id, amount, net_amount, card_fee_rate, card_fee_val, status, created_at, description, payment_method, asaas_link, patient_id').order('created_at', { ascending: false }).limit(8)
+        supabase.from('payments').select('id, amount, net_amount, card_fee_rate, card_fee_val, status, type, created_at, description, payment_method, asaas_link, patient_id').order('created_at', { ascending: false }).limit(8)
       ]);
 
       setServices(servicesRes.data || []);
@@ -1015,49 +1015,82 @@ export default function QuickSellPage() {
             {recentPayments.length === 0 ? (
               <p className="text-center text-slate-400 py-4 font-medium">Nenhuma venda recente.</p>
             ) : (
-              recentPayments.map(payment => (
-                <div key={payment.id} className="flex flex-col p-4 bg-slate-50 rounded-lg border border-slate-100 gap-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className={cn(
-                        "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
-                        payment.status === 'paid' ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"
-                      )}>
-                        {payment.status === 'paid' ? <CheckCircle2 className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-slate-800 line-clamp-1">{payment.description}</p>
-                        <p className="text-xs text-slate-500">{new Date(payment.created_at).toLocaleString('pt-BR')}</p>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="flex items-start justify-end gap-2">
-                        <div>
-                          <p className="text-sm font-black text-slate-900">
-                            R$ {fmt(payment.net_amount !== null && payment.net_amount !== undefined ? payment.net_amount : payment.amount)}
-                          </p>
-                          {((payment.card_fee_val && payment.card_fee_val > 0) || (payment.net_amount !== null && payment.net_amount !== undefined && payment.net_amount < payment.amount)) && (
-                            <p className="text-[10px] text-slate-400 font-semibold">
-                              Bruto: R$ {fmt(payment.amount)} (Taxa: -R$ {fmt(payment.card_fee_val || (payment.amount - (payment.net_amount || 0)))})
-                            </p>
+              recentPayments.map(payment => {
+                const isExpense = payment.type === 'expense';
+                return (
+                  <div 
+                    key={payment.id} 
+                    className={cn(
+                      "flex flex-col p-4 rounded-xl border gap-3 transition-all",
+                      isExpense ? "bg-orange-50/25 border-orange-100 hover:border-orange-200" : "bg-slate-50 border-slate-100 hover:border-slate-200"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className={cn(
+                          "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm",
+                          isExpense 
+                            ? (payment.status === 'paid' ? "bg-orange-100 text-orange-600" : "bg-amber-100 text-amber-600")
+                            : (payment.status === 'paid' ? "bg-emerald-100 text-emerald-600" : "bg-blue-100 text-blue-600")
+                        )}>
+                          {isExpense ? (
+                            payment.status === 'paid' ? <ArrowDownRight className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />
+                          ) : (
+                            payment.status === 'paid' ? <CheckCircle2 className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />
                           )}
-                          <p className={cn(
-                            "text-[10px] font-black uppercase tracking-widest mt-0.5",
-                            payment.status === 'paid' ? "text-emerald-500" : payment.status === 'cancelled' ? "text-rose-500" : "text-amber-500"
-                          )}>
-                            {payment.status === 'paid' ? 'Pago' : payment.status === 'cancelled' ? 'Cancelado' : 'Pendente'}
-                          </p>
                         </div>
-                        <button
-                          onClick={() => handleDeletePayment(payment.id, payment.description)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1 cursor-pointer"
-                          title="Excluir lançamento"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-bold text-slate-800 line-clamp-1">{payment.description}</p>
+                            <span className={cn(
+                              "text-[9px] font-black uppercase px-1.5 py-0.5 rounded tracking-wider shrink-0",
+                              isExpense ? "bg-orange-100 text-orange-700" : "bg-emerald-100 text-emerald-700"
+                            )}>
+                              {isExpense ? 'Saída' : 'Entrada'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">{new Date(payment.created_at).toLocaleString('pt-BR')}</p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="flex items-start justify-end gap-2">
+                          <div>
+                            <p className={cn(
+                              "text-sm font-black",
+                              isExpense ? "text-orange-600" : "text-emerald-600"
+                            )}>
+                              {isExpense ? '-' : '+'} R$ {fmt(isExpense ? payment.amount : (payment.net_amount !== null && payment.net_amount !== undefined ? payment.net_amount : payment.amount))}
+                            </p>
+                            {!isExpense && ((payment.card_fee_val && payment.card_fee_val > 0) || (payment.net_amount !== null && payment.net_amount !== undefined && payment.net_amount < payment.amount)) && (
+                              <p className="text-[10px] text-slate-400 font-semibold">
+                                Bruto: R$ {fmt(payment.amount)} (Taxa: -R$ {fmt(payment.card_fee_val || (payment.amount - (payment.net_amount || 0)))})
+                              </p>
+                            )}
+                            <p className={cn(
+                              "text-[10px] font-black uppercase tracking-widest mt-0.5",
+                              payment.status === 'paid' 
+                                ? (isExpense ? "text-orange-600" : "text-emerald-600")
+                                : payment.status === 'cancelled' 
+                                  ? "text-rose-500" 
+                                  : (isExpense ? "text-amber-600" : "text-blue-600")
+                            )}>
+                              {payment.status === 'paid' 
+                                ? (isExpense ? 'Pago (Despesa)' : 'Pago') 
+                                : payment.status === 'cancelled' 
+                                  ? 'Cancelado' 
+                                  : (isExpense ? 'A Pagar' : 'Pendente')}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeletePayment(payment.id, payment.description)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1 cursor-pointer"
+                            title="Excluir lançamento"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
                   
                   {payment.status === 'pending' && payment.patient_id && (
                     <button
@@ -1089,8 +1122,9 @@ export default function QuickSellPage() {
                       Reenviar Cobrança no WhatsApp
                     </button>
                   )}
-                </div>
-              ))
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

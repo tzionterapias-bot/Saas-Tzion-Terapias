@@ -658,7 +658,24 @@ export default function AgendaManager() {
           if (payload.eventType === 'UPDATE' && payload.new?.status === 'calling' && payload.old?.status !== 'calling') {
             playRoomReleasedChime();
             setToastMessage('🚪 Sala Liberada! O terapeuta chamou o próximo paciente.');
-            setTimeout(() => setToastMessage(null), 5000);
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('🚪 Sala Liberada - Tzion Terapias', {
+                body: 'O terapeuta liberou a sala para o próximo atendimento.',
+                icon: '/favicon.ico'
+              });
+            }
+            setTimeout(() => setToastMessage(null), 6000);
+          }
+          if (payload.eventType === 'UPDATE' && payload.new?.status === 'arrived' && payload.old?.status !== 'arrived') {
+            playCheckinChime();
+            setToastMessage('🔔 Paciente Chegou! Check-in realizado na recepção.');
+            if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification('🔔 Paciente Chegou - Tzion Terapias', {
+                body: 'Um paciente acabou de fazer check-in e está aguardando.',
+                icon: '/favicon.ico'
+              });
+            }
+            setTimeout(() => setToastMessage(null), 6000);
           }
           fetchData(false);
         }
@@ -1038,6 +1055,24 @@ export default function AgendaManager() {
      }
   };
 
+  const handleReleaseRoom = async (event: Appointment) => {
+    try {
+      const { error } = await supabase.from('appointments').update({
+        status: 'calling'
+      }).eq('id', event.id);
+      
+      if (error) throw error;
+      playRoomReleasedChime();
+      setToastMessage('🚪 Sala Liberada! Alerta emitido.');
+      setTimeout(() => setToastMessage(null), 4000);
+      fetchData(false);
+    } catch(e: any) {
+      console.error(e);
+      setToastMessage('Erro ao liberar sala: ' + e.message);
+      setTimeout(() => setToastMessage(null), 4000);
+    }
+  };
+
   const handleFinishSession = async (event: Appointment) => {
      if (!confirm(`Confirmar o encerramento da sessão de ${event.patient_name}? O NPS será programado.`)) return;
      
@@ -1286,8 +1321,17 @@ export default function AgendaManager() {
                         <Activity className="w-4 h-4" /> Em Atendimento
                      </div>
                   ) : event.status === 'arrived' ? (
-                     <div title="Aguardando na Recepção" className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold shrink-0">
-                        <Clock className="w-4 h-4" /> Aguardando
+                     <div className="flex items-center gap-1.5 shrink-0">
+                        <div title="Paciente Aguardando na Recepção" className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-50 text-amber-700 rounded-xl text-xs font-bold shrink-0 border border-amber-200/60">
+                           <Clock className="w-3.5 h-3.5" /> Aguardando
+                        </div>
+                        <button
+                          onClick={() => handleReleaseRoom(event)}
+                          title="Liberar Sala e Chamar Paciente (Alerta Sonoro em Tempo Real)"
+                          className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm border border-emerald-200 shrink-0 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Liberar Sala
+                        </button>
                      </div>
                   ) : (
                      <button 

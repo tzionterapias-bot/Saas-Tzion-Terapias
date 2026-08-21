@@ -13,8 +13,21 @@ export async function sendWhatsAppMessage(
   mediaAttachment?: { base64: string, mimeType: string, fileName: string }
 ) {
   try {
-    const n8nWebhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL;
-    const isProduction = !!n8nWebhookUrl || !!import.meta.env.VITE_EVOLUTION_API_URL;
+    let instanceName = import.meta.env.VITE_EVOLUTION_INSTANCE_NAME || 'tzion';
+    let dashboardWebhookUrl = import.meta.env.VITE_N8N_DASHBOARD_WEBHOOK_URL || 'https://n8n2.agenciahigher.com.br/webhook/34ca7f6a-4bf7-4d37-9ea7-059eb36267d8';
+
+    try {
+      const { data: setts } = await supabase.from('settings').select('key, value').in('key', [
+        'evolution_instance_name',
+        'n8n_dashboard_webhook_url'
+      ]);
+      setts?.forEach(s => {
+        if (s.key === 'evolution_instance_name' && s.value) instanceName = String(s.value);
+        if (s.key === 'n8n_dashboard_webhook_url' && s.value) dashboardWebhookUrl = String(s.value);
+      });
+    } catch (_) {}
+
+    const isProduction = true;
     let status = 'failed';
 
     if (isProduction && phone) {
@@ -32,7 +45,7 @@ export async function sendWhatsAppMessage(
         // Mídia: envia direto pela Evolution API via Proxy
         if (mediaAttachment) {
           console.log('[WHATSAPP] Enviando mídia direto pela Evolution API via Proxy...');
-          const endpoint = `${EVOLUTION_API_URL}/sendMedia/${EVOLUTION_INSTANCE}`;
+          const endpoint = `${EVOLUTION_API_URL}/sendMedia/${instanceName}`;
           let mediaType = 'document';
           if (mediaAttachment.mimeType.startsWith('image/')) mediaType = 'image';
           if (mediaAttachment.mimeType.startsWith('video/')) mediaType = 'video';
@@ -63,39 +76,86 @@ export async function sendWhatsAppMessage(
             console.error('Falha no envio de mídia via Proxy:', await response.text());
           }
         } else {
-          // Texto: envia via nó ATENDIMENTO DASHBOARD do n8n (que chama a Evolution API internamente)
-          const dashboardWebhookUrl = import.meta.env.VITE_N8N_DASHBOARD_WEBHOOK_URL || n8nWebhookUrl;
-          let response = await fetch('/api/n8n-proxy', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              webhookUrl: dashboardWebhookUrl,
-              payload: {
-                phone: waNumber,
-                message: message
-              }
-            })
-          });
+          // Texto: 1ª tentativa via Webhook do n8n
+          let sentOk = false;
+          if (dashboardWebhookUrl) {
+            try {
+              let response = await fetch('/api/n8n-proxy', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  webhookUrl: dashboardWebhookUrl,
+                  payload: {
+                    phone: waNumber,
+                    message: message
+                  }
+                })
+              });
 
-          if (!response.ok && dashboardWebhookUrl) {
-            console.warn('[WHATSAPP] Proxy retornou erro, tentando envio direto ao webhook n8n...');
-            response = await fetch(dashboardWebhookUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                phone: waNumber,
-                message: message
-              })
-            });
+              if (!response.ok) {
+                response = await fetch(dashboardWebhookUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    phone: waNumber,
+                    message: message
+                  })
+                });
+              }
+
+              if (response.ok) {
+                sentOk = true;
+                status = 'sent';
+              }
+            } catch (n8nErr) {
+              console.warn('[WHATSAPP] n8n falhou, acionando fallback direto Evolution API...', n8nErr);
+            }
           }
 
-          if (response.ok) {
-            status = 'sent';
-          } else {
-            console.error('Falha no envio via Webhook n8n Dashboard:', await response.text());
+          // Fallback DIRETO: Envia direto pela Evolution API via Proxy (/api/whatsapp/sendText/:instanceName)
+          if (!sentOk) {
+            console.log('[WHATSAPP] Enviando texto direto pela Evolution API via Proxy...');
+            try {
+              let directRes = await fetch(`${EVOLUTION_API_URL}/sendText/${instanceName}`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  number: waNumber,
+                  text: message,
+                  options: { delay: 1200, presence: 'composing', linkPreview: false }
+                })
+              });
+
+              // Se a instância principal falhar e houver outra conectada (ex: lumina_igrejalumina), tenta fallback de instância
+              if (!directRes.ok && instanceName === 'tzion') {
+                directRes = await fetch(`${EVOLUTION_API_URL}/sendText/lumina_igrejalumina`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                  },
+                  body: JSON.stringify({
+                    number: waNumber,
+                    text: message,
+                    options: { delay: 1200, presence: 'composing', linkPreview: false }
+                  })
+                });
+              }
+
+              if (directRes.ok) {
+                status = 'sent';
+              } else {
+                console.error('Falha no envio direto via Evolution API:', await directRes.text());
+              }
+            } catch (directErr) {
+              console.error('Erro no envio direto Evolution API:', directErr);
+            }
           }
         }
       } catch (err) {

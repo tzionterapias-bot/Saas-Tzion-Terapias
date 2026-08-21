@@ -21,6 +21,35 @@ const DEFAULT_EVOLUTION_API_URL = process.env.VITE_EVOLUTION_API_URL || "https:/
 const DEFAULT_EVOLUTION_GLOBAL_KEY = process.env.VITE_EVOLUTION_GLOBAL_KEY || process.env.VITE_EVOLUTION_API_KEY || "Lumina2026";
 const DEFAULT_EVOLUTION_INSTANCE_NAME = process.env.VITE_EVOLUTION_INSTANCE_NAME || "tzion";
 
+async function getEvolutionConfig() {
+  try {
+    const { data } = await supabase.from('settings').select('key, value').in('key', [
+      'evolution_api_url',
+      'evolution_global_key',
+      'evolution_instance_name',
+      'n8n_dashboard_webhook_url'
+    ]);
+    const configMap: Record<string, string> = {};
+    data?.forEach((item: any) => {
+      if (item.value) configMap[item.key] = typeof item.value === 'string' ? item.value : String(item.value);
+    });
+
+    const apiUrl = (configMap['evolution_api_url'] || process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL).replace(/\/+$/, '');
+    const apiKey = configMap['evolution_global_key'] || process.env.VITE_EVOLUTION_GLOBAL_KEY || process.env.VITE_EVOLUTION_API_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
+    const instanceName = configMap['evolution_instance_name'] || process.env.VITE_EVOLUTION_INSTANCE_NAME || DEFAULT_EVOLUTION_INSTANCE_NAME;
+    const n8nUrl = configMap['n8n_dashboard_webhook_url'] || process.env.VITE_N8N_DASHBOARD_WEBHOOK_URL || "https://n8n2.agenciahigher.com.br/webhook/34ca7f6a-4bf7-4d37-9ea7-059eb36267d8";
+
+    return { apiUrl, apiKey, instanceName, n8nUrl };
+  } catch (err) {
+    return {
+      apiUrl: DEFAULT_EVOLUTION_API_URL,
+      apiKey: DEFAULT_EVOLUTION_GLOBAL_KEY,
+      instanceName: DEFAULT_EVOLUTION_INSTANCE_NAME,
+      n8nUrl: "https://n8n2.agenciahigher.com.br/webhook/34ca7f6a-4bf7-4d37-9ea7-059eb36267d8"
+    };
+  }
+}
+
 export const app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -152,10 +181,9 @@ async function startServer() {
   // --- SECURE WHATSAPP PROXY ---
   app.get("/api/whatsapp/instances", requireStaffAuth, async (req, res) => {
     try {
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
-      const response = await fetch(`${apiUrl}/instance/fetchInstances`, {
-        headers: { 'apikey': apiKey }
+      const config = await getEvolutionConfig();
+      const response = await fetch(`${config.apiUrl}/instance/fetchInstances`, {
+        headers: { 'apikey': config.apiKey }
       });
       const data = await response.json();
       res.status(response.status).json(data);
@@ -168,28 +196,25 @@ async function startServer() {
   app.post("/api/whatsapp/setup", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.body;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
+      const config = await getEvolutionConfig();
       
-      console.log(`[PROXY SETUP] URL: ${apiUrl}/instance/create`);
+      console.log(`[PROXY SETUP] URL: ${config.apiUrl}/instance/create`);
       console.log(`[PROXY SETUP] Instance Name: ${instanceName}`);
-      console.log(`[PROXY SETUP] Global Key: "${apiKey}" (length: ${apiKey.length})`);
+      console.log(`[PROXY SETUP] Global Key: "${config.apiKey}"`);
       
-      const createRes = await fetch(`${apiUrl}/instance/create`, {
+      const createRes = await fetch(`${config.apiUrl}/instance/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': apiKey
+          'apikey': config.apiKey
         },
         body: JSON.stringify({
-          instanceName,
+          instanceName: instanceName || config.instanceName,
           qrcode: true,
           integration: 'WHATSAPP-BAILEYS'
         })
       });
       const createData = await createRes.json();
-      console.log(`[PROXY SETUP] Status: ${createRes.status}`);
-      console.log(`[PROXY SETUP] Response:`, JSON.stringify(createData));
       res.status(createRes.status).json(createData);
     } catch (err: any) {
       console.error("Error setting up instance:", err);
@@ -200,14 +225,13 @@ async function startServer() {
   app.post("/api/whatsapp/settings/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
+      const config = await getEvolutionConfig();
       
-      const settingsRes = await fetch(`${apiUrl}/settings/set/${instanceName}`, {
+      const settingsRes = await fetch(`${config.apiUrl}/settings/set/${instanceName}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': apiKey
+          'apikey': config.apiKey
         },
         body: JSON.stringify(req.body)
       });
@@ -222,14 +246,13 @@ async function startServer() {
   app.post("/api/whatsapp/webhook/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
+      const config = await getEvolutionConfig();
       
-      const webhookRes = await fetch(`${apiUrl}/webhook/set/${instanceName}`, {
+      const webhookRes = await fetch(`${config.apiUrl}/webhook/set/${instanceName}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': apiKey
+          'apikey': config.apiKey
         },
         body: JSON.stringify(req.body)
       });
@@ -244,11 +267,10 @@ async function startServer() {
   app.get("/api/whatsapp/qrcode/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
+      const config = await getEvolutionConfig();
       
-      const response = await fetch(`${apiUrl}/instance/connect/${instanceName}`, {
-        headers: { 'apikey': apiKey }
+      const response = await fetch(`${config.apiUrl}/instance/connect/${instanceName}`, {
+        headers: { 'apikey': config.apiKey }
       });
       const data = await response.json();
       res.status(response.status).json(data);
@@ -261,11 +283,10 @@ async function startServer() {
   app.get("/api/whatsapp/status/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
+      const config = await getEvolutionConfig();
       
-      const response = await fetch(`${apiUrl}/instance/connectionState/${instanceName}`, {
-        headers: { 'apikey': apiKey }
+      const response = await fetch(`${config.apiUrl}/instance/connectionState/${instanceName}`, {
+        headers: { 'apikey': config.apiKey }
       });
       const data = await response.json();
       res.status(response.status).json(data);
@@ -393,17 +414,17 @@ async function startServer() {
   app.post("/api/whatsapp/sendText/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
+      const config = await getEvolutionConfig();
+      const targetInstance = instanceName && instanceName !== 'undefined' ? instanceName : config.instanceName;
       
-      console.log(`[PROXY SEND_TEXT] Instance: ${instanceName}, URL: ${apiUrl}/message/sendText/${instanceName}`);
+      console.log(`[PROXY SEND_TEXT] Instance: ${targetInstance}, URL: ${config.apiUrl}/message/sendText/${targetInstance}`);
       console.log(`[PROXY SEND_TEXT] Body:`, JSON.stringify(req.body));
       
-      const response = await fetch(`${apiUrl}/message/sendText/${instanceName}`, {
+      const response = await fetch(`${config.apiUrl}/message/sendText/${targetInstance}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': apiKey
+          'apikey': config.apiKey
         },
         body: JSON.stringify(req.body)
       });
@@ -422,23 +443,20 @@ async function startServer() {
   app.post("/api/whatsapp/sendMedia/:instanceName", requireStaffAuth, async (req, res) => {
     try {
       const { instanceName } = req.params;
-      const apiKey = process.env.VITE_EVOLUTION_GLOBAL_KEY || DEFAULT_EVOLUTION_GLOBAL_KEY;
-      const apiUrl = process.env.VITE_EVOLUTION_API_URL || DEFAULT_EVOLUTION_API_URL;
+      const config = await getEvolutionConfig();
+      const targetInstance = instanceName && instanceName !== 'undefined' ? instanceName : config.instanceName;
       
       const isAudio = req.body.mediatype === 'audio';
       const endpoint = isAudio 
-        ? `${apiUrl}/message/sendWhatsAppAudio/${instanceName}` 
-        : `${apiUrl}/message/sendMedia/${instanceName}`;
+        ? `${config.apiUrl}/message/sendWhatsAppAudio/${targetInstance}` 
+        : `${config.apiUrl}/message/sendMedia/${targetInstance}`;
         
-      // Se for áudio, Evolution espera a propriedade 'audio' com o base64 (em versões v1/v2 mistas), 
-      // ou apenas aceita se enviarmos no formato correto.
-      // Vamos formatar o body para garantir suporte a sendWhatsAppAudio
       let bodyPayload = req.body;
       if (isAudio && req.body.media) {
         bodyPayload = {
           number: req.body.number,
           options: req.body.options,
-          audio: req.body.media // sendWhatsAppAudio usa 'audio' no body
+          audio: req.body.media
         };
       }
 
@@ -446,7 +464,7 @@ async function startServer() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': apiKey
+          'apikey': config.apiKey
         },
         body: JSON.stringify(bodyPayload)
       });
