@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   CreditCard, DollarSign, CheckCircle2, AlertCircle, Loader2, X, Save, 
-  Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus, Search, ChevronDown, Check
+  Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus, Search, ChevronDown, Check, Trash2
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -147,8 +147,21 @@ export default function QuickSellPage() {
     }
 
     setSaving(true);
+    const amountVal = Number(newEntry.amount);
+    let rate = 0;
+    if (newEntry.payment_method === 'credit_card') rate = 3.5;
+    else if (newEntry.payment_method === 'debit_card') rate = 1.5;
+    else if (newEntry.payment_method === 'asaas_pix') rate = 0.99;
+    else if (newEntry.payment_method === 'asaas_credit') rate = 3.49;
+
+    const feeVal = newEntry.type === 'income' ? amountVal * (rate / 100) : 0;
+    const netVal = newEntry.type === 'income' ? amountVal - feeVal : amountVal;
+
     const { error } = await supabase.from('payments').insert([{
-      amount: Number(newEntry.amount),
+      amount: amountVal,
+      net_amount: netVal,
+      card_fee_rate: rate,
+      card_fee_val: feeVal,
       type: newEntry.type,
       status: newEntry.status,
       description: newEntry.description,
@@ -171,6 +184,22 @@ export default function QuickSellPage() {
     setSaving(false);
   };
 
+  const handleDeletePayment = async (id: string, description?: string) => {
+    const descText = description ? ` "${description}"` : '';
+    if (!window.confirm(`Tem certeza que deseja EXCLUIR permanentemente este lançamento${descText}?\n\nEsta ação não poderá ser desfeita.`)) {
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from('payments').delete().eq('id', id);
+    if (error) {
+      showToast('Erro ao excluir lançamento: ' + error.message, 'error');
+    } else {
+      showToast('Lançamento excluído com sucesso!');
+      fetchData();
+    }
+    setSaving(false);
+  };
+
   const [createdAsaasPayment, setCreatedAsaasPayment] = useState<{ url: string; amount: number; patientName: string; phone: string | null; paymentId: string } | null>(null);
   const [createdPixQrCode, setCreatedPixQrCode] = useState<{ encodedImage: string; payload: string; amount: number; patientName: string; paymentId: string } | null>(null);
 
@@ -185,7 +214,7 @@ export default function QuickSellPage() {
       const [servicesRes, patientsRes, paymentsRes] = await Promise.all([
         supabase.from('services').select('*').order('name'),
         supabase.from('patients').select('id, name, phone, cpf').eq('status', 'Ativo').order('name'),
-        supabase.from('payments').select('id, amount, status, created_at, description, payment_method, asaas_link, patient_id').order('created_at', { ascending: false }).limit(5)
+        supabase.from('payments').select('id, amount, net_amount, card_fee_rate, card_fee_val, status, created_at, description, payment_method, asaas_link, patient_id').order('created_at', { ascending: false }).limit(8)
       ]);
 
       setServices(servicesRes.data || []);
@@ -437,7 +466,7 @@ export default function QuickSellPage() {
 
     const rate = (sellData.payment_method === 'credit_card' || sellData.payment_method === 'debit_card')
       ? (parseFloat(cardFeeRateInput) || 0)
-      : 0;
+      : (sellData.payment_method === 'asaas_pix' ? 0.99 : (sellData.payment_method === 'asaas_credit' ? 3.49 : 0));
     const feeVal = totalPrice * (rate / 100);
     const netVal = totalPrice - feeVal;
 
@@ -1002,13 +1031,31 @@ export default function QuickSellPage() {
                       </div>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-sm font-black text-slate-900">R$ {fmt(payment.amount)}</p>
-                      <p className={cn(
-                      "text-[10px] font-black uppercase tracking-widest",
-                      payment.status === 'paid' ? "text-emerald-500" : payment.status === 'cancelled' ? "text-rose-500" : "text-amber-500"
-                    )}>
-                      {payment.status === 'paid' ? 'Pago' : payment.status === 'cancelled' ? 'Cancelado' : 'Pendente'}
-                    </p>
+                      <div className="flex items-start justify-end gap-2">
+                        <div>
+                          <p className="text-sm font-black text-slate-900">
+                            R$ {fmt(payment.net_amount !== null && payment.net_amount !== undefined ? payment.net_amount : payment.amount)}
+                          </p>
+                          {((payment.card_fee_val && payment.card_fee_val > 0) || (payment.net_amount !== null && payment.net_amount !== undefined && payment.net_amount < payment.amount)) && (
+                            <p className="text-[10px] text-slate-400 font-semibold">
+                              Bruto: R$ {fmt(payment.amount)} (Taxa: -R$ {fmt(payment.card_fee_val || (payment.amount - (payment.net_amount || 0)))})
+                            </p>
+                          )}
+                          <p className={cn(
+                            "text-[10px] font-black uppercase tracking-widest mt-0.5",
+                            payment.status === 'paid' ? "text-emerald-500" : payment.status === 'cancelled' ? "text-rose-500" : "text-amber-500"
+                          )}>
+                            {payment.status === 'paid' ? 'Pago' : payment.status === 'cancelled' ? 'Cancelado' : 'Pendente'}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleDeletePayment(payment.id, payment.description)}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1 cursor-pointer"
+                          title="Excluir lançamento"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                   

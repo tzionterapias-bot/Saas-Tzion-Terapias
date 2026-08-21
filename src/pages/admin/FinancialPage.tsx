@@ -550,6 +550,14 @@ export default function FinancialPage() {
   const dashboardStats = useMemo(() => {
     const paidIncomes = monthlyPaid.filter(p => p.type === 'income');
     const grossIncome = paidIncomes.reduce((s, p) => s + (p.net_amount !== null && p.net_amount !== undefined ? Math.abs(p.net_amount) : Math.abs(p.amount)), 0);
+    const totalGrossBilled = paidIncomes.reduce((s, p) => s + Math.abs(p.amount), 0);
+    const totalFeesCharged = paidIncomes.reduce((s, p) => {
+      if (p.card_fee_val && p.card_fee_val > 0) return s + Number(p.card_fee_val);
+      if (p.net_amount !== null && p.net_amount !== undefined && p.net_amount < p.amount) {
+        return s + (p.amount - p.net_amount);
+      }
+      return s;
+    }, 0);
     
     // Despesas operacionais não incluem repasses ou bônus de equipe, pois estes já são deduzidos do faturamento ou lucro
     const grossExpense = monthlyPaid.filter(p => 
@@ -586,6 +594,8 @@ export default function FinancialPage() {
 
     return {
       grossIncome,
+      totalGrossBilled,
+      totalFeesCharged,
       grossExpense,
       totalTherapistShare,
       clinicShareGross,
@@ -701,20 +711,30 @@ export default function FinancialPage() {
     }
     setSaving(true);
 
+    const count = newEntry.is_installment ? Math.max(2, Math.min(36, parseInt(newEntry.installments_count, 10) || 2)) : 1;
+    const rate = getFeeRate(newEntry.payment_method, count, feeRates);
+    const feeVal = newEntry.type === 'income' ? amountVal * (rate / 100) : 0;
+    const netVal = newEntry.type === 'income' ? amountVal - feeVal : amountVal;
+
     if (newEntry.is_installment && customInstallmentsList.length > 1) {
-      const count = customInstallmentsList.length;
+      const instCount = customInstallmentsList.length;
       const rowsToInsert = customInstallmentsList.map(inst => {
-        const itemAmount = Number(inst.amount.toString().replace(',', '.')) || (amountVal / count);
+        const itemAmount = Number(inst.amount.toString().replace(',', '.')) || (amountVal / instCount);
+        const itemFee = newEntry.type === 'income' ? itemAmount * (rate / 100) : 0;
+        const itemNet = newEntry.type === 'income' ? itemAmount - itemFee : itemAmount;
         return {
           amount: itemAmount,
+          net_amount: itemNet,
+          card_fee_rate: rate,
+          card_fee_val: itemFee,
           type: newEntry.type,
           status: inst.status,
-          description: `${newEntry.description} (${inst.number}/${count})`,
+          description: `${newEntry.description} (${inst.number}/${instCount})`,
           category: newEntry.category,
           payment_method: newEntry.payment_method,
           due_date: inst.dueDate || null,
           is_fixed: false,
-          installments: count,
+          installments: instCount,
           created_at: new Date().toISOString(),
         };
       });
@@ -724,7 +744,7 @@ export default function FinancialPage() {
         console.error('Erro ao parcelar lançamento:', error);
         showToast('Erro ao salvar parcelamento.', 'error');
       } else {
-        showToast(`Lançadas ${count} parcelas com sucesso!`);
+        showToast(`Lançadas ${instCount} parcelas com sucesso!`);
         setShowEntryModal(false);
         setNewEntry(emptyEntry);
         fetchAll();
@@ -732,6 +752,9 @@ export default function FinancialPage() {
     } else {
       const { error } = await supabase.from('payments').insert([{
         amount: amountVal,
+        net_amount: netVal,
+        card_fee_rate: rate,
+        card_fee_val: feeVal,
         type: newEntry.type,
         status: newEntry.status,
         description: newEntry.description,
@@ -764,8 +787,15 @@ export default function FinancialPage() {
       return;
     }
     setSaving(true);
+    const rate = getFeeRate(editEntry.payment_method, showEditModal.installments || 1, feeRates);
+    const feeVal = editEntry.type === 'income' ? amountVal * (rate / 100) : 0;
+    const netVal = editEntry.type === 'income' ? amountVal - feeVal : amountVal;
+
     const { error } = await supabase.from('payments').update({
       amount: amountVal,
+      net_amount: netVal,
+      card_fee_rate: rate,
+      card_fee_val: feeVal,
       type: editEntry.type,
       status: editEntry.status,
       description: editEntry.description,
@@ -780,6 +810,22 @@ export default function FinancialPage() {
       showToast('Lançamento atualizado com sucesso!');
       setShowEditModal(null);
       setEditEntry(emptyEntry);
+      fetchAll();
+    }
+    setSaving(false);
+  };
+
+  const handleDeletePayment = async (id: string, description?: string) => {
+    const descText = description ? ` "${description}"` : '';
+    if (!window.confirm(`Tem certeza que deseja EXCLUIR permanentemente este lançamento${descText}?\n\nEsta ação não poderá ser desfeita.`)) {
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from('payments').delete().eq('id', id);
+    if (error) {
+      showToast('Erro ao excluir lançamento: ' + error.message, 'error');
+    } else {
+      showToast('Lançamento excluído com sucesso!');
       fetchAll();
     }
     setSaving(false);
@@ -1690,10 +1736,19 @@ export default function FinancialPage() {
                       className={cn("px-8 py-5 font-black cursor-help text-base", p.type === 'income' ? "text-emerald-600" : "text-orange-600")}
                       title={p.type === 'income' ? 'Entrada confirmada em caixa' : 'Saída / Pagamento efetuado'}
                     >
-                      {p.type === 'income' ? '+' : '-'} R$ {fmt(Math.abs(p.amount))}
+                      <div>
+                        <span>
+                          {p.type === 'income' ? '+' : '-'} R$ {fmt(p.type === 'income' && p.net_amount !== null && p.net_amount !== undefined ? Math.abs(p.net_amount) : Math.abs(p.amount))}
+                        </span>
+                        {p.type === 'income' && ((p.card_fee_val && p.card_fee_val > 0) || (p.net_amount !== null && p.net_amount !== undefined && p.net_amount < p.amount)) && (
+                          <span className="text-[10px] text-slate-400 font-medium block mt-0.5 whitespace-nowrap">
+                            Bruto: R$ {fmt(p.amount)} • Taxa: -R$ {fmt(p.card_fee_val || (p.amount - (p.net_amount || 0)))} {p.card_fee_rate ? `(${p.card_fee_rate}%)` : ''}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-8 py-5 text-right text-slate-400 font-medium text-xs uppercase">
-                      <div className="flex items-center justify-end gap-3">
+                      <div className="flex items-center justify-end gap-2">
                         <span>{getMethodLabel(p.payment_method || 'pix')}</span>
                         <button
                           onClick={() => {
@@ -1723,6 +1778,13 @@ export default function FinancialPage() {
                           title="Editar lançamento"
                         >
                           <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeletePayment(p.id, p.description)}
+                          className="p-1.5 bg-slate-100 text-slate-400 rounded-lg hover:bg-rose-100 hover:text-rose-600 transition-colors"
+                          title="Excluir lançamento permanentemente"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -1941,10 +2003,17 @@ export default function FinancialPage() {
                             </button>
                             <button
                               onClick={() => cancelPayment(p.id)}
-                              className="p-2 bg-slate-50 text-slate-400 rounded-xl hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                              className="p-2 bg-slate-50 text-slate-400 rounded-xl hover:bg-amber-50 hover:text-amber-600 transition-colors"
                               title="Cancelar lançamento"
                             >
                               <Ban className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeletePayment(p.id, p.description)}
+                              className="p-2 bg-slate-50 text-slate-400 rounded-xl hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                              title="Excluir lançamento permanentemente"
+                            >
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
                         </td>

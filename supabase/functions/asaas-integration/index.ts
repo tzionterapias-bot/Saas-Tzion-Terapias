@@ -227,9 +227,19 @@ serve(async (req) => {
         }
 
         // 2. Tentar atualizar pagamento de serviço (Pacotes/Consultas)
+        const asaasGrossVal = payment.value !== undefined && payment.value !== null ? Number(payment.value) : null;
+        const asaasNetVal = payment.netValue !== undefined && payment.netValue !== null ? Number(payment.netValue) : null;
+        const asaasFeeVal = (asaasGrossVal !== null && asaasNetVal !== null) ? Math.max(0, asaasGrossVal - asaasNetVal) : null;
+        const asaasFeeRate = (asaasGrossVal && asaasFeeVal !== null && asaasGrossVal > 0) ? Number(((asaasFeeVal / asaasGrossVal) * 100).toFixed(2)) : null;
+
+        const updateData: Record<string, any> = { status: 'paid' };
+        if (asaasNetVal !== null) updateData.net_amount = asaasNetVal;
+        if (asaasFeeVal !== null) updateData.card_fee_val = asaasFeeVal;
+        if (asaasFeeRate !== null) updateData.card_fee_rate = asaasFeeRate;
+
         const { data: updatedPayment, error: payError } = await supabase
           .from('payments')
-          .update({ status: 'paid' })
+          .update(updateData)
           .eq('asaas_id', asaasId)
           .select()
           .single();

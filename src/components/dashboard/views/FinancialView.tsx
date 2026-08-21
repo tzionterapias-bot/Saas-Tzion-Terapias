@@ -40,10 +40,10 @@ export default function FinancialView() {
 
       (payments || []).forEach(p => {
         if (p.type === 'income') {
-          if (p.status === 'paid') revenue += Number(p.amount);
+          if (p.status === 'paid') revenue += (p.net_amount !== null && p.net_amount !== undefined ? Number(p.net_amount) : Number(p.amount));
           else if (p.status === 'pending') {
             pending += Number(p.amount);
-            if (p.due_date < todayStr) overdue += Number(p.amount);
+            if (p.due_date && p.due_date < todayStr) overdue += Number(p.amount);
           }
         } else if (p.type === 'expense') {
           if (p.status === 'paid') expenses += Number(p.amount);

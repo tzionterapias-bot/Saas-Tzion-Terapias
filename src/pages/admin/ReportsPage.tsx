@@ -47,7 +47,7 @@ export default function ReportsPage() {
       // 1. Fetch Payments (Mês atual para KPI e Ano todo para gráfico)
       const { data: paymentsData } = await supabase
         .from('payments')
-        .select('amount, type, status, created_at')
+        .select('amount, net_amount, type, status, created_at')
         .gte('created_at', startOfYear)
         .lte('created_at', endOfYear);
 
@@ -78,7 +78,7 @@ export default function ReportsPage() {
         paymentsData.forEach(p => {
           const d = new Date(p.created_at);
           if (d.getMonth() === filterMonth && d.getFullYear() === filterYear && p.status === 'paid') {
-            if (p.type === 'income') currentMonthIncome += Number(p.amount);
+            if (p.type === 'income') currentMonthIncome += ((p as any).net_amount !== null && (p as any).net_amount !== undefined ? Number((p as any).net_amount) : Number(p.amount));
             if (p.type === 'expense') currentMonthExpense += Number(p.amount);
           }
         });
@@ -99,7 +99,7 @@ export default function ReportsPage() {
 
       let totalAppts = 0;
       let completedAppts = 0;
-      const tMap: Record<string, { name: string, total: number, completed: number }> = {};
+      const tMap: { [key: string]: { name: string; total: number; completed: number } } = {};
 
       if (appointmentsData) {
         appointmentsData.forEach(a => {
@@ -131,7 +131,7 @@ export default function ReportsPage() {
          paymentsData.forEach(p => {
             if (p.status === 'paid') {
                const m = new Date(p.created_at).getMonth();
-               if (p.type === 'income') yearStats[m].Receitas += Number(p.amount);
+               if (p.type === 'income') yearStats[m].Receitas += ((p as any).net_amount !== null && (p as any).net_amount !== undefined ? Number((p as any).net_amount) : Number(p.amount));
                if (p.type === 'expense') yearStats[m].Despesas += Number(p.amount);
             }
          });
