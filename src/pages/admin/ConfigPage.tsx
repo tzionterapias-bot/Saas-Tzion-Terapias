@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Shield, Bell, Database, Globe, User, Users, Palette, CreditCard, FileText, X, Save, Plus, Trash2, CheckCircle2, AlertCircle, Calendar, Clock, Check, DoorOpen, ChevronUp, ChevronDown, Loader2, Percent, Upload, ArrowRight } from 'lucide-react';
+import { Settings, Shield, Bell, Database, Globe, User, Users, Palette, CreditCard, FileText, X, Save, Plus, Trash2, CheckCircle2, AlertCircle, Calendar, Clock, Check, DoorOpen, ChevronUp, ChevronDown, Loader2, Percent, Upload, ArrowRight, Brain } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { DEFAULT_CONTRACT_TEMPLATE, fillContractTemplate } from '@/src/lib/contract';
 
 // ============================================================
-// MODELO PADRãO DE ANAMNESE — inserido automaticamente no primeiro uso
+// MODELO PADRÃO DE ANAMNESE — inserido automaticamente no primeiro uso
 // ============================================================
 const DEFAULT_ANAMNESIS_FIELDS = [
   { id: 'f1',  label: 'Nome Completo',                       type: 'text',     required: true  },
@@ -35,6 +35,7 @@ const ROOM_COLORS = [
 
 const configSections = [
   { id: 'perfil', title: 'Perfil da Clínica', desc: 'Dados básicos, logo e informações de contato.', icon: User, items: ['Nome Fantasia', 'CNPJ / CPF', 'Endereço', 'URL do Sistema', 'Escala de Horários'] },
+  { id: 'rag', title: 'Base de Conhecimento IA (RAG)', desc: 'Gerencie os documentos, especialidades e regras consultados pela IA no WhatsApp.', icon: Brain, items: ['→ Ir para Base de Conhecimento (IA)'] },
   { id: 'seguranca', title: 'Segurança & Acesso', desc: 'Controle de senhas, autenticação e permissões.', icon: Shield, items: ['Alterar Senha', 'Autenticação 2FA'] },
   { id: 'usuarios', title: 'Gestão de Equipe', desc: 'Cadastre funcionários e gerencie permissões do sistema.', icon: User, items: ['Equipe Administrativa'] },
   { id: 'equipe', title: 'Equipe & Terapeutas', desc: 'Gerencie os profissionais e suas especialidades.', icon: Users, items: ['→ Ir para Gestão de Terapeutas'] },
@@ -527,7 +528,11 @@ export default function ConfigPage() {
                   key={i}
                   onClick={() => {
                     if (item.startsWith('→')) {
-                      navigate('/admin/terapeutas');
+                      if (item.includes('Conhecimento')) {
+                        navigate('/admin/base-conhecimento');
+                      } else {
+                        navigate('/admin/terapeutas');
+                      }
                     } else {
                       setEditingItem({ section: section.title, item });
                     }

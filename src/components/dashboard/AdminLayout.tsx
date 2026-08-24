@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Calendar, Banknote, MessageSquare, 
   BookOpen, Settings, LogOut, Heart, Headset, Menu, X, Bell, Search, User, Award,
   Sun, Moon, Shield, Megaphone, PieChart, Globe, Monitor, UserCog, Briefcase, Package,
-  Lock, Phone, Save, Loader2, Trophy, CreditCard
+  Lock, Phone, Save, Loader2, Trophy, CreditCard, Brain
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
@@ -40,6 +40,7 @@ const menuCategories = [
       { icon: Headset, label: 'Central de Atendimento', path: '/admin/atendimento', roles: ['admin', 'atendimento'] },
       { icon: MessageSquare, label: 'CRM & Marketing', path: '/admin/crm', roles: ['admin', 'atendimento'] },
       { icon: Megaphone, label: 'Campanhas', path: '/admin/campanhas', roles: ['admin', 'atendimento'] },
+      { icon: Brain, label: 'Base de Conhecimento (IA)', path: '/admin/base-conhecimento', roles: ['admin', 'atendimento'] },
     ]
   },
   {

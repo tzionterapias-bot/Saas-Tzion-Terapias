@@ -185,6 +185,7 @@ export default function InstitutionalSite() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [expandedBioId, setExpandedBioId] = useState<string | null>(null);
   const [expandedProdId, setExpandedProdId] = useState<string | null>(null);
+  const [selectedServiceModal, setSelectedServiceModal] = useState<any | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -538,47 +539,60 @@ export default function InstitutionalSite() {
           </div>
 
           {/* Service Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filteredServices.map((s: any, i: number) => (
-              <div 
-                key={s.id || i} 
-                className="group bg-white border border-slate-200/80 hover:border-indigo-300 rounded-3xl p-8 flex flex-col justify-between shadow-sm hover:shadow-2xl transition-all duration-300"
-              >
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 group-hover:scale-110 group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                      <ServiceIcon name={s.icon} className="w-7 h-7" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-stretch">
+            {filteredServices.map((s: any, i: number) => {
+              const isLongText = (s.desc || '').length > 140;
+              return (
+                <div 
+                  key={s.id || i} 
+                  className="group bg-white border border-slate-200/80 hover:border-indigo-300 rounded-3xl p-7 sm:p-8 flex flex-col justify-between shadow-sm hover:shadow-2xl transition-all duration-300 h-full"
+                >
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between">
+                      <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 group-hover:scale-110 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                        <ServiceIcon name={s.icon} className="w-7 h-7" />
+                      </div>
+                      {s.duration && (
+                        <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
+                          ⏱️ {s.duration}
+                        </span>
+                      )}
                     </div>
-                    {s.duration && (
-                      <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
-                        ⏱️ {s.duration}
-                      </span>
-                    )}
+
+                    <div>
+                      <h3 className="text-xl sm:text-2xl font-bold text-slate-900 group-hover:text-indigo-600 transition-colors mb-3 line-clamp-2">
+                        {s.title}
+                      </h3>
+                      <p className="text-slate-600 text-sm leading-relaxed text-justify line-clamp-4">
+                        {s.desc}
+                      </p>
+                      {isLongText && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedServiceModal(s)}
+                          className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors group/btn cursor-pointer"
+                        >
+                          Ler mais detalhes 
+                          <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover/btn:translate-x-1 text-indigo-600" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <div>
-                    <h3 className="text-2xl font-bold text-slate-900 group-hover:text-indigo-600 transition-colors mb-3">
-                      {s.title}
-                    </h3>
-                    <p className="text-slate-600 text-sm leading-relaxed">
-                      {s.desc}
-                    </p>
+                  <div className="pt-6 mt-6 border-t border-slate-100">
+                    <a
+                      href={getWhatsAppUrl(`Olá! Gostaria de informações para agendar a ${s.title}.`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3 px-4 bg-slate-100 hover:bg-emerald-600 text-slate-700 hover:text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 group-hover:shadow-md"
+                    >
+                      <MessageCircle className="w-4 h-4 text-emerald-600 group-hover:text-white" /> 
+                      Agendar esta Especialidade
+                    </a>
                   </div>
                 </div>
-
-                <div className="pt-8 mt-6 border-t border-slate-100">
-                  <a
-                    href={getWhatsAppUrl(`Olá! Gostaria de informações para agendar a ${s.title}.`)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-3 px-4 bg-slate-100 hover:bg-emerald-600 text-slate-700 hover:text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 group-hover:shadow-md"
-                  >
-                    <MessageCircle className="w-4 h-4 text-emerald-600 group-hover:text-white" /> 
-                    Agendar esta Especialidade
-                  </a>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
         </div>
@@ -1084,6 +1098,78 @@ export default function InstitutionalSite() {
         <MessageCircle className="w-7 h-7 fill-white/20" />
         <span className="hidden sm:inline font-bold text-sm pr-2">Falar no WhatsApp</span>
       </a>
+
+      {/* ─── Service Details Modal Popup ────────────────────────────────────────── */}
+      {selectedServiceModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div 
+            className="relative w-full max-w-2xl bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100 max-h-[85vh] flex flex-col justify-between animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between pb-5 border-b border-slate-100 gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                  <ServiceIcon name={selectedServiceModal.icon} className="w-7 h-7" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    {selectedServiceModal.category && (
+                      <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200/60">
+                        {selectedServiceModal.category}
+                      </span>
+                    )}
+                    {selectedServiceModal.duration && (
+                      <span className="text-[11px] font-bold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                        ⏱️ {selectedServiceModal.duration}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-xl sm:text-2xl font-bold text-slate-900">
+                    {selectedServiceModal.title}
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedServiceModal(null)}
+                className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors shrink-0"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="py-6 overflow-y-auto pr-2 my-2 space-y-4">
+              <div className="text-slate-700 text-sm sm:text-base leading-relaxed text-justify whitespace-pre-line">
+                {selectedServiceModal.desc}
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="pt-5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setSelectedServiceModal(null)}
+                className="w-full sm:w-auto px-5 py-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs transition-all"
+              >
+                Fechar
+              </button>
+              <a
+                href={getWhatsAppUrl(`Olá! Gostaria de informações e agendamento para ${selectedServiceModal.title}.`)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20"
+              >
+                <MessageCircle className="w-4 h-4 fill-white/20" />
+                Agendar no WhatsApp
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Render Checkout Modal for E-books */}
       {selectedProduct && (

@@ -50,6 +50,8 @@ function NPSDaemon() {
 
 import { useDebugConsole } from '@/src/hooks/useDebugConsole';
 
+import KnowledgeBaseManager from '@/src/components/admin/KnowledgeBaseManager';
+
 // App Component
 
 export default function App() {
@@ -120,6 +122,7 @@ export default function App() {
           <Route path="/admin/vendas" element={<RoleGuard allowedRoles={['admin', 'financeiro', 'atendimento']}><AdminLayout><QuickSellPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/crm" element={<RoleGuard allowedRoles={['admin', 'atendimento']}><AdminLayout><CRMPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/campanhas" element={<RoleGuard allowedRoles={['admin', 'atendimento']}><AdminLayout><CampaignsPage /></AdminLayout></RoleGuard>} />
+          <Route path="/admin/base-conhecimento" element={<RoleGuard allowedRoles={['admin', 'atendimento']}><AdminLayout><KnowledgeBaseManager /></AdminLayout></RoleGuard>} />
           <Route path="/admin/sessoes" element={<RoleGuard allowedRoles={['admin', 'terapeuta']}><AdminLayout><SessionLogger /></AdminLayout></RoleGuard>} />
           <Route path="/admin/config" element={<RoleGuard allowedRoles={['admin']}><AdminLayout><ConfigPage /></AdminLayout></RoleGuard>} />
           <Route path="/admin/servicos" element={<RoleGuard allowedRoles={['admin', 'financeiro']} allowedEmails={['formacaoterapia@gmail.com']}><AdminLayout><ServicesPage /></AdminLayout></RoleGuard>} />
