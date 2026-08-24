@@ -554,6 +554,251 @@ async function startServer() {
     }
   });
 
+  // --- PASSWORD RECOVERY ENDPOINTS ---
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const { emailOrPhone } = req.body;
+      if (!emailOrPhone) {
+        return res.status(400).json({ error: "E-mail ou WhatsApp é obrigatório para recuperação." });
+      }
+
+      console.log(`[AUTH-RECOVERY] Solicitando recuperação de senha para: ${emailOrPhone}`);
+
+      const cleanPhone = emailOrPhone.replace(/\D/g, "");
+      
+      let query = supabase.from('profiles').select('*');
+      if (emailOrPhone.includes('@')) {
+        query = query.eq('email', emailOrPhone.trim().toLowerCase());
+      } else {
+        const phoneVariants = [emailOrPhone.trim(), cleanPhone];
+        if (cleanPhone.startsWith('55')) {
+          phoneVariants.push(cleanPhone.substring(2));
+        } else {
+          phoneVariants.push(`55${cleanPhone}`);
+        }
+        query = query.or(`phone.in.(${phoneVariants.map(p => `"${p}"`).join(',')})`);
+      }
+
+      let { data: profile, error: fetchError } = await query.maybeSingle();
+
+      // Fallback para tabela patients se não estiver em profiles
+      if (!profile) {
+        let patientQuery = supabase.from('patients').select('*');
+        if (emailOrPhone.includes('@')) {
+          patientQuery = patientQuery.eq('email', emailOrPhone.trim().toLowerCase());
+        } else {
+          const phoneVariants = [emailOrPhone.trim(), cleanPhone];
+          if (cleanPhone.startsWith('55')) {
+            phoneVariants.push(cleanPhone.substring(2));
+          } else {
+            phoneVariants.push(`55${cleanPhone}`);
+          }
+          patientQuery = patientQuery.or(`phone.in.(${phoneVariants.map(p => `"${p}"`).join(',')})`);
+        }
+        const { data: patient } = await patientQuery.maybeSingle();
+        if (patient) {
+          profile = {
+            id: patient.id,
+            name: patient.name,
+            email: patient.email || `${cleanPhone || patient.id}@tzion.temp`,
+            phone: patient.phone,
+            role: 'paciente'
+          };
+          // Upsert em profiles
+          await supabase.from('profiles').upsert({
+            id: profile.id,
+            name: profile.name,
+            email: profile.email,
+            phone: profile.phone,
+            role: 'paciente'
+          });
+        }
+      }
+
+      if (!profile) {
+        return res.status(404).json({ error: "Nenhum cadastro encontrado com este e-mail ou WhatsApp." });
+      }
+
+      if (!profile.phone) {
+        return res.status(400).json({ error: "Este usuário não possui um WhatsApp cadastrado para envio do link de recuperação." });
+      }
+
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          whatsapp_login_code: code,
+          whatsapp_login_code_expires_at: expiresAt
+        })
+        .eq('id', profile.id);
+
+      if (updateError) {
+        console.error("[AUTH-RECOVERY] Erro ao salvar token de recuperação:", updateError);
+        return res.status(500).json({ error: "Erro interno ao gerar código de recuperação." });
+      }
+
+      const firstName = profile.name ? profile.name.split(' ')[0] : 'Usuário';
+      const appUrl = process.env.APP_URL || `http://${req.headers.host}`;
+      const directLink = `${appUrl}/redefinir-senha?email=${encodeURIComponent(profile.email)}&code=${code}`;
+
+      const msg = `🔐 *Recuperação de Senha - Tzion Terapias*\n\nOlá, *${firstName}*! ✨\n\nRecebemos uma solicitação para redefinir a sua senha de acesso ao portal.\n\n🔑 Seu código de verificação é: *${code}*\n\nOu clique no link direto abaixo para criar sua nova senha agora:\n🔗 ${directLink}\n\n⚠️ *Atenção:* Este link e código expiram em 15 minutos. Se você não solicitou esta alteração, ignore esta mensagem.\n\nQualquer dúvida, estamos à disposição! 💙`;
+      
+      console.log(`[AUTH-RECOVERY] Enviando link de recuperação via WhatsApp para ${profile.phone}...`);
+      await sendWhatsAppBackend(profile.id, profile.phone, msg, 'password_reset_requested');
+
+      return res.json({ 
+        success: true, 
+        message: "Link e código de recuperação enviados com sucesso para o seu WhatsApp!",
+        email: profile.email
+      });
+
+    } catch (err: any) {
+      console.error("[AUTH-RECOVERY] Erro no endpoint forgot-password:", err);
+      return res.status(500).json({ error: "Erro interno no servidor ao processar recuperação." });
+    }
+  });
+
+  app.post("/api/auth/verify-reset-code", async (req, res) => {
+    try {
+      const { emailOrPhone, code } = req.body;
+      if (!emailOrPhone || !code) {
+        return res.status(400).json({ error: "E-mail/WhatsApp e código são obrigatórios." });
+      }
+
+      const cleanPhone = emailOrPhone.replace(/\D/g, "");
+      let query = supabase.from('profiles').select('*');
+      if (emailOrPhone.includes('@')) {
+        query = query.eq('email', emailOrPhone.trim().toLowerCase());
+      } else {
+        const phoneVariants = [emailOrPhone.trim(), cleanPhone];
+        if (cleanPhone.startsWith('55')) phoneVariants.push(cleanPhone.substring(2));
+        else phoneVariants.push(`55${cleanPhone}`);
+        query = query.or(`phone.in.(${phoneVariants.map(p => `"${p}"`).join(',')})`);
+      }
+
+      const { data: profile, error: fetchError } = await query.maybeSingle();
+      if (fetchError || !profile) {
+        return res.status(404).json({ error: "Usuário não encontrado." });
+      }
+
+      if (!profile.whatsapp_login_code || profile.whatsapp_login_code !== code.trim()) {
+        return res.status(400).json({ error: "Código de recuperação inválido." });
+      }
+
+      const expiry = new Date(profile.whatsapp_login_code_expires_at);
+      if (expiry.getTime() < Date.now()) {
+        return res.status(400).json({ error: "Código de recuperação expirado. Solicite um novo link." });
+      }
+
+      return res.json({ 
+        valid: true, 
+        email: profile.email,
+        name: profile.name 
+      });
+
+    } catch (err: any) {
+      console.error("[AUTH-RECOVERY] Erro ao verificar código:", err);
+      return res.status(500).json({ error: "Erro ao validar código." });
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { emailOrPhone, code, newPassword } = req.body;
+
+      if (!emailOrPhone || !code || !newPassword) {
+        return res.status(400).json({ error: "Todos os campos são obrigatórios." });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "A nova senha deve ter no mínimo 6 caracteres." });
+      }
+
+      const cleanPhone = emailOrPhone.replace(/\D/g, "");
+      let query = supabase.from('profiles').select('*');
+      if (emailOrPhone.includes('@')) {
+        query = query.eq('email', emailOrPhone.trim().toLowerCase());
+      } else {
+        const phoneVariants = [emailOrPhone.trim(), cleanPhone];
+        if (cleanPhone.startsWith('55')) phoneVariants.push(cleanPhone.substring(2));
+        else phoneVariants.push(`55${cleanPhone}`);
+        query = query.or(`phone.in.(${phoneVariants.map(p => `"${p}"`).join(',')})`);
+      }
+
+      const { data: profile, error: fetchError } = await query.maybeSingle();
+      if (fetchError || !profile) {
+        return res.status(404).json({ error: "Usuário não encontrado." });
+      }
+
+      if (!profile.whatsapp_login_code || profile.whatsapp_login_code !== code.trim()) {
+        return res.status(400).json({ error: "Código de recuperação inválido." });
+      }
+
+      const expiry = new Date(profile.whatsapp_login_code_expires_at);
+      if (expiry.getTime() < Date.now()) {
+        return res.status(400).json({ error: "Código expirado. Por favor, solicite um novo link de recuperação." });
+      }
+
+      console.log(`[AUTH-RECOVERY] Atualizando senha do usuário ${profile.id} (${profile.email})...`);
+
+      // 1. Atualiza no Supabase Auth Admin
+      try {
+        const { error: adminAuthError } = await supabase.auth.admin.updateUserById(profile.id, {
+          password: newPassword
+        });
+
+        if (adminAuthError) {
+          console.warn("[AUTH-RECOVERY] Aviso ao atualizar no auth.users:", adminAuthError.message);
+          // Se o usuário ainda não existia em auth.users, tenta criar
+          if (adminAuthError.message.toLowerCase().includes("not found") || adminAuthError.message.toLowerCase().includes("user not found")) {
+            await supabase.auth.admin.createUser({
+              email: profile.email,
+              password: newPassword,
+              email_confirm: true,
+              user_metadata: { name: profile.name, role: profile.role }
+            });
+          }
+        }
+      } catch (authEx: any) {
+        console.error("[AUTH-RECOVERY] Exceção no supabase.auth.admin:", authEx);
+      }
+
+      // 2. Atualizar em system_users se existir para compatibilidade
+      try {
+        await supabase
+          .from('system_users')
+          .update({ password_hash: newPassword })
+          .eq('email', profile.email);
+      } catch {}
+
+      // 3. Limpar código de recuperação utilizado
+      await supabase
+        .from('profiles')
+        .update({
+          whatsapp_login_code: null,
+          whatsapp_login_code_expires_at: null
+        })
+        .eq('id', profile.id);
+
+      // 4. Enviar mensagem de confirmação de segurança via WhatsApp
+      if (profile.phone) {
+        const confirmMsg = `✅ *Senha Alterada com Sucesso - Tzion Terapias*\n\nOlá, *${profile.name?.split(' ')[0] || 'Usuário'}*!\n\nA sua senha de acesso foi atualizada com sucesso. Caso não tenha sido você quem realizou essa alteração, entre em contato imediatamente com o nosso suporte. 🛡️`;
+        sendWhatsAppBackend(profile.id, profile.phone, confirmMsg, 'password_reset_success').catch(console.error);
+      }
+
+      return res.json({ 
+        success: true, 
+        message: "Senha alterada com sucesso! Você já pode fazer login com sua nova senha." 
+      });
+
+    } catch (err: any) {
+      console.error("[AUTH-RECOVERY] Erro ao redefinir senha:", err);
+      return res.status(500).json({ error: "Erro interno ao redefinir senha." });
+    }
+  });
+
   app.post("/api/agenda/gerar-link-meet", requireStaffAuth, (req, res) => {
     const meetingId = Math.random().toString(36).substring(7);
     res.json({ link: `https://meet.google.com/tzion-${meetingId}` });

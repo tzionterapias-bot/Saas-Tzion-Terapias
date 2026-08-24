@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Heart, Lock, Mail, ArrowRight, Loader2, Key, Phone } from 'lucide-react';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { cn } from '@/src/lib/utils';
@@ -16,7 +16,14 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [requestingCode, setRequestingCode] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, loginWithCode, user, loading } = useAuth();
+
+  useEffect(() => {
+    if (location.state?.resetSuccess) {
+      setSuccessMessage('Sua senha foi redefinida com sucesso! Você já pode entrar com sua nova senha.');
+    }
+  }, [location.state]);
 
   useEffect(() => {
     document.title = "Acessar Portal | Tzion Terapias";
@@ -245,6 +252,14 @@ export default function LoginPage() {
                     required
                     className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-2xl text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white/10 transition-all font-medium"
                   />
+                </div>
+                <div className="flex justify-end pt-1">
+                  <Link
+                    to={email ? `/recuperar-senha?email=${encodeURIComponent(email)}` : "/recuperar-senha"}
+                    className="text-xs text-slate-400 hover:text-indigo-400 font-semibold transition-colors"
+                  >
+                    Esqueceu sua senha?
+                  </Link>
                 </div>
               </div>
 

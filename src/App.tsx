@@ -12,6 +12,7 @@ import PublicContractPage from '@/src/pages/public/PublicContractPage';
 import PublicAnamnesisPage from '@/src/pages/public/PublicAnamnesisPage';
 import LoginPage from '@/src/pages/auth/LoginPage';
 import RegisterPage from '@/src/pages/auth/RegisterPage';
+import ResetPasswordPage from '@/src/pages/auth/ResetPasswordPage';
 import PatientList from '@/src/components/dashboard/PatientList';
 import FinancialDashboard from '@/src/components/dashboard/FinancialDashboard';
 import SessionLogger from '@/src/components/dashboard/SessionLogger';
@@ -62,6 +63,8 @@ export default function App() {
           {/* Auth */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/cadastro" element={<RegisterPage />} />
+          <Route path="/recuperar-senha" element={<ResetPasswordPage />} />
+          <Route path="/redefinir-senha" element={<ResetPasswordPage />} />
 
           {/* Institutional Site */}
           <Route path="/" element={<InstitutionalSite />} />
