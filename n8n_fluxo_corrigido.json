@@ -1,20 +1,21 @@
 {
+  "name": "Automação Tzion Terapias (Com RAG)",
   "nodes": [
     {
       "parameters": {
         "promptType": "define",
         "text": "={{ $('Texto Formatado').first().json.message_text }}",
         "options": {
-          "systemMessage": "=={{ $node[\"COMANDO BD\"].json[\"ai_instructions\"] }}\n\nREGRA EXTREMA: Faça apenas UMA pergunta por mensagem. Nunca repita uma pergunta reformulada. Coloque a tag de status/lead estritamente na ÚLTIMA LINHA da resposta."
+          "systemMessage": "=={{ $node[\"COMANDO BD\"].json[\"ai_instructions\"] }}\n\nREGRA EXTREMA: Faça apenas UMA pergunta por mensagem. Nunca repita uma pergunta reformulada. Coloque a tag de status/lead estritamente na ÚLTIMA LINHA da resposta.\n\nVocê tem acesso à ferramenta 'consultar_base_de_conhecimento_tzion'. Sempre que o cliente perguntar sobre o Programa Tzion Care 180, especialidades de terapia, como funciona o atendimento presencial/online, regras da clínica, endereço ou corpo clínico, CONSULTE a base de conhecimento para responder com precisão cirúrgica."
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
       "position": [
-        1216,
-        96
+        2704,
+        288
       ],
-      "id": "4979bf9f-22d9-4bee-a6fe-e003381f043e",
+      "id": "66b11f91-a390-4340-b281-53dacecbe82d",
       "name": "AI Agent"
     },
     {
@@ -28,10 +29,10 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
       "typeVersion": 1,
       "position": [
-        1200,
-        240
+        2688,
+        464
       ],
-      "id": "d8fcb97c-23a7-4ff6-8ef8-83ec41c9a213",
+      "id": "49d373a1-5fc1-4040-9c29-f01c20cfc51f",
       "name": "OpenRouter Chat Model",
       "credentials": {
         "openRouterApi": {
@@ -42,17 +43,71 @@
     },
     {
       "parameters": {
+        "name": "consultar_base_de_conhecimento_tzion",
+        "description": "Consulte a base de conhecimento oficial da Tzion Terapias para obter informações sobre o Programa Tzion Care 180, especialidades terapêuticas (Individual, Casal, Infantil, Familiar, Ansiedade), atendimentos presencial e online, localização da clínica em Araguaína, regras de agendamento e corpo clínico."
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1,
+      "position": [
+        2592,
+        656
+      ],
+      "id": "94af82ea-9754-44db-af0a-fcbe64d27cea",
+      "name": "Base de Conhecimento Tzion"
+    },
+    {
+      "parameters": {
+        "tableName": "tzion_knowledge_documents",
+        "queryName": "match_tzion_documents",
+        "topK": 4
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        912
+      ],
+      "id": "66e8ab5d-fa1a-4a81-b366-668c1b7c2af5",
+      "name": "Supabase Vector Store",
+      "credentials": {
+        "supabaseApi": {
+          "id": "CMbgGOC095IbrGUe",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "models/gemini-embedding-001"
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        1104
+      ],
+      "id": "719e65d7-6868-4f7b-93d3-e25b61a68d19",
+      "name": "Embeddings Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "DlI6p5gtz522ebG6",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
         "sessionIdType": "customKey",
-        "sessionKey": "={{ $('Inicio').first().json.body?.data?.key?.remoteJid }}_v12",
+        "sessionKey": "={{ $('Inicio').first().json.body?.data?.key?.remoteJid }}_15",
         "contextWindowLength": 10
       },
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.4,
       "position": [
-        1328,
-        400
+        2896,
+        560
       ],
-      "id": "4e9c50b0-dfaa-49a4-ac96-9779da73c063",
+      "id": "22ee4b1e-8403-477d-ae6f-e7f2368d1a8f",
       "name": "Simple Memory"
     },
     {
@@ -75,87 +130,6 @@
                     "operator": {
                       "type": "string",
                       "operation": "contains"
-                    }
-                  },
-                  {
-                    "id": "not-aguardando",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "(aguardando)",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "not-adefinir",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "(a definir)",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "0.28097102041866173",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "(não informado)",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "0.558978200915631",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "(pendente)",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "0.8482359730717164",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "(não especificado)",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "0.9865142923637327",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "não informado",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "0.7530811048078316",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "pendente",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "0.18111253627402268",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "a definir",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
-                    }
-                  },
-                  {
-                    "id": "0.4911454409289753",
-                    "leftValue": "={{ $json.output }}",
-                    "rightValue": "aguardando",
-                    "operator": {
-                      "type": "string",
-                      "operation": "notContains"
                     }
                   }
                 ],
@@ -235,10 +209,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        1600,
-        32
+        3088,
+        224
       ],
-      "id": "cf31e82d-0c59-441a-b1eb-25e944a43801",
+      "id": "a98b6e9c-db1c-4956-a4e2-2266a2e55db3",
       "name": "Switch"
     },
     {
@@ -296,10 +270,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2160,
-        -192
+        3648,
+        0
       ],
-      "id": "55de637a-9562-4ed3-a234-65055e5435f2",
+      "id": "56b9a8a0-3488-40d6-b295-5a03b5a9de71",
       "name": "Criar Ticket Financeiro"
     },
     {
@@ -331,10 +305,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -96,
-        112
+        1392,
+        304
       ],
-      "id": "440271c0-f2b9-4443-b6ab-b94cae7b633b",
+      "id": "019a4d8a-a51c-446c-86b4-4490a21cb13b",
       "name": "Salvar Msg Cliente"
     },
     {
@@ -384,10 +358,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1472,
-        496
+        2960,
+        688
       ],
-      "id": "32378e8d-b1ca-4e31-82b6-9485168d7036",
+      "id": "0e604cd2-8f78-4035-b6d8-cbeb2681d909",
       "name": "Salvar Msg Bot"
     },
     {
@@ -416,20 +390,22 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "timeout": 30000
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2160,
-        464
+        3648,
+        656
       ],
-      "id": "436c9abf-7d82-4d86-ba42-9cc432888637",
+      "id": "48c52317-3d10-4001-9ffb-495fa02b553c",
       "name": "WHATASPP",
       "retryOnFail": true,
-      "waitBetweenTries": 2000,
-      "onError": "continueErrorOutput",
-      "maxTries": 3
+      "waitBetweenTries": 3000,
+      "maxTries": 3,
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -438,7 +414,7 @@
             {
               "id": "f90e67a9-e1d4-4735-9748-fc4717bae078",
               "name": "text",
-              "value": "={{ ( $('AI Agent').item.json.output.replace(/\\[(RESUMO|DEP|LEAD|STATUS|URGENCIA):?[\\s\\S]*?\\]/gi, '').replace(/`+/g, '').replace(/(\\r?\\n|\\s)*\\([^)]*(?:aguardando|mantenho|nota|atendimento|fluxo|equipe|etapa|continuar|resposta|fim)[^)]*\\)/gi, '').replace(/(\\r?\\n|\\s)*\\([^\\)]+\\)\\s*$/g, '').trim() ) || ( $('AI Agent').item.json.output.match(/\\[(LEAD:QUENTE|STATUS|URGENCIA)/) ? 'Tudo certo! Recebemos suas informações e estou encaminhando agora mesmo para a nossa equipe especialista. Aguarde um instante, por favor.' : '' ) }}",
+              "value": "={{ $('AI Agent').item.json.output.replace(/\\[(RESUMO|DEP|LEAD|STATUS|URGENCIA):?[\\s\\S]*?\\]/gi, '').replace(/`+/g, '').replace(/(\\r?\\n|\\s)*\\([^)]*(?:aguardando|mantenho|nota|atendimento|fluxo|equipe|etapa|continuar|resposta|fim)[^)]*\\)/gi, '').replace(/(\\r?\\n|\\s)*\\([^\\)]+\\)\\s*$/g, '').trim() }}",
               "type": "string"
             }
           ]
@@ -448,10 +424,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1840,
-        448
+        3328,
+        640
       ],
-      "id": "553aadf3-d291-405e-9197-ebbc3a5de29c",
+      "id": "cd729e6a-d3ef-4567-8e04-abf70085cf65",
       "name": "fILTRO DE tAG"
     },
     {
@@ -470,10 +446,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        64,
-        112
+        1552,
+        304
       ],
-      "id": "0db9db1f-657b-405f-86ec-b909dc4b99da",
+      "id": "69ab2a2a-4f4c-44bb-a444-2ff4a13fee13",
       "name": "COMANDO BD",
       "credentials": {
         "supabaseApi": {
@@ -498,16 +474,22 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"number\": \"{{ $json.body.phone }}\",\n  \"text\": {{ JSON.stringify($json.body.message || '') }},\n  \"options\": {\n    \"delay\": 1200,\n    \"presence\": \"composing\",\n    \"linkPreview\": false\n  }\n}\n",
-        "options": {}
+        "options": {
+          "timeout": 30000
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        768,
-        -112
+        2256,
+        80
       ],
-      "id": "bffe2f38-96b7-44db-aa65-da91dc5b714d",
-      "name": "HTTP Request"
+      "id": "b5d3d725-28ef-4e11-9b7f-31e093ba9296",
+      "name": "HTTP Request",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -524,17 +506,23 @@
               }
             }
           ],
-          "combinator": "and"
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
         },
         "options": {}
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -320,
-        128
+        1168,
+        320
       ],
-      "id": "91847922-0e82-4783-9478-4b84bfbfa8a2",
+      "id": "33213b19-c609-4c13-89b6-d06ae1e13e85",
       "name": "FILTRO DE REAÇÕES E GRUPOS"
     },
     {
@@ -548,10 +536,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -64,
-        -112
+        1424,
+        80
       ],
-      "id": "33526ffa-a85f-4902-b58b-2f990ee2ddaa",
+      "id": "1fad56ae-7f7a-43fa-a33c-006c50d3fa1f",
       "name": "ATENDIMENTO DASHIBOARD",
       "webhookId": "34ca7f6a-4bf7-4d37-9ea7-059eb36267d8"
     },
@@ -580,10 +568,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        224,
-        112
+        1712,
+        304
       ],
-      "id": "cdf589bb-6df0-4186-afc2-2c65a141f57e",
+      "id": "231c761f-a8a1-4373-b380-c642b53759d8",
       "name": "Radar de Tickets",
       "alwaysOutputData": true,
       "credentials": {
@@ -605,7 +593,7 @@
           "conditions": [
             {
               "id": "4acc7b8d-3f64-42b4-a762-27c21a441942",
-              "leftValue": "={{ !$json.id || ($json.status !== 'awaiting_nps' && $json.status !== 'waiting' && $json.status !== 'in_progress' && $json.status !== 'open') }}",
+              "leftValue": "={{ !$json.id || ($json.status !== 'awaiting_nps' && $json.status !== 'open' && $json.status !== 'in_progress') }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -630,10 +618,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        384,
-        112
+        1872,
+        304
       ],
-      "id": "ec350395-5765-406b-ba2e-19002e809e98",
+      "id": "0d52ef33-0415-49d7-854e-6c724b50c7d3",
       "name": "PRECISA DE ATENDIMENTO DE IA OU HUMANO?"
     },
     {
@@ -652,17 +640,22 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"number\": \"{{ $('Inicio').first().json.body.data.key.remoteJid.replace('@s.whatsapp.net', '') }}\",\n  \"delay\": 1200,\n  \"presence\": \"composing\"\n}",
-        "options": {}
+        "options": {
+          "timeout": 15000
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        816,
-        64
+        2304,
+        256
       ],
-      "id": "93e62120-628a-4784-8ee9-c2c6dcef1e0c",
+      "id": "c0db9cba-bcb9-453c-b208-a14220d1cba9",
       "name": "Enviar Digitando (Composing)",
       "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
       "onError": "continueErrorOutput"
     },
     {
@@ -692,10 +685,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        912,
-        112
+        2400,
+        304
       ],
-      "id": "2252d31b-fdc7-496f-a83c-97250eb915ad",
+      "id": "28f7b27a-165d-485b-94be-b80892bf5e93",
       "name": "É Resposta de NPS?"
     },
     {
@@ -724,16 +717,22 @@
             }
           ]
         },
-        "options": {}
+        "options": {
+          "timeout": 30000
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1056,
-        432
+        2544,
+        304
       ],
-      "id": "c787f6fc-7890-4c69-b1ac-75a4e96bf52c",
-      "name": "agradecimento"
+      "id": "fd71c08a-45ab-43e5-ba01-d54180ec94f8",
+      "name": "agradecimento",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -750,10 +749,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        768,
-        432
+        2256,
+        624
       ],
-      "id": "8275b04f-60c1-4247-9ba1-d54912e13db1",
+      "id": "22142166-2ed8-4cf2-ae0d-bfed59804409",
       "name": "nps_feedbacks",
       "alwaysOutputData": true,
       "credentials": {
@@ -791,25 +790,25 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        624,
-        128
+        2112,
+        320
       ],
-      "id": "6398d208-4b57-4952-8c47-77251c948194",
+      "id": "a063fe1e-7084-4e92-9ba1-71f4b84e31ad",
       "name": "Status é Aguardando NPS?"
     },
     {
       "parameters": {
-        "content": "Fluxo de auto atendimento Tzion Terapias",
+        "content": "Fluxo de auto atendimento Tzion Terapias (Com RAG Integrado)",
         "height": 80,
         "width": 2768
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -368,
-        -320
+        1120,
+        -128
       ],
-      "id": "9d036eb9-dea2-4c89-97b5-723e2e6ce98f",
+      "id": "d4dca6a9-7a52-44f0-a57d-50d8638d81c6",
       "name": "Sticky Note"
     },
     {
@@ -821,10 +820,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -336,
-        -112
+        1152,
+        80
       ],
-      "id": "0ab100a0-5a03-4128-b2bb-843e892e08c4",
+      "id": "4787052c-10e7-436b-8ea8-c0114184eec2",
       "name": "Inicio",
       "webhookId": "b92298c2-911f-4790-aecb-e60f803abbd6"
     },
@@ -883,10 +882,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2160,
-        32
+        3648,
+        224
       ],
-      "id": "c2396961-ffe1-4b73-89ea-e6dfd73d9cd5",
+      "id": "69da032c-94b9-492c-b3aa-0edc47e60aa8",
       "name": "Criar Ticket ATENDIMENTO"
     },
     {
@@ -944,10 +943,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2160,
-        272
+        3648,
+        464
       ],
-      "id": "7ff0c56a-a987-48f4-b743-68a8f7d8b67a",
+      "id": "f1ae9831-8302-4277-9da7-2231e16bdab2",
       "name": "Criar Ticket COMERCIAL"
     },
     {
@@ -979,10 +978,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        -752,
-        864
+        736,
+        1056
       ],
-      "id": "213ba5c1-3231-496a-a6ad-6267158a0bfd",
+      "id": "1877c15c-d6a7-491d-9f08-bbbdb2987b65",
       "name": "Fechar Ticket Apos NPS"
     },
     {
@@ -1013,10 +1012,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -320,
-        320
+        1168,
+        512
       ],
-      "id": "node-if-audio",
+      "id": "505ba8f5-9692-4e53-be33-dbec8a73c65c",
       "name": "É Áudio?"
     },
     {
@@ -1036,10 +1035,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -100,
-        220
+        1392,
+        416
       ],
-      "id": "node-extract-text",
+      "id": "a48dfac8-1adf-47ac-8554-76916d120db8",
       "name": "Extrair Texto"
     },
     {
@@ -1049,10 +1048,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -100,
-        420
+        1392,
+        624
       ],
-      "id": "node-convert-base64",
+      "id": "befb00b7-9ab8-4a7a-99d5-f750260c0d7a",
       "name": "Converter Base64"
     },
     {
@@ -1064,7 +1063,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer YOUR_GROQ_API_KEY"
+              "value": "Bearer SUA_CHAVE_GROQ_AQUI"
             }
           ]
         },
@@ -1088,10 +1087,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        100,
-        420
+        1600,
+        624
       ],
-      "id": "node-groq-whisper",
+      "id": "1104786c-c2b4-4ea3-a05a-f27ab1668455",
       "name": "Groq Whisper API"
     },
     {
@@ -1111,10 +1110,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        300,
-        420
+        1792,
+        624
       ],
-      "id": "node-extract-audio",
+      "id": "cc5db220-784f-45aa-8158-0fd64f2dc522",
       "name": "Extrair Áudio"
     },
     {
@@ -1122,10 +1121,10 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
       "position": [
-        100,
-        220
+        1600,
+        416
       ],
-      "id": "node-texto-formatado",
+      "id": "3880d027-b2e4-4261-8488-ff0cbcdfe1bd",
       "name": "Texto Formatado"
     }
   ],
@@ -1157,6 +1156,44 @@
           {
             "node": "AI Agent",
             "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Base de Conhecimento Tzion",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Base de Conhecimento Tzion": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Base de Conhecimento Tzion",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
             "index": 0
           }
         ]
@@ -1373,6 +1410,17 @@
         ]
       ]
     },
+    "Extrair Texto": {
+      "main": [
+        [
+          {
+            "node": "Texto Formatado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Converter Base64": {
       "main": [
         [
@@ -1396,17 +1444,6 @@
       ]
     },
     "Extrair Áudio": {
-      "main": [
-        [
-          {
-            "node": "Texto Formatado",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extrair Texto": {
       "main": [
         [
           {

@@ -1,7 +1,7 @@
 import { supabase } from '@/src/lib/supabase';
 
 export async function getSystemBaseUrl(): Promise<string> {
-  const DEFAULT_PRODUCTION_URL = 'https://saas-tzion-terapias-six.vercel.app';
+  const DEFAULT_PRODUCTION_URL = 'https://tzionterapias.com.br';
 
   try {
     const { data } = await supabase

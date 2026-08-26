@@ -4,7 +4,7 @@ import {
   Plus, Calendar, ArrowUpRight, ArrowDownRight,
   FileText, CheckCircle2, AlertCircle, Loader2, Link as LinkIcon, X, Save,
   Users, Briefcase, PieChart, Wallet, Clock, UserCheck, Percent,
-  MessageCircle, ChevronLeft, ChevronRight, Ban, Receipt, BarChart2, Settings,
+  MessageCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Ban, Receipt, BarChart2, Settings,
   Award, Check, Pencil, Trash2, Package, Search
 } from 'lucide-react';
 import {
@@ -240,6 +240,10 @@ export default function FinancialPage() {
   const [staffBonusMonth, setStaffBonusMonth] = useState(now.getMonth());
   const [cashflowPage, setCashflowPage] = useState(1);
   const [payablesPage, setPayablesPage] = useState(1);
+  const [expandedTherapistIds, setExpandedTherapistIds] = useState<string[]>([]);
+  const toggleTherapistExpand = (id: string) => {
+    setExpandedTherapistIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
   const ITEMS = 10;
 
   // ── Modal State ─────────────────────────────────────────────────────────────
@@ -655,6 +659,27 @@ export default function FinancialPage() {
 
     const patientNames = Array.from(new Set(tPayments.map(p => p.patients?.name).filter(Boolean)));
 
+    const paymentsList = tPayments.map(p => {
+      const baseAmount = (p.net_amount !== null && p.net_amount !== undefined) ? Math.abs(p.net_amount) : Math.abs(p.amount);
+      const isClinic = (p.referral_source || 'therapist') === 'clinic';
+      const rate = isClinic ? rate_clinic : rate_self;
+      const clinicShare = baseAmount * (rate / 100);
+      const therapistNet = baseAmount - clinicShare;
+      return {
+        id: p.id,
+        patientName: p.patients?.name || 'Paciente não identificado',
+        patientPhone: p.patients?.phone || '',
+        description: p.description || 'Atendimento / Consulta',
+        paymentMethod: p.payment_method || 'PIX / Cartão',
+        createdAt: p.created_at,
+        baseAmount,
+        isClinic,
+        rate,
+        clinicShare,
+        therapistNet
+      };
+    });
+
     return {
       therapist: t,
       sessions: tPayments.length,
@@ -664,6 +689,7 @@ export default function FinancialPage() {
       rateClinic: rate_clinic, rateSelf: rate_self,
       existingPayout,
       patientNames,
+      paymentsList,
     };
   }).filter(Boolean) as NonNullable<ReturnType<typeof commissionData[0]>>[],
     [payments, therapists, payouts, commissionMonth, filterYear]
@@ -2296,80 +2322,211 @@ export default function FinancialPage() {
                   {commissionData.map((c, i) => {
                     const isPaid = c.existingPayout?.status === 'paid';
                     const isPending = c.existingPayout?.status === 'pending';
+                    const isExpanded = expandedTherapistIds.includes(c.therapist.id);
                     return (
-                      <tr key={i} className={cn("hover:bg-slate-50/50 transition-colors", isPaid && "opacity-60")}>
-                        <td className="px-8 py-5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold">
-                              {c.therapist.name.charAt(0)}
+                      <React.Fragment key={c.therapist.id || i}>
+                        <tr className={cn("hover:bg-slate-50/50 transition-colors", isPaid && "opacity-60", isExpanded && "bg-indigo-50/20")}>
+                          <td className="px-8 py-5">
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => toggleTherapistExpand(c.therapist.id)}
+                                className={cn(
+                                  "w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all cursor-pointer",
+                                  isExpanded ? "bg-indigo-600 text-white shadow-md shadow-indigo-200" : "bg-indigo-100 text-indigo-600 hover:bg-indigo-200"
+                                )}
+                                title={isExpanded ? "Recolher detalhes" : "Expandir pagamentos"}
+                              >
+                                {c.therapist.name.charAt(0)}
+                              </button>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="font-bold text-slate-900 cursor-pointer hover:text-indigo-600 transition-colors" onClick={() => toggleTherapistExpand(c.therapist.id)}>
+                                    {c.therapist.name}
+                                  </p>
+                                  <button
+                                    onClick={() => toggleTherapistExpand(c.therapist.id)}
+                                    className="text-slate-400 hover:text-indigo-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                                    title={isExpanded ? "Recolher extrato" : "Ver extrato detalhado"}
+                                  >
+                                    {isExpanded ? <ChevronUp className="w-4 h-4 text-indigo-600" /> : <ChevronDown className="w-4 h-4" />}
+                                  </button>
+                                </div>
+                                {c.therapist.pix_key && <p className="text-xs text-slate-400 font-medium">PIX: {c.therapist.pix_key}</p>}
+                                {c.patientNames && c.patientNames.length > 0 && (
+                                  <p className="text-[11px] text-slate-500 font-semibold mt-1 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100 block w-fit">
+                                    Pacientes: {c.patientNames.join(', ')}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                            <div>
-                              <p className="font-bold text-slate-900">{c.therapist.name}</p>
-                              {c.therapist.pix_key && <p className="text-xs text-slate-400 font-medium">PIX: {c.therapist.pix_key}</p>}
-                              {c.patientNames && c.patientNames.length > 0 && (
-                                <p className="text-[11px] text-slate-500 font-semibold mt-1 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-100 block w-fit">
-                                  Pacientes: {c.patientNames.join(', ')}
-                                </p>
+                          </td>
+                          <td className="px-8 py-5">
+                            <div className="space-y-1.5">
+                              <button
+                                onClick={() => toggleTherapistExpand(c.therapist.id)}
+                                className={cn(
+                                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition-all border",
+                                  isExpanded
+                                    ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                                    : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200"
+                                )}
+                              >
+                                <span>{c.sessions} pagamento(s)</span>
+                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              </button>
+                              {c.grossClinic > 0 && <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-indigo-400" /><span className="text-xs text-indigo-600 font-bold">R$ {fmt(c.grossClinic)} via Clínica ({c.rateClinic}%)</span></div>}
+                              {c.grossSelf > 0 && <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" /><span className="text-xs text-emerald-600 font-bold">R$ {fmt(c.grossSelf)} via Terapeuta ({c.rateSelf}%)</span></div>}
+                            </div>
+                          </td>
+                          <td className="px-8 py-5 font-bold text-slate-900">R$ {fmt(c.grossTotal)}</td>
+                          <td className="px-8 py-5">
+                            <p className="font-black text-indigo-600 text-lg">R$ {fmt(c.totalClinicShare)}</p>
+                            {c.clinicShareFromClinic > 0 && <p className="text-[10px] text-slate-400">{c.rateClinic}% de R$ {fmt(c.grossClinic)}</p>}
+                            {c.clinicShareFromSelf > 0 && <p className="text-[10px] text-slate-400">{c.rateSelf}% de R$ {fmt(c.grossSelf)}</p>}
+                          </td>
+                          <td className="px-8 py-5 font-black text-emerald-600 text-lg">R$ {fmt(c.therapistNet)}</td>
+                          <td className="px-8 py-5 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {/* Config button */}
+                              <button
+                                onClick={() => {
+                                  setShowTherapistConfigModal(c.therapist);
+                                  setTherapistConfig({
+                                    commission_rate_clinic: String(c.therapist.commission_rate_clinic ?? 50),
+                                    commission_rate_self: String(c.therapist.commission_rate_self ?? 25),
+                                    pix_key: c.therapist.pix_key || '',
+                                    phone: c.therapist.phone || '',
+                                  });
+                                }}
+                                className="p-2 bg-slate-50 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                title="Configurar taxas"
+                              >
+                                <Settings className="w-4 h-4" />
+                              </button>
+
+                              {isPaid ? (
+                                <span className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black border border-emerald-200 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5" /> Pago
+                                </span>
+                              ) : isPending ? (
+                                <button
+                                  onClick={() => setShowPayoutModal(c.existingPayout!)}
+                                  className="px-4 py-2 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-amber-200"
+                                >
+                                  Dar Baixa
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleCreatePendingPayout(c)}
+                                  disabled={saving}
+                                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-indigo-100 disabled:opacity-50"
+                                >
+                                  Gerar Repasse
+                                </button>
                               )}
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-8 py-5">
-                          <div className="space-y-1">
-                            <p className="text-sm font-bold text-slate-700">{c.sessions} pagamento(s)</p>
-                            {c.grossClinic > 0 && <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-indigo-400" /><span className="text-xs text-indigo-600 font-bold">R$ {fmt(c.grossClinic)} via Clínica ({c.rateClinic}%)</span></div>}
-                            {c.grossSelf > 0 && <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" /><span className="text-xs text-emerald-600 font-bold">R$ {fmt(c.grossSelf)} via Terapeuta ({c.rateSelf}%)</span></div>}
-                          </div>
-                        </td>
-                        <td className="px-8 py-5 font-bold text-slate-900">R$ {fmt(c.grossTotal)}</td>
-                        <td className="px-8 py-5">
-                          <p className="font-black text-indigo-600 text-lg">R$ {fmt(c.totalClinicShare)}</p>
-                          {c.clinicShareFromClinic > 0 && <p className="text-[10px] text-slate-400">{c.rateClinic}% de R$ {fmt(c.grossClinic)}</p>}
-                          {c.clinicShareFromSelf > 0 && <p className="text-[10px] text-slate-400">{c.rateSelf}% de R$ {fmt(c.grossSelf)}</p>}
-                        </td>
-                        <td className="px-8 py-5 font-black text-emerald-600 text-lg">R$ {fmt(c.therapistNet)}</td>
-                        <td className="px-8 py-5 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {/* Config button */}
-                            <button
-                              onClick={() => {
-                                setShowTherapistConfigModal(c.therapist);
-                                setTherapistConfig({
-                                  commission_rate_clinic: String(c.therapist.commission_rate_clinic ?? 50),
-                                  commission_rate_self: String(c.therapist.commission_rate_self ?? 25),
-                                  pix_key: c.therapist.pix_key || '',
-                                  phone: c.therapist.phone || '',
-                                });
-                              }}
-                              className="p-2 bg-slate-50 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                              title="Configurar taxas"
-                            >
-                              <Settings className="w-4 h-4" />
-                            </button>
+                          </td>
+                        </tr>
 
-                            {isPaid ? (
-                              <span className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black border border-emerald-200 flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5" /> Pago
-                              </span>
-                            ) : isPending ? (
-                              <button
-                                onClick={() => setShowPayoutModal(c.existingPayout!)}
-                                className="px-4 py-2 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-amber-200"
-                              >
-                                Dar Baixa
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleCreatePendingPayout(c)}
-                                disabled={saving}
-                                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-indigo-100 disabled:opacity-50"
-                              >
-                                Gerar Repasse
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                        {/* Dropdown / Extrato detalhado de cada pagamento */}
+                        {isExpanded && (
+                          <tr className="bg-slate-50/70 border-y border-slate-200/80">
+                            <td colSpan={6} className="p-0">
+                              <div className="p-6 bg-gradient-to-b from-slate-50 to-indigo-50/20 space-y-4">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse" />
+                                    <h5 className="text-xs font-black uppercase tracking-wider text-slate-800">
+                                      Detalhamento Item a Item — {c.therapist.name}
+                                    </h5>
+                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">
+                                      {c.paymentsList.length} pagamento(s)
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 font-medium">
+                                    Exibindo cada recebimento, percentual aplicado e taxa da clínica correspondente
+                                  </p>
+                                </div>
+
+                                <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                                  <table className="w-full text-left text-xs">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                      <tr>
+                                        <th className="px-5 py-3">Data</th>
+                                        <th className="px-5 py-3">Paciente</th>
+                                        <th className="px-5 py-3">Descrição / Forma</th>
+                                        <th className="px-5 py-3">Origem da Indicação</th>
+                                        <th className="px-5 py-3 text-right">Valor Bruto</th>
+                                        <th className="px-5 py-3 text-right text-indigo-600">Taxa Clínica</th>
+                                        <th className="px-5 py-3 text-right text-emerald-600">Líquido Terapeuta</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 font-medium">
+                                      {c.paymentsList.map((p) => (
+                                        <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                                          <td className="px-5 py-3 text-slate-600 whitespace-nowrap">
+                                            {p.createdAt ? new Date(p.createdAt).toLocaleDateString('pt-BR') : '—'}
+                                          </td>
+                                          <td className="px-5 py-3 font-bold text-slate-900">
+                                            {p.patientName}
+                                          </td>
+                                          <td className="px-5 py-3 text-slate-600">
+                                            <p className="font-semibold text-slate-800">{p.description}</p>
+                                            {p.paymentMethod && (
+                                              <span className="inline-block mt-0.5 text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase">
+                                                {p.paymentMethod}
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="px-5 py-3">
+                                            {p.isClinic ? (
+                                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg text-[11px] font-bold">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                                Clínica ({p.rate}%)
+                                              </span>
+                                            ) : (
+                                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg text-[11px] font-bold">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                Terapeuta ({p.rate}%)
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="px-5 py-3 text-right font-bold text-slate-700">
+                                            R$ {fmt(p.baseAmount)}
+                                          </td>
+                                          <td className="px-5 py-3 text-right font-bold text-indigo-600">
+                                            R$ {fmt(p.clinicShare)}
+                                            <span className="block text-[9px] text-slate-400 font-normal">{p.rate}% do valor</span>
+                                          </td>
+                                          <td className="px-5 py-3 text-right font-black text-emerald-600">
+                                            R$ {fmt(p.therapistNet)}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                    <tfoot className="bg-slate-50/90 border-t border-slate-200 text-xs font-black text-slate-900">
+                                      <tr>
+                                        <td colSpan={4} className="px-5 py-3.5 text-right uppercase tracking-wider text-[10px] text-slate-500">
+                                          Totalizador do Mês:
+                                        </td>
+                                        <td className="px-5 py-3.5 text-right text-slate-900">
+                                          R$ {fmt(c.grossTotal)}
+                                        </td>
+                                        <td className="px-5 py-3.5 text-right text-indigo-600">
+                                          R$ {fmt(c.totalClinicShare)}
+                                        </td>
+                                        <td className="px-5 py-3.5 text-right text-emerald-600">
+                                          R$ {fmt(c.therapistNet)}
+                                        </td>
+                                      </tr>
+                                    </tfoot>
+                                  </table>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                   {commissionData.length === 0 && (

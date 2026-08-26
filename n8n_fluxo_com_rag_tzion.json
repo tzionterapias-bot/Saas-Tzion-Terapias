@@ -593,7 +593,7 @@
           "conditions": [
             {
               "id": "4acc7b8d-3f64-42b4-a762-27c21a441942",
-              "leftValue": "={{ !$json.id || ($json.status !== 'awaiting_nps' && $json.status !== 'waiting' && $json.status !== 'in_progress' && $json.status !== 'open') }}",
+              "leftValue": "={{ !$json.id || ($json.status !== 'awaiting_nps' && $json.status !== 'open' && $json.status !== 'in_progress') }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",

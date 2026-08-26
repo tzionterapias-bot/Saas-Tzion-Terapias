@@ -48,6 +48,40 @@ async function getEvolutionConfig() {
       n8nUrl: "https://n8n2.agenciahigher.com.br/webhook/34ca7f6a-4bf7-4d37-9ea7-059eb36267d8"
     };
   }
+const DEFAULT_SYSTEM_URL = "https://tzionterapias.com.br";
+
+async function getSystemBaseUrlBackend(req?: any): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('key', 'clinic_profile')
+      .maybeSingle();
+
+    if (data?.value?.system_url && typeof data.value.system_url === 'string' && data.value.system_url.trim() !== '') {
+      const url = data.value.system_url.trim().replace(/\/+$/, '');
+      if (!url.includes('localhost')) {
+        return url;
+      }
+    }
+  } catch (e) {
+    console.error('[SYSTEM_URL] Error fetching clinic_profile system_url:', e);
+  }
+
+  if (process.env.APP_URL && !process.env.APP_URL.includes('localhost') && process.env.APP_URL !== 'MY_APP_URL') {
+    return process.env.APP_URL.replace(/\/+$/, '');
+  }
+
+  if (process.env.SITE_URL && !process.env.SITE_URL.includes('localhost')) {
+    return process.env.SITE_URL.replace(/\/+$/, '');
+  }
+
+  if (req && req.headers && req.headers.host && !req.headers.host.includes('localhost')) {
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    return `${proto}://${req.headers.host}`.replace(/\/+$/, '');
+  }
+
+  return DEFAULT_SYSTEM_URL;
 }
 
 export const app = express();
@@ -538,7 +572,7 @@ async function startServer() {
       }
 
       const firstName = profile.name ? profile.name.split(' ')[0] : 'Paciente';
-      const appUrl = process.env.APP_URL || `http://${req.headers.host}`;
+      const appUrl = await getSystemBaseUrlBackend(req);
       const directLink = `${appUrl}/login?email=${encodeURIComponent(profile.email)}&code=${code}`;
 
       const msg = `[Código de Acesso - Tzion Terapias]\n\nOlá, *${firstName}*! ✨\n\nSeu código de acesso de uso único é: *${code}*\n\nOu acesse diretamente pelo link:\n🔗 ${directLink}\n\n*Nota:* Este código expira em 15 minutos.\n\nQualquer dúvida, estamos à disposição! 💙`;
@@ -640,7 +674,7 @@ async function startServer() {
       }
 
       const firstName = profile.name ? profile.name.split(' ')[0] : 'Usuário';
-      const appUrl = process.env.APP_URL || `http://${req.headers.host}`;
+      const appUrl = await getSystemBaseUrlBackend(req);
       const directLink = `${appUrl}/redefinir-senha?email=${encodeURIComponent(profile.email)}&code=${code}`;
 
       const msg = `🔐 *Recuperação de Senha - Tzion Terapias*\n\nOlá, *${firstName}*! ✨\n\nRecebemos uma solicitação para redefinir a sua senha de acesso ao portal.\n\n🔑 Seu código de verificação é: *${code}*\n\nOu clique no link direto abaixo para criar sua nova senha agora:\n🔗 ${directLink}\n\n⚠️ *Atenção:* Este link e código expiram em 15 minutos. Se você não solicitou esta alteração, ignore esta mensagem.\n\nQualquer dúvida, estamos à disposição! 💙`;
@@ -1862,7 +1896,7 @@ async function activatePendingPackagesForPatient(patientId: string) {
 
         if (contract && patient.phone) {
           const firstName = patient.name.split(' ')[0];
-          const siteUrl = process.env.APP_URL || "https://agente.agenciahigher.com.br";
+          const siteUrl = await getSystemBaseUrlBackend();
           const link = `${siteUrl}/contrato/${contract.id}`;
           const msg = `Olá, *${firstName}*! ✨\n\nSeu pacote foi iniciado! Por favor, assine o termo de serviço:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
           
@@ -2084,10 +2118,7 @@ async function runNpsSurveyBackend() {
         if (patientData && patientData.phone) {
           const firstName = patientData.name.split(' ')[0];
           
-          const baseUrl = process.env.SITE_URL 
-            || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null)
-            || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-            || "http://localhost:3000";
+          const baseUrl = await getSystemBaseUrlBackend();
           const npsLink = `${baseUrl}/avaliacao/${app.id}`;
           let finalMessage = messageTemplate.replace('{{nome}}', firstName);
           finalMessage += `\n\nAcesse o link para avaliar: ${npsLink}`;

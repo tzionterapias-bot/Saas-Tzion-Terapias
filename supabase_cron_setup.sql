@@ -20,7 +20,7 @@ SELECT cron.schedule(
   '* * * * *',              -- Expressão cron (todo minuto)
   $$
   SELECT net.http_get(
-    'https://saas-tzion-terapias-six.vercel.app/api/cron/campaigns?key=Lumina2026'
+    'https://tzionterapias.com.br/api/cron/campaigns?key=Lumina2026'
   );
   $$
 );
@@ -31,7 +31,7 @@ SELECT cron.schedule(
   '0 12 * * *',             -- Expressão cron (todo dia às 12:00 UTC)
   $$
   SELECT net.http_get(
-    'https://saas-tzion-terapias-six.vercel.app/api/cron/all?key=Lumina2026'
+    'https://tzionterapias.com.br/api/cron/all?key=Lumina2026'
   );
   $$
 );

@@ -6,6 +6,8 @@ import {
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { sendWhatsAppMessage } from '@/src/lib/whatsapp';
+import { getSystemBaseUrl } from '@/src/utils/systemUrl';
+import { fillContractTemplate, DEFAULT_CONTRACT_TEMPLATE } from '@/src/lib/contract';
 
 interface Therapist {
   id: string;
@@ -507,6 +509,42 @@ export default function QuickSellPage() {
         console.error('Erro ao criar pacote:', pkgErr);
         continue;
       }
+
+      // Automação: Se o pagamento for direto (não-Asaas) e for um pacote, gera e envia o contrato
+      const isPackage = item.sessionsNum > 1 || item.service_type === 'pacote' || (item.title && item.title.toLowerCase().includes('pacote'));
+      if (!isAsaas && isPackage && pkgData) {
+        try {
+          const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').maybeSingle();
+          const rawTpl = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
+          const therapistObj = therapists.find(t => t.id === sellData.therapist_id);
+          const filledTpl = fillContractTemplate(rawTpl, {
+            patient,
+            therapist: therapistObj,
+            package: {
+              ...pkgData,
+              total_sessions: item.sessionsNum || 1,
+              price: item.price || totalPrice || 0,
+              service_name: item.title || 'Pacote de Sessões Terapêuticas'
+            }
+          });
+
+          const { data: contract, error: cErr } = await supabase.from('patient_contracts').insert({
+            patient_id: patient.id,
+            content: filledTpl,
+            status: 'pending',
+          }).select().single();
+
+          if (contract && patient.phone) {
+            const firstName = patient.name.split(' ')[0];
+            const baseUrl = await getSystemBaseUrl();
+            const link = `${baseUrl}/contrato/${contract.id}`;
+            const msg = `Olá, *${firstName}*! ✨\n\nSeu pacote foi iniciado! Por favor, assine o termo de serviço:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
+            await sendWhatsAppMessage(patient.id, patient.phone, msg, 'contract_sent');
+          }
+        } catch (contractErr) {
+          console.error('Erro ao gerar/enviar contrato na venda rápida:', contractErr);
+        }
+      }
     }
 
     if (isAsaasPix && asaasId) {
@@ -555,7 +593,7 @@ export default function QuickSellPage() {
         showToast('Cobrança gerada com sucesso! Copie o link abaixo.');
       }
     } else {
-      showToast('✅ Venda registrada com sucesso!');
+      showToast('✅ Venda registrada e contrato enviado via WhatsApp!');
       setSellData(emptySell);
       setCartItems([]);
       setCustomTitle('');
