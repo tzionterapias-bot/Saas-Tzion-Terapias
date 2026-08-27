@@ -277,11 +277,11 @@ export default function InternalChat() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (isOpen && view === 'chat' && activeContact) {
-      markChannelRead(activeContact.id);
+    if (isOpen && view === 'chat' && activeContact && user?.id) {
+      markChannelRead(getChannelId(user.id, activeContact.id));
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }
-  }, [isOpen, view, messages, activeContact, markChannelRead]);
+  }, [isOpen, view, messages, activeContact, markChannelRead, user?.id]);
 
   const openContact = (contact: Contact) => {
     setActiveContact(contact);
