@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/src/lib/supabase';
-import { Shield, UserPlus, Trash2, Edit2, CheckCircle2, ShieldAlert, Loader2, Search, User, X, AlertCircle, UserCheck, UserX } from 'lucide-react';
+import { Shield, UserPlus, Trash2, Edit2, CheckCircle2, ShieldAlert, Loader2, Search, User, X, AlertCircle, UserCheck, UserX, KeyRound, Phone } from 'lucide-react';
 
 interface UserProfile {
   id: string;
@@ -26,10 +26,44 @@ export default function UsersManager() {
 
   // Edit Modal State
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
-  const [editRole, setEditRole] = useState<'admin' | 'terapeuta' | 'atendimento' | 'financeiro'>('atendimento');
-  const [editStatus, setEditStatus] = useState<string>('active');
+  const [editName, setEditName]       = useState('');
+  const [editPhone, setEditPhone]     = useState('');
+  const [editRole, setEditRole]       = useState<'admin' | 'terapeuta' | 'atendimento' | 'financeiro'>('atendimento');
+  const [editStatus, setEditStatus]   = useState<string>('active');
 
   const [saving, setSaving] = useState(false);
+  const [sendingPasswordId, setSendingPasswordId] = useState<string | null>(null);
+  const [passwordSentId, setPasswordSentId]       = useState<string | null>(null);
+
+  const handleSendProvisionalPassword = async (user: UserProfile) => {
+    if (!user.phone) {
+      alert(`${user.name || user.email} não possui WhatsApp cadastrado. Peça para ele preencher o telefone no perfil primeiro.`);
+      return;
+    }
+    if (!confirm(`Enviar uma senha provisória para ${user.name || user.email} via WhatsApp (${user.phone})?`)) return;
+
+    setSendingPasswordId(user.id);
+    setPasswordSentId(null);
+    try {
+      const res = await fetch('/api/auth/send-provisional-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPasswordSentId(user.id);
+        setTimeout(() => setPasswordSentId(null), 4000);
+      } else {
+        alert('Erro: ' + (data.error || 'Não foi possível enviar a senha provisória.'));
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao enviar senha provisória.');
+    } finally {
+      setSendingPasswordId(null);
+    }
+  };
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -171,6 +205,8 @@ export default function UsersManager() {
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
+          name: editName.trim() || editingUser.name,
+          phone: editPhone.trim() || null,
           role: editRole,
           status: editStatus,
           updated_at: new Date().toISOString()
@@ -191,9 +227,9 @@ export default function UsersManager() {
           await supabase
             .from('therapists')
             .update({
-              name: editingUser.name || editingUser.email.split('@')[0],
+              name: editName.trim() || editingUser.name || editingUser.email.split('@')[0],
               email: editingUser.email,
-              phone: editingUser.phone || null,
+              phone: editPhone.trim() || editingUser.phone || null,
               active: true
             })
             .eq('id', existingTherapist.id);
@@ -202,9 +238,9 @@ export default function UsersManager() {
             .from('therapists')
             .insert([{
               user_id: editingUser.id,
-              name: editingUser.name || editingUser.email.split('@')[0],
+              name: editName.trim() || editingUser.name || editingUser.email.split('@')[0],
               email: editingUser.email,
-              phone: editingUser.phone || null,
+              phone: editPhone.trim() || editingUser.phone || null,
               specialty: editingUser.specialty || 'Terapeuta',
               active: true,
               commission_rate: 0
@@ -251,6 +287,8 @@ export default function UsersManager() {
 
   const startEdit = (user: UserProfile) => {
     setEditingUser(user);
+    setEditName(user.name || '');
+    setEditPhone(user.phone || '');
     setEditRole(user.role as any);
     setEditStatus(user.status);
   };
@@ -365,6 +403,7 @@ export default function UsersManager() {
                 <tr className="bg-slate-50/50 border-b border-slate-100">
                   <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Usuário</th>
                   <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Email de Acesso</th>
+                  <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">WhatsApp</th>
                   <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
                   <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Cargo (Nível de Acesso)</th>
                   <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ações</th>
@@ -381,7 +420,19 @@ export default function UsersManager() {
                         <span className="font-bold text-slate-900">{user.name || 'Sem Nome Cadastrado'}</span>
                       </div>
                     </td>
-                    <td className="p-6 text-slate-600 font-medium">{user.email}</td>
+                    <td className="p-6 text-slate-600 font-medium text-sm">{user.email}</td>
+                    <td className="p-6">
+                      {user.phone ? (
+                        <div className="flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <span className="text-sm font-bold text-slate-700">{user.phone}</span>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] font-bold text-amber-500 flex items-center gap-1">
+                          <span>⚠️</span> Sem WhatsApp
+                        </span>
+                      )}
+                    </td>
                     <td className="p-6">
                       <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
                         user.status === 'active' ? 'bg-emerald-50 text-emerald-600' :
@@ -425,6 +476,27 @@ export default function UsersManager() {
                             </button>
                           </>
                         )}
+
+                        {/* Botão Senha Provisória via WhatsApp */}
+                        <button
+                          onClick={() => handleSendProvisionalPassword(user)}
+                          disabled={sendingPasswordId === user.id}
+                          title={user.phone ? `Enviar senha provisória para ${user.phone}` : 'Sem WhatsApp cadastrado'}
+                          className={`p-2 rounded-xl border transition-all ${
+                            passwordSentId === user.id
+                              ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                              : user.phone
+                              ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50 border-slate-100 hover:border-amber-100'
+                              : 'text-slate-200 border-slate-100 cursor-not-allowed opacity-40'
+                          }`}
+                        >
+                          {sendingPasswordId === user.id
+                            ? <Loader2 className="w-4 h-4 animate-spin" />
+                            : passwordSentId === user.id
+                            ? <CheckCircle2 className="w-4 h-4" />
+                            : <KeyRound className="w-4 h-4" />}
+                        </button>
+
                         <button 
                           onClick={() => startEdit(user)} 
                           title="Editar Permissões"
@@ -556,8 +628,8 @@ export default function UsersManager() {
           <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl overflow-hidden border border-slate-100">
             <div className="p-8 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
               <div>
-                <h3 className="text-2xl font-black text-slate-900">Editar Permissões</h3>
-                <p className="text-slate-500 font-medium mt-1">Altere o cargo ou desative o acesso de {editingUser.name || editingUser.email}.</p>
+                <h3 className="text-2xl font-black text-slate-900">Editar Usuário</h3>
+                <p className="text-slate-500 font-medium mt-1">Dados básicos, cargo e status de {editingUser.name || editingUser.email}.</p>
               </div>
               <button 
                 onClick={() => setEditingUser(null)}
@@ -567,34 +639,90 @@ export default function UsersManager() {
               </button>
             </div>
             
-            <form onSubmit={handleSaveEdit} className="p-8 space-y-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nível de Acesso (Cargo)</label>
-                <select 
-                  value={editRole}
-                  onChange={e => setEditRole(e.target.value as any)}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none appearance-none cursor-pointer font-bold text-slate-700"
-                >
-                  <option value="atendimento">Recepção / Atendimento</option>
-                  <option value="terapeuta">Terapeuta</option>
-                  <option value="financeiro">Financeiro</option>
-                  <option value="admin">Administrador Geral</option>
-                </select>
+            <form onSubmit={handleSaveEdit} className="p-8 space-y-5">
+
+              {/* Dados básicos */}
+              <div className="pb-1">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Dados Básicos</p>
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome Completo</label>
+                    <div className="relative flex items-center">
+                      <User className="w-4 h-4 text-slate-400 absolute left-4" />
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                        placeholder="Nome do usuário..."
+                        className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 text-sm focus:bg-white focus:border-indigo-500 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone / WhatsApp</label>
+                    <div className="relative flex items-center">
+                      <Phone className="w-4 h-4 text-slate-400 absolute left-4" />
+                      <input
+                        type="text"
+                        value={editPhone}
+                        onChange={e => setEditPhone(e.target.value)}
+                        placeholder="(00) 00000-0000"
+                        className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 text-sm focus:bg-white focus:border-indigo-500 transition-all"
+                      />
+                    </div>
+                    {!editPhone && (
+                      <p className="text-[10px] text-amber-600 font-bold ml-1 flex items-center gap-1">
+                        <span>⚠️</span> Sem WhatsApp — não será possível enviar senha provisória
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">E-mail (Login)</label>
+                    <input
+                      type="email"
+                      disabled
+                      value={editingUser.email}
+                      className="w-full px-4 py-3.5 bg-slate-100 border border-slate-200 rounded-2xl outline-none font-bold text-slate-400 text-sm cursor-not-allowed"
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Status da Conta</label>
-                <select 
-                  value={editStatus}
-                  onChange={e => setEditStatus(e.target.value)}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none appearance-none cursor-pointer font-bold text-slate-700"
-                >
-                  <option value="active">Ativo (Acesso Liberado)</option>
-                  <option value="inactive">Inativo (Acesso Bloqueado)</option>
-                </select>
+              {/* Permissões */}
+              <div className="border-t border-slate-100 pt-5">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Permissões</p>
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nível de Acesso (Cargo)</label>
+                    <select 
+                      value={editRole}
+                      onChange={e => setEditRole(e.target.value as any)}
+                      className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none appearance-none cursor-pointer font-bold text-slate-700 text-sm"
+                    >
+                      <option value="atendimento">Recepção / Atendimento</option>
+                      <option value="terapeuta">Terapeuta</option>
+                      <option value="financeiro">Financeiro</option>
+                      <option value="admin">Administrador Geral</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Status da Conta</label>
+                    <select 
+                      value={editStatus}
+                      onChange={e => setEditStatus(e.target.value)}
+                      className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none appearance-none cursor-pointer font-bold text-slate-700 text-sm"
+                    >
+                      <option value="active">Ativo (Acesso Liberado)</option>
+                      <option value="inactive">Inativo (Acesso Bloqueado)</option>
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              <div className="pt-4 flex gap-4">
+              <div className="pt-2 flex gap-4">
                 <button type="button" onClick={() => setEditingUser(null)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-colors">Cancelar</button>
                 <button type="submit" disabled={saving} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100 flex justify-center items-center gap-2">
                   {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />} Salvar Alterações

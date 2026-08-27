@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { MessageSquare, X, Send, ChevronLeft, Stethoscope, Banknote, Calendar, ShoppingCart, Shield, Headset } from 'lucide-react';
+import { MessageSquare, X, Send, ChevronLeft, Stethoscope, Banknote, ShoppingCart, Shield, Headset } from 'lucide-react';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { cn } from '@/src/lib/utils';
@@ -46,12 +46,7 @@ const playChimeSound = () => {
   } catch (e) {}
 };
 
-const DEPARTMENT_CONTACTS: Contact[] = [
-  { id: 'admin',       name: 'Administração',    role: 'admin',       icon: <Shield className="w-5 h-5" />,       color: 'bg-slate-700' },
-  { id: 'atendimento', name: 'Recepção / Agenda', role: 'atendimento', icon: <Calendar className="w-5 h-5" />,     color: 'bg-indigo-500' },
-  { id: 'financeiro',  name: 'Financeiro',        role: 'financeiro',  icon: <Banknote className="w-5 h-5" />,     color: 'bg-emerald-500' },
-  { id: 'comercial',   name: 'Comercial',         role: 'comercial',   icon: <ShoppingCart className="w-5 h-5" />, color: 'bg-amber-500' },
-];
+
 
 const READ_KEY = (userId: string) => `internalChat_readTimestamps_${userId}`;
 
@@ -136,42 +131,46 @@ export default function InternalChat() {
       });
   }, []);
 
-  const therapistContacts: Contact[] = useMemo(() => therapists.map(t => {
-    const roleLabel = t.role === 'admin' ? 'ADMINISTRADOR' : 
-                      t.role === 'atendimento' ? 'ATENDIMENTO' : 
-                      t.role === 'financeiro' ? 'FINANCEIRO' : 'TERAPEUTA';
-                      
-    let icon = <Stethoscope className="w-5 h-5" />;
-    let color = 'bg-violet-500';
+  const therapistContacts: Contact[] = useMemo(() => therapists
+    .filter(t => t.id !== user?.id)
+    .map(t => {
+      const roleLabel =
+        t.role === 'admin'      ? 'ADMINISTRADOR' :
+        t.role === 'atendimento' ? 'SECRETARIA' :
+        t.role === 'financeiro'  ? 'FINANCEIRO' :
+        t.role === 'comercial'   ? 'COMERCIAL' : 'TERAPEUTA';
 
-    if (t.role === 'admin') {
-      icon = <Shield className="w-5 h-5" />;
-      color = 'bg-rose-500';
-    } else if (t.role === 'atendimento') {
-      icon = <Headset className="w-5 h-5" />;
-      color = 'bg-blue-500';
-    } else if (t.role === 'financeiro') {
-      icon = <Banknote className="w-5 h-5" />;
-      color = 'bg-emerald-500';
-    }
+      let icon = <Stethoscope className="w-5 h-5" />;
+      let color = 'bg-violet-500';
 
-    return {
-      id: t.id,
-      name: t.name || 'Usuário',
-      role: roleLabel,
-      icon,
-      color,
-    };
-  }), [therapists]);
+      if (t.role === 'admin') {
+        icon = <Shield className="w-5 h-5" />;
+        color = 'bg-rose-500';
+      } else if (t.role === 'atendimento') {
+        icon = <Headset className="w-5 h-5" />;
+        color = 'bg-blue-500';
+      } else if (t.role === 'financeiro') {
+        icon = <Banknote className="w-5 h-5" />;
+        color = 'bg-emerald-500';
+      } else if (t.role === 'comercial') {
+        icon = <ShoppingCart className="w-5 h-5" />;
+        color = 'bg-amber-500';
+      }
+
+      return {
+        id: t.id,
+        name: t.name || 'Usuário',
+        role: roleLabel,
+        icon,
+        color,
+      };
+    }), [therapists, user?.id]);
 
   useEffect(() => {
     const handler = (e: Event) => {
       const { contactId } = (e as CustomEvent).detail;
-      const dept = DEPARTMENT_CONTACTS.find(c => c.id === contactId);
-      if (dept) { openContact(dept); } else {
-        const t = therapistContacts.find(c => c.id === contactId);
-        if (t) openContact(t);
-      }
+      const t = therapistContacts.find(c => c.id === contactId);
+      if (t) openContact(t);
       setIsOpen(true);
     };
     window.addEventListener('open-internal-chat', handler);
@@ -295,7 +294,6 @@ export default function InternalChat() {
     }
   };
 
-  const isDeptOnline = (dept: Contact) => onlineUsers.some(u => u.id !== user?.id && u.role === dept.id);
   const isTherapistOnline = (contact: Contact) => onlineUsers.some(u => u.therapist_id === contact.id || u.id === contact.id);
   const onlineCount = onlineUsers.filter(u => u.id !== user?.id).length;
 
@@ -327,52 +325,22 @@ export default function InternalChat() {
 
           {view === 'contacts' && (
             <div className="flex-1 overflow-y-auto">
-              <div className="px-4 pt-4 pb-1">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">DEPARTAMENTOS</p>
-                <div className="space-y-1">
-                  {DEPARTMENT_CONTACTS.map(c => {
-                    const unread = contactUnreadMap[c.id] || 0;
-                    const isOnline = isDeptOnline(c);
-                    return (
-                      <button key={c.id} onClick={() => openContact(c)} className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-indigo-50 transition-all text-left group">
-                        <div className="flex items-center gap-3">
-                          <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-white flex-shrink-0 relative', c.color)}>
-                            {c.icon}
-                            {isOnline && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-400 border-2 border-white rounded-full shadow-sm" />}
-                          </div>
-                          <div>
-                            <p className="font-bold text-slate-800 text-sm group-hover:text-indigo-700">{c.name}</p>
-                            <p className={cn('text-[10px] font-bold uppercase', isOnline ? 'text-emerald-500' : 'text-slate-400')}>
-                              {isOnline ? '● Online' : c.role}
-                            </p>
-                          </div>
-                        </div>
-                        {unread > 0 && (
-                          <span className="px-2 py-0.5 bg-rose-500 text-white rounded-full text-[10px] font-extrabold shadow-sm animate-pulse">
-                            {unread} pendente{unread > 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              {therapistContacts.length > 0 && (
-                <div className="px-4 pt-3 pb-4">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">Terapeutas</p>
+              {therapistContacts.length > 0 ? (
+                <div className="px-4 pt-4 pb-4">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">EQUIPE</p>
                   <div className="space-y-1">
                     {therapistContacts.map(c => {
                       const unread = contactUnreadMap[c.id] || 0;
                       const isOnline = isTherapistOnline(c);
                       return (
-                        <button key={c.id} onClick={() => openContact(c)} className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-violet-50 transition-all text-left group">
+                        <button key={c.id} onClick={() => openContact(c)} className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-indigo-50 transition-all text-left group">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-violet-500 flex items-center justify-center text-white flex-shrink-0 font-bold text-sm relative">
+                            <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-white flex-shrink-0 font-bold text-sm relative', c.color)}>
                               {c.name.charAt(0)}
                               {isOnline && <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-400 border-2 border-white rounded-full shadow-sm" />}
                             </div>
                             <div>
-                              <p className="font-bold text-slate-800 text-sm group-hover:text-violet-700">{c.name}</p>
+                              <p className="font-bold text-slate-800 text-sm group-hover:text-indigo-700">{c.name}</p>
                               <p className={cn('text-[10px] font-bold uppercase', isOnline ? 'text-emerald-500' : 'text-slate-400')}>
                                 {isOnline ? '● Online' : c.role}
                               </p>
@@ -387,6 +355,11 @@ export default function InternalChat() {
                       );
                     })}
                   </div>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 py-16 space-y-2">
+                  <MessageSquare className="w-8 h-8 opacity-30" />
+                  <p className="text-sm font-medium">Nenhum membro encontrado.</p>
                 </div>
               )}
             </div>

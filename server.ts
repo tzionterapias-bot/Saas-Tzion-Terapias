@@ -46,8 +46,9 @@ async function getEvolutionConfig() {
       apiKey: DEFAULT_EVOLUTION_GLOBAL_KEY,
       instanceName: DEFAULT_EVOLUTION_INSTANCE_NAME,
       n8nUrl: "https://n8n2.agenciahigher.com.br/webhook/34ca7f6a-4bf7-4d37-9ea7-059eb36267d8"
-    };
+    }
   }
+}
 const DEFAULT_SYSTEM_URL = "https://tzionterapias.com.br";
 
 async function getSystemBaseUrlBackend(req?: any): Promise<string> {
@@ -830,6 +831,76 @@ async function startServer() {
     } catch (err: any) {
       console.error("[AUTH-RECOVERY] Erro ao redefinir senha:", err);
       return res.status(500).json({ error: "Erro interno ao redefinir senha." });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Enviar senha provisória via WhatsApp (para admin usar na gestão de usuários)
+  // ─────────────────────────────────────────────────────────────────────────────
+  app.post("/api/auth/send-provisional-password", requireStaffAuth, async (req, res) => {
+    try {
+      const { userId } = req.body;
+      if (!userId) {
+        return res.status(400).json({ error: "userId é obrigatório." });
+      }
+
+      // 1. Buscar perfil do usuário
+      const { data: profile, error: profileErr } = await supabase
+        .from('profiles')
+        .select('id, name, email, phone, role')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profileErr || !profile) {
+        return res.status(404).json({ error: "Usuário não encontrado." });
+      }
+
+      if (!profile.phone) {
+        return res.status(400).json({ error: "Este usuário não possui WhatsApp cadastrado. Peça para ele cadastrar o telefone no perfil." });
+      }
+
+      // 2. Gerar senha provisória legível (ex: Tzion@7423)
+      const adjectives = ['Azul', 'Verde', 'Solar', 'Luna', 'Forte', 'Novo', 'Belo', 'Livre'];
+      const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+      const num = Math.floor(1000 + Math.random() * 9000);
+      const provisionalPassword = `Tzion${adj}${num}`;
+
+      console.log(`[PROVISIONAL-PWD] Gerando senha provisória para ${profile.email} (${profile.id})...`);
+
+      // 3. Atualizar a senha no Supabase Auth
+      const { error: authErr } = await supabase.auth.admin.updateUserById(profile.id, {
+        password: provisionalPassword
+      });
+
+      if (authErr) {
+        console.error("[PROVISIONAL-PWD] Erro ao atualizar senha:", authErr.message);
+        // Se não existe no auth, tenta criar
+        if (authErr.message.toLowerCase().includes("not found") || authErr.message.toLowerCase().includes("user not found")) {
+          await supabase.auth.admin.createUser({
+            email: profile.email,
+            password: provisionalPassword,
+            email_confirm: true,
+            user_metadata: { name: profile.name, role: profile.role }
+          });
+        } else {
+          return res.status(500).json({ error: "Erro ao atualizar a senha no sistema: " + authErr.message });
+        }
+      }
+
+      // 4. Enviar via WhatsApp
+      const firstName = profile.name ? profile.name.split(' ')[0] : 'Usuário';
+      const appUrl = await getSystemBaseUrlBackend(req);
+      const msg = `🔑 *Acesso Provisório - Tzion Terapias*\n\nOlá, *${firstName}*! ✨\n\nO administrador gerou um acesso provisório para sua conta.\n\n📧 *E-mail:* ${profile.email}\n🔐 *Senha provisória:* \`${provisionalPassword}\`\n\n🔗 Acesse agora: ${appUrl}/login\n\n⚠️ Por segurança, recomendamos que você altere sua senha após o primeiro acesso em *Meu Perfil* → *Nova Senha*.\n\nQualquer dúvida, fale conosco! 💙`;
+
+      await sendWhatsAppBackend(profile.id, profile.phone, msg, 'provisional_password_sent');
+
+      console.log(`[PROVISIONAL-PWD] Senha provisória enviada para ${profile.phone} com sucesso.`);
+
+      return res.json({ success: true, message: "Senha provisória gerada e enviada via WhatsApp com sucesso!" });
+
+    } catch (err: any) {
+      console.error("[PROVISIONAL-PWD] Erro:", err);
+      return res.status(500).json({ error: "Erro interno ao enviar senha provisória." });
     }
   });
 
