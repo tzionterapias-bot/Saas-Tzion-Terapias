@@ -50,6 +50,10 @@ const playChimeSound = () => {
 
 const READ_KEY = (userId: string) => `internalChat_readTimestamps_${userId}`;
 
+const getChannelId = (uId: string, cId: string) => {
+  return [uId, cId].sort().join('_');
+};
+
 export default function InternalChat() {
   const { user } = useAuth();
   const [isOpen, setIsOpen]                       = useState(false);
@@ -102,8 +106,13 @@ export default function InternalChat() {
   const triggerNotification = useCallback((msg: Message, isRealtime: boolean) => {
     if (!user) return;
     if (!isMessageUnread(msg)) return;
+    
+    // Validar se a mensagem pertence a um canal válido (evita contar canais inativos ou bugados)
+    if (!msg.channel.includes(user.id)) return;
+
     processedMsgIds.current.add(msg.id);
-    if (isOpenRef.current && activeContactRef.current?.id === msg.channel) {
+    const activeChannel = activeContactRef.current ? getChannelId(user.id, activeContactRef.current.id) : null;
+    if (isOpenRef.current && activeChannel === msg.channel) {
       markChannelRead(msg.channel);
       return;
     }
@@ -182,7 +191,8 @@ export default function InternalChat() {
       .channel('internal_messages:realtime')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'internal_messages' }, (payload) => {
         const newMsg = payload.new as Message;
-        if (activeContactRef.current?.id === newMsg.channel) {
+        const activeChannel = activeContactRef.current ? getChannelId(user?.id || '', activeContactRef.current.id) : null;
+        if (activeChannel === newMsg.channel) {
           setMessages(prev => {
             if (prev.find(m => m.id === newMsg.id)) return prev;
             return [...prev, newMsg];
@@ -221,11 +231,12 @@ export default function InternalChat() {
   }, [user]);
 
   useEffect(() => {
-    if (!activeContact) return;
+    if (!activeContact || !user?.id) return;
     const fetchMessages = async () => {
+      const channelId = getChannelId(user.id, activeContact.id);
       const { data, error } = await supabase
         .from('internal_messages').select('*')
-        .eq('channel', activeContact.id)
+        .eq('channel', channelId)
         .order('created_at', { ascending: true }).limit(100);
       if (!error && data) {
         setMessages(data);
@@ -241,6 +252,7 @@ export default function InternalChat() {
     if (stored) { try { readTimestampsRef.current = JSON.parse(stored); } catch {} }
     const countUnread = async () => {
       const { data } = await supabase.from('internal_messages').select('*')
+        .like('channel', `%${user.id}%`) // Only fetch channels containing the user
         .order('created_at', { ascending: false }).limit(50);
       if (!data) return;
       data.forEach((msg: Message) => {
@@ -250,14 +262,16 @@ export default function InternalChat() {
         if (isOwn || alreadyRead) processedMsgIds.current.add(msg.id);
       });
       const unreadMap: Record<string, number> = {};
+      let totalUnread = 0;
       data.forEach((msg: Message) => {
         if (!processedMsgIds.current.has(msg.id)) {
           unreadMap[msg.channel] = (unreadMap[msg.channel] || 0) + 1;
+          totalUnread++;
           processedMsgIds.current.add(msg.id);
         }
       });
       setContactUnreadMap(unreadMap);
-      setUnreadCount(Object.values(unreadMap).reduce((a, b) => a + b, 0));
+      setUnreadCount(totalUnread);
     };
     countUnread();
   }, [user?.id]);
@@ -273,7 +287,9 @@ export default function InternalChat() {
     setActiveContact(contact);
     setMessages([]);
     setView('chat');
-    markChannelRead(contact.id);
+    if (user?.id) {
+      markChannelRead(getChannelId(user.id, contact.id));
+    }
   };
 
   const handleBack = () => { setView('contacts'); setActiveContact(null); setMessages([]); };
@@ -284,9 +300,11 @@ export default function InternalChat() {
     const content = newMessage.trim();
     setNewMessage('');
 
+    const channelId = getChannelId(user.id, activeContact.id);
+
     const { error } = await supabase.from('internal_messages').insert({
       sender_id: user.id, sender_name: user.name || 'Usuario',
-      sender_role: user.role || 'Membro', content, channel: activeContact.id,
+      sender_role: user.role || 'Membro', content, channel: channelId,
     });
     if (error) {
       console.error('Erro ao enviar mensagem interna:', error);
@@ -330,7 +348,8 @@ export default function InternalChat() {
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1 mb-2">EQUIPE</p>
                   <div className="space-y-1">
                     {therapistContacts.map(c => {
-                      const unread = contactUnreadMap[c.id] || 0;
+                      const channelId = user?.id ? getChannelId(user.id, c.id) : c.id;
+                      const unread = contactUnreadMap[channelId] || 0;
                       const isOnline = isTherapistOnline(c);
                       return (
                         <button key={c.id} onClick={() => openContact(c)} className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-indigo-50 transition-all text-left group">
