@@ -15,7 +15,8 @@ import {
   Copy,
   Check,
   Save,
-  Loader2
+  Loader2,
+  Bot
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { evolutionService } from '@/src/services/evolutionService';
@@ -29,6 +30,7 @@ interface Instance {
   uptime?: string;
   token?: string;
   messageCount?: number;
+  aiEnabled?: boolean;
 }
 
 export default function EvolutionManager() {
@@ -94,7 +96,8 @@ export default function EvolutionManager() {
             phone: phone || 'N/A',
             uptime: inst.uptime || 'N/A',
             token: dbData?.instance_token || inst.token || 'Não disponível',
-            messageCount: countMap.get(name) || 0
+            messageCount: countMap.get(name) || 0,
+            aiEnabled: dbData?.ai_enabled ?? false
           };
         });
 
@@ -213,6 +216,28 @@ export default function EvolutionManager() {
     }
   };
 
+  const handleToggleAI = async (inst: Instance) => {
+    try {
+      setLoading(inst.id);
+      const newValue = !inst.aiEnabled;
+      const { error } = await supabase
+        .from('whatsapp_instances')
+        .upsert({ 
+          instance_name: inst.name,
+          ai_enabled: newValue
+        }, { onConflict: 'instance_name' });
+        
+      if (error) throw error;
+      await fetchInstances();
+      handleShowToast(`Atendimento de IA ${newValue ? 'ativado' : 'desativado'} com sucesso!`);
+    } catch (error) {
+      console.error('Erro ao alternar IA:', error);
+      handleShowToast('Erro ao alterar status da IA.', 'error');
+    } finally {
+      setLoading(null);
+    }
+  };
+
   const handleCreateInstance = async () => {
     if (!newInstanceName.trim()) return;
     
@@ -284,6 +309,19 @@ export default function EvolutionManager() {
                   </div>
                 </div>
                 <div className="flex gap-2">
+                  <button 
+                    onClick={() => handleToggleAI(inst)}
+                    title={inst.aiEnabled ? 'Desativar Inteligência Artificial' : 'Ativar Inteligência Artificial'}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border",
+                      inst.aiEnabled 
+                        ? "bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100" 
+                        : "bg-slate-50 text-slate-400 border-slate-100 hover:bg-slate-100"
+                    )}
+                  >
+                    <Bot className="w-3.5 h-3.5" />
+                    {inst.aiEnabled ? 'IA Ativa' : 'IA Pausada'}
+                  </button>
                   <button 
                     onClick={() => openSettings(inst)}
                     className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 transition-colors"
