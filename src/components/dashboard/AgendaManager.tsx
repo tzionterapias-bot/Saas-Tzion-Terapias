@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search, Trash2, StickyNote } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search, Trash2, StickyNote, Plus } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
@@ -61,6 +61,7 @@ export default function AgendaManager() {
     type: 'Presencial',
     use_package_id: '',
     batch_schedule: false,
+    batch_count: 4,
     recurrence: 'semanal',
     batch_dates: [] as {date: string, time: string}[]
   });
@@ -199,11 +200,41 @@ export default function AgendaManager() {
         type: 'Presencial',
         use_package_id: '',
         batch_schedule: false,
+        batch_count: 4,
         recurrence: 'semanal',
         batch_dates: []
      });
      setErrorMsg(null);
      setShowModal(true);
+  };
+
+  const handleAddBatchDate = () => {
+    const lastDate = newAppt.batch_dates[newAppt.batch_dates.length - 1];
+    let nextDate = new Date();
+    if (lastDate) {
+      nextDate = new Date(`${lastDate.date}T12:00:00`);
+      if (newAppt.recurrence === 'quinzenal') nextDate.setDate(nextDate.getDate() + 14);
+      else if (newAppt.recurrence === 'mensal') nextDate.setMonth(nextDate.getMonth() + 1);
+      else nextDate.setDate(nextDate.getDate() + 7);
+    }
+    setNewAppt(prev => ({
+      ...prev,
+      batch_dates: [
+        ...prev.batch_dates,
+        {
+          date: nextDate.toISOString().split('T')[0],
+          time: lastDate ? lastDate.time : prev.time || '09:00'
+        }
+      ]
+    }));
+  };
+
+  const handleRemoveBatchDate = (index: number) => {
+    if (newAppt.batch_dates.length <= 1) return;
+    setNewAppt(prev => ({
+      ...prev,
+      batch_dates: prev.batch_dates.filter((_, i) => i !== index)
+    }));
   };
 
   useEffect(() => {
@@ -596,24 +627,20 @@ export default function AgendaManager() {
       const { data: patientData } = await supabase.from('patients').select('phone, name').eq('id', newAppt.patient_id).single();
       if (patientData && patientData.phone) {
          const firstName = patientData.name.split(' ')[0];
-         let mensagem = `Olá, *${firstName}*! ✨\n\nAs ${newAppt.batch_dates.length} sessões do seu pacote na *Clínica Tzion Terapias* foram agendadas!\n\nConfira as próximas datas:\n`;
+         let mensagem = `Olá, *${firstName}*! ✨\n\nAs ${newAppt.batch_dates.length} sessões do seu tratamento na *Clínica Tzion Terapias* foram agendadas com sucesso!\n\nConfira as datas marcadas:\n`;
          
-         newAppt.batch_dates.slice(0, 4).forEach((bd, i) => {
-            mensagem += `📅 ${new Date(bd.date).toLocaleDateString('pt-BR')} às ${bd.time}\n`;
+         newAppt.batch_dates.forEach((bd, i) => {
+            mensagem += `📅 Sessão ${i + 1}: ${new Date(bd.date).toLocaleDateString('pt-BR')} às ${bd.time}\n`;
          });
-         
-         if (newAppt.batch_dates.length > 4) {
-            mensagem += `\n(+ ${newAppt.batch_dates.length - 4} sessões)\n`;
-         }
          
          mensagem += `\n📍 *Modalidade:* ${newAppt.type}\n`;
          if (newAppt.type === 'Online') {
              mensagem += `💻 *Sessão Online:*\nOs links do Google Meet serão enviados antes de cada sessão.\n\n`;
          }
-         mensagem += `Um abraço e te esperamos! 💙`;
+         mensagem += `Qualquer dúvida ou necessidade de ajuste, estamos à disposição! 💙`;
          
          const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
-         await sendWhatsAppMessage(newAppt.patient_id, patientData.phone, mensagem, 'appointment_batch_created');
+         await sendWhatsAppMessage(newAppt.patient_id, patientData.phone, mensagem, 'batch_scheduled');
       }
 
       fetchData();
@@ -625,6 +652,7 @@ export default function AgendaManager() {
       setLoading(false);
     }
   };
+
 
   // Carga inicial dos dados estáticos e dinâmicos
   useEffect(() => {
@@ -1690,41 +1718,8 @@ export default function AgendaManager() {
                         )}
                      </div>
 
-                     {/* Sala de Atendimento */}
-                     {rooms.length > 0 && (
-                       <div className="space-y-3">
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                           <DoorOpen className="w-3.5 h-3.5" /> Sala de Atendimento
-                         </label>
-                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                           <button
-                             onClick={() => setNewAppt({...newAppt, room_id: ''})}
-                             className={cn(
-                               'p-3 rounded-xl border-2 font-bold text-xs transition-all text-center',
-                               !newAppt.room_id ? 'border-slate-400 bg-slate-50 text-slate-700' : 'border-slate-100 text-slate-400 hover:border-slate-200'
-                             )}
-                           >
-                             Sem sala fixa
-                           </button>
-                           {rooms.map(room => (
-                             <button
-                               key={room.id}
-                               onClick={() => setNewAppt({...newAppt, room_id: room.id})}
-                               className={cn(
-                                 'p-3 rounded-xl border-2 font-bold text-xs transition-all flex items-center gap-2',
-                                 newAppt.room_id === room.id ? 'border-current text-white' : 'border-slate-100 text-slate-600 hover:border-slate-200'
-                               )}
-                               style={newAppt.room_id === room.id ? { backgroundColor: room.color, borderColor: room.color } : {}}
-                             >
-                               <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: newAppt.room_id === room.id ? 'white' : room.color }} />
-                               {room.name}
-                             </button>
-                           ))}
-                         </div>
-                       </div>
-                     )}
-
-                     {newAppt.patient_id && patientPackages.filter(p => p.patient_id === newAppt.patient_id).length > 0 && (
+                     {/* Pacote Ativo do Paciente */}
+                      {newAppt.patient_id && patientPackages.filter(p => p.patient_id === newAppt.patient_id).length > 0 && (
                         <div className="p-6 bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 rounded-[2rem] flex flex-col gap-4 animate-in slide-in-from-bottom-4">
                            <div className="flex items-center gap-3 text-amber-700">
                               <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center"><User className="w-5 h-5" /></div>
@@ -1734,15 +1729,26 @@ export default function AgendaManager() {
                               </div>
                            </div>
                            <select 
-                              className="w-full p-4 bg-white border border-amber-200 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 rounded-xl outline-none font-bold text-amber-900 transition-all appearance-none"
+                              className="w-full p-4 bg-white border border-amber-200 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 rounded-xl outline-none font-bold text-amber-900 transition-all appearance-none cursor-pointer"
                               onChange={(e) => {
                                  const pkgId = e.target.value;
                                  const pkg = patientPackages.find(p => p.id === pkgId);
                                  const hasItems = pkg?.patient_package_items && pkg.patient_package_items.length > 0;
+                                 
+                                 let detectedRecurrence = newAppt.recurrence;
+                                 const pkgName = (pkg?.services?.name || '').toLowerCase();
+                                 if (pkgName.includes('quinzenal')) detectedRecurrence = 'quinzenal';
+                                 else if (pkgName.includes('mensal')) detectedRecurrence = 'mensal';
+                                 else if (pkgName.includes('semanal')) detectedRecurrence = 'semanal';
+
+                                 const remaining = pkg ? Math.max(1, pkg.total_sessions - pkg.used_sessions) : 4;
+
                                  setNewAppt({
                                     ...newAppt,
                                     use_package_id: pkgId,
-                                    service_id: hasItems ? '' : (pkg?.service_id || '')
+                                    service_id: hasItems ? '' : (pkg?.service_id || ''),
+                                    recurrence: detectedRecurrence,
+                                    batch_count: remaining
                                  });
                               }}
                               value={newAppt.use_package_id}
@@ -1750,7 +1756,7 @@ export default function AgendaManager() {
                               <option value="">Não descontar (Cobrança Avulsa via Asaas)</option>
                               {patientPackages.filter(p => p.patient_id === newAppt.patient_id).map(p => (
                                  <option key={p.id} value={p.id}>
-                                    Usar: {p.services?.name} ({p.total_sessions - p.used_sessions} sessões restantes)
+                                    Usar: {p.services?.name || 'Pacote Terapêutico'} ({p.total_sessions - p.used_sessions} sessões restantes)
                                  </option>
                               ))}
                            </select>
@@ -1779,100 +1785,173 @@ export default function AgendaManager() {
                              }
                              return null;
                            })()}
+                        </div>
+                      )}
 
-                           {newAppt.use_package_id && (
-                              <div className="pt-4 border-t border-amber-200/50 space-y-4">
-                                 <label className="flex items-center gap-3 cursor-pointer">
-                                    <input 
-                                       type="checkbox" 
-                                       checked={newAppt.batch_schedule}
-                                       onChange={(e) => setNewAppt({...newAppt, batch_schedule: e.target.checked})}
-                                       className="w-5 h-5 rounded text-amber-600 focus:ring-amber-500"
-                                    />
-                                    <span className="font-bold text-amber-900">Agendar Pacote Completo (Recorrente)</span>
-                                 </label>
-                                 
-                                 {newAppt.batch_schedule && (
-                                    <div className="space-y-2 pl-8">
-                                       <label className="text-[10px] font-black text-amber-600/70 uppercase tracking-widest">Frequência</label>
-                                       <select 
-                                          className="w-full p-3 bg-white border border-amber-200 rounded-lg outline-none font-bold text-amber-900"
-                                          value={newAppt.recurrence}
-                                          onChange={(e) => setNewAppt({...newAppt, recurrence: e.target.value})}
-                                       >
-                                          <option value="semanal">Semanal (a cada 7 dias)</option>
-                                          <option value="quinzenal">Quinzenal (a cada 14 dias)</option>
-                                          <option value="mensal">Mensal (mesmo dia do mês)</option>
-                                       </select>
+                      {/* Configuração de Agendamento Recorrente (Lote) - Disponível com ou sem pacote */}
+                      {newAppt.patient_id && (
+                        <div className="p-6 bg-slate-50 border border-slate-200/80 rounded-[2rem] space-y-4">
+                           <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                 <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                                    <CalendarIcon className="w-5 h-5" />
+                                 </div>
+                                 <div>
+                                    <h4 className="font-bold text-slate-800 text-sm">Agendamento em Série (Recorrente)</h4>
+                                    <p className="text-xs text-slate-500 font-medium">Agendar múltiplas sessões (semanal, quinzenal ou mensal)</p>
+                                 </div>
+                              </div>
+                              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                 <input 
+                                    type="checkbox" 
+                                    checked={newAppt.batch_schedule}
+                                    onChange={(e) => setNewAppt({...newAppt, batch_schedule: e.target.checked})}
+                                    className="sr-only peer"
+                                 />
+                                 <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                              </label>
+                           </div>
+
+                           {newAppt.batch_schedule && (
+                              <div className="space-y-4 pt-4 border-t border-slate-200/80 animate-in fade-in duration-200">
+                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                                          Qtd. de Sessões a Agendar
+                                       </label>
+                                       <div className="space-y-2">
+                                          <input
+                                             type="number"
+                                             min="1"
+                                             max="52"
+                                             value={newAppt.batch_count}
+                                             onChange={(e) => setNewAppt({...newAppt, batch_count: Math.max(1, parseInt(e.target.value) || 1)})}
+                                             className="w-full p-4 bg-white border border-slate-200 rounded-xl font-black text-indigo-600 text-base outline-none focus:border-indigo-500 shadow-sm"
+                                             placeholder="Ex: 4, 8, 12..."
+                                          />
+                                          <div className="flex flex-wrap gap-1.5">
+                                             {[4, 6, 8, 10, 12].map(n => (
+                                                <button
+                                                   key={n}
+                                                   type="button"
+                                                   onClick={() => setNewAppt({...newAppt, batch_count: n})}
+                                                   className={cn(
+                                                      "px-2.5 py-1 rounded-lg text-xs font-bold transition-all",
+                                                      newAppt.batch_count === n ? "bg-indigo-600 text-white shadow-sm" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                                                   )}
+                                                >
+                                                   {n} sessões
+                                                </button>
+                                             ))}
+                                             {(() => {
+                                                const selPkg = patientPackages.find(p => p.id === newAppt.use_package_id);
+                                                if (selPkg) {
+                                                   const remaining = selPkg.total_sessions - selPkg.used_sessions;
+                                                   return (
+                                                      <button
+                                                         type="button"
+                                                         onClick={() => setNewAppt({...newAppt, batch_count: Math.max(1, remaining)})}
+                                                         className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-800 hover:bg-amber-200 transition-all"
+                                                      >
+                                                         Saldo do Pacote ({remaining})
+                                                      </button>
+                                                   );
+                                                }
+                                                return null;
+                                             })()}
+                                          </div>
+                                       </div>
                                     </div>
-                                 )}
+
+                                    <div className="space-y-2">
+                                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                                          Periodicidade / Frequência
+                                       </label>
+                                       <div className="space-y-2">
+                                          <select 
+                                             className="w-full p-4 bg-white border border-slate-200 rounded-xl font-bold text-slate-800 text-sm outline-none focus:border-indigo-500 shadow-sm cursor-pointer"
+                                             value={newAppt.recurrence}
+                                             onChange={(e) => setNewAppt({...newAppt, recurrence: e.target.value})}
+                                          >
+                                             <option value="semanal">📅 Semanal (de semana em semana / 7 dias)</option>
+                                             <option value="quinzenal">🗓️ Quinzenal (a cada 14 dias)</option>
+                                             <option value="mensal">📆 Mensal (a cada 30 dias)</option>
+                                          </select>
+                                          <p className="text-[11px] text-slate-400 font-medium pl-1">
+                                             {newAppt.recurrence === 'semanal' && 'Marcadas no mesmo dia e horário toda semana.'}
+                                             {newAppt.recurrence === 'quinzenal' && 'Marcadas de 15 em 15 dias no mesmo horário.'}
+                                             {newAppt.recurrence === 'mensal' && 'Marcadas uma vez por mês no mesmo horário.'}
+                                          </p>
+                                       </div>
+                                    </div>
+                                 </div>
                               </div>
                            )}
                         </div>
-                     )}
-
-                     {newAppt.patient_id && (
-                        <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 space-y-4 mt-8">
-                           <h4 className="font-black text-slate-900 text-sm">Resumo do Agendamento</h4>
-                           <div className="grid grid-cols-2 gap-4 text-sm">
-                              <div>
-                                 <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mb-1">Quando</p>
-                                 <p className="font-bold text-indigo-600">{new Date(newAppt.date).toLocaleDateString('pt-BR')} às {newAppt.time}</p>
-                              </div>
-                              <div>
-                                 <p className="text-slate-400 font-bold uppercase tracking-widest text-[9px] mb-1">Onde</p>
-                                 <p className="font-bold text-slate-700 flex items-center gap-1">
-                                    {newAppt.type === 'Online' ? <Video className="w-3.5 h-3.5 text-blue-500" /> : <MapPin className="w-3.5 h-3.5 text-slate-500" />}
-                                    {newAppt.type}
-                                 </p>
-                              </div>
-                           </div>
-                        </div>
-                     )}
+                      )}
                   </div>
                )}
 
                {wizardStep === 4 && newAppt.batch_schedule && (
-                  <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 flex-1 flex flex-col">
-                     <div className="bg-indigo-50 text-indigo-700 p-4 rounded-xl border border-indigo-100 flex items-center gap-3">
-                        <CalendarIcon className="w-6 h-6 flex-shrink-0" />
-                        <div>
-                           <h4 className="font-bold text-sm">Revisão das Datas</h4>
-                           <p className="text-xs opacity-80">Aqui estão as sessões geradas pela recorrência. Você pode alterar a data/hora individualmente se precisar.</p>
-                        </div>
-                     </div>
-                     
-                     <div className="space-y-3 flex-1 overflow-y-auto pr-2">
-                        {newAppt.batch_dates.map((bd, index) => (
-                           <div key={index} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200">
-                              <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold flex items-center justify-center text-xs flex-shrink-0">
-                                 {index + 1}
-                              </div>
-                              <input 
-                                 type="date"
-                                 className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-indigo-500"
-                                 value={bd.date}
-                                 onChange={(e) => {
-                                    const newDates = [...newAppt.batch_dates];
-                                    newDates[index].date = e.target.value;
-                                    setNewAppt({...newAppt, batch_dates: newDates});
-                                 }}
-                              />
-                              <input 
-                                 type="time"
-                                 className="w-28 p-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-indigo-500"
-                                 value={bd.time}
-                                 onChange={(e) => {
-                                    const newDates = [...newAppt.batch_dates];
-                                    newDates[index].time = e.target.value;
-                                    setNewAppt({...newAppt, batch_dates: newDates});
-                                 }}
-                              />
-                           </div>
-                        ))}
-                     </div>
-                  </div>
-               )}
+                   <div className="space-y-6 animate-in slide-in-from-right-4 duration-300 flex-1 flex flex-col">
+                      <div className="bg-indigo-50 text-indigo-700 p-4 rounded-2xl border border-indigo-100 flex items-center justify-between gap-3">
+                         <div className="flex items-center gap-3">
+                            <CalendarIcon className="w-6 h-6 flex-shrink-0" />
+                            <div>
+                               <h4 className="font-bold text-sm">Revisão das Datas ({newAppt.batch_dates.length} sessões)</h4>
+                               <p className="text-xs opacity-80">Você pode ajustar individualmente a data e horário de cada sessão.</p>
+                            </div>
+                         </div>
+                         <button
+                            type="button"
+                            onClick={handleAddBatchDate}
+                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 shrink-0 cursor-pointer active:scale-95"
+                         >
+                            <Plus className="w-3.5 h-3.5" /> + Sessão
+                         </button>
+                      </div>
+                      
+                      <div className="space-y-3 flex-1 overflow-y-auto pr-2 max-h-[380px]">
+                         {newAppt.batch_dates.map((bd, index) => (
+                            <div key={index} className="flex items-center gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 hover:border-indigo-200 transition-all shadow-sm">
+                               <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-black flex items-center justify-center text-xs flex-shrink-0">
+                                  {index + 1}
+                               </div>
+                               <input 
+                                  type="date"
+                                  className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-indigo-500"
+                                  value={bd.date}
+                                  onChange={(e) => {
+                                     const newDates = [...newAppt.batch_dates];
+                                     newDates[index].date = e.target.value;
+                                     setNewAppt({...newAppt, batch_dates: newDates});
+                                  }}
+                               />
+                               <input 
+                                  type="time"
+                                  className="w-28 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:border-indigo-500"
+                                  value={bd.time}
+                                  onChange={(e) => {
+                                     const newDates = [...newAppt.batch_dates];
+                                     newDates[index].time = e.target.value;
+                                     setNewAppt({...newAppt, batch_dates: newDates});
+                                  }}
+                               />
+                               {newAppt.batch_dates.length > 1 && (
+                                  <button
+                                     type="button"
+                                     onClick={() => handleRemoveBatchDate(index)}
+                                     className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                                     title="Remover esta sessão da lista"
+                                  >
+                                     <Trash2 className="w-4 h-4" />
+                                  </button>
+                               )}
+                            </div>
+                         ))}
+                      </div>
+                   </div>
+                )}
 
                {wizardStep === 5 && (
                   <div className="py-12 flex flex-col items-center justify-center text-center animate-in zoom-in-95 duration-300">
@@ -1915,26 +1994,24 @@ export default function AgendaManager() {
                            if (wizardStep === 3 && newAppt.batch_schedule) {
                                // Generate dates
                                const pkg = patientPackages.find(p => p.id === newAppt.use_package_id);
-                               if (pkg) {
-                                  const sessionsToSchedule = pkg.total_sessions - pkg.used_sessions;
-                                  const dates = [];
-                                  let currentDate = new Date(`${newAppt.date}T12:00:00`); // Use noon to avoid timezone shift on days
-                                  for (let i = 0; i < sessionsToSchedule; i++) {
-                                     dates.push({
-                                        date: currentDate.toISOString().split('T')[0],
-                                        time: newAppt.time
-                                     });
-                                     // Increment according to recurrence
-                                     if (newAppt.recurrence === 'semanal') {
-                                        currentDate.setDate(currentDate.getDate() + 7);
-                                     } else if (newAppt.recurrence === 'quinzenal') {
-                                        currentDate.setDate(currentDate.getDate() + 14);
-                                     } else if (newAppt.recurrence === 'mensal') {
-                                        currentDate.setMonth(currentDate.getMonth() + 1);
-                                     }
+                               const sessionsToSchedule = newAppt.batch_count || (pkg ? Math.max(1, pkg.total_sessions - pkg.used_sessions) : 4);
+                               const dates = [];
+                               let currentDate = new Date(`${newAppt.date}T12:00:00`); // Use noon to avoid timezone shift on days
+                               for (let i = 0; i < sessionsToSchedule; i++) {
+                                  dates.push({
+                                     date: currentDate.toISOString().split('T')[0],
+                                     time: newAppt.time
+                                  });
+                                  // Increment according to recurrence
+                                  if (newAppt.recurrence === 'semanal') {
+                                     currentDate.setDate(currentDate.getDate() + 7);
+                                  } else if (newAppt.recurrence === 'quinzenal') {
+                                     currentDate.setDate(currentDate.getDate() + 14);
+                                  } else if (newAppt.recurrence === 'mensal') {
+                                     currentDate.setMonth(currentDate.getMonth() + 1);
                                   }
-                                  setNewAppt({...newAppt, batch_dates: dates});
                                }
+                               setNewAppt(prev => ({...prev, batch_dates: dates}));
                                setWizardStep(4);
                            } else {
                                setWizardStep(prev => prev + 1);

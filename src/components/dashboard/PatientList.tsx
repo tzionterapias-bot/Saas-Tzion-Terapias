@@ -714,21 +714,23 @@ export default function PatientList() {
     setSaving(false);
   };
 
-  const handleSendAnamnesisLink = async () => {
-    if (!selectedPatient?.phone) {
+  const handleSendAnamnesisLink = async (patientTarget?: any) => {
+    const pat = patientTarget || selectedPatient;
+    if (!pat?.phone) {
       setToastMessage('Paciente não possui telefone cadastrado.');
       return;
     }
     const baseUrl = await getSystemBaseUrl();
-    const link = `${baseUrl}/anamnese/${selectedPatient.anamnesis_token || selectedPatient.id}`;
-    const firstName = selectedPatient.name.split(' ')[0] || 'Paciente';
+    const token = pat.anamnesis_token || pat.id;
+    const link = `${baseUrl}/anamnese/${token}`;
+    const firstName = pat.name.split(' ')[0] || 'Paciente';
     const msg = `[Ficha de Entrada - Tzion Terapias]\n\nOlá, *${firstName}*! ✨\n\nPor favor, preencha a sua Ficha de Anamnese antes da nossa próxima sessão. É bem rápido e nos ajuda a preparar o seu atendimento:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
     
     setSaving(true);
-    const sent = await sendWhatsAppMessage(selectedPatient.id, selectedPatient.phone, msg, 'anamnesis_invite');
+    const sent = await sendWhatsAppMessage(pat.id, pat.phone, msg, 'anamnesis_invite');
     setSaving(false);
     if (sent) {
-      setToastMessage('Link de anamnese enviado com sucesso via WhatsApp!');
+      setToastMessage(`Link de anamnese enviado para ${firstName} via WhatsApp!`);
     } else {
       setToastMessage('Erro ao enviar link via WhatsApp.');
     }
@@ -1311,12 +1313,25 @@ export default function PatientList() {
                           )}>
                             {patient.status}
                           </span>
-                          <span className={cn(
-                            "inline-flex items-center w-fit px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                            (Array.isArray(patient.patient_anamnesis) ? patient.patient_anamnesis.length > 0 : !!patient.patient_anamnesis) ? "bg-indigo-50 text-indigo-600" : "bg-rose-50 text-rose-600"
-                          )}>
-                            Anamnese: {(Array.isArray(patient.patient_anamnesis) ? patient.patient_anamnesis.length > 0 : !!patient.patient_anamnesis) ? 'Preenchida' : 'Pendente'}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSendAnamnesisLink(patient);
+                            }}
+                            className={cn(
+                              "inline-flex items-center w-fit px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all hover:scale-105 active:scale-95 cursor-pointer",
+                              (Array.isArray(patient.patient_anamnesis) ? patient.patient_anamnesis.length > 0 : !!patient.patient_anamnesis) 
+                                ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100" 
+                                : "bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200/60"
+                            )}
+                            title={(Array.isArray(patient.patient_anamnesis) ? patient.patient_anamnesis.length > 0 : !!patient.patient_anamnesis) 
+                              ? "Anamnese Preenchida - Clique para reenviar link se necessário" 
+                              : "Anamnese Pendente - Clique para enviar link por WhatsApp"}
+                          >
+                            <Send className="w-3 h-3 mr-1" />
+                            Anamnese: {(Array.isArray(patient.patient_anamnesis) ? patient.patient_anamnesis.length > 0 : !!patient.patient_anamnesis) ? 'Preenchida' : 'Pendente (Enviar)'}
+                          </button>
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1499,6 +1514,15 @@ export default function PatientList() {
                   title="Gerar e emitir contrato avulso ou de pacote para este paciente"
                 >
                   <FileText className="w-4 h-4" /> Emitir Contrato (Avulso / Manual)
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => handleSendAnamnesisLink()}
+                  disabled={saving}
+                  className="px-5 py-3 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl font-bold transition-all shadow-sm flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                  title="Enviar link de preenchimento da ficha de anamnese via WhatsApp"
+                >
+                  <Send className="w-4 h-4" /> Enviar Link de Anamnese
                 </button>
                 <button onClick={() => window.print()} className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm">Imprimir Ficha</button>
               </div>

@@ -933,14 +933,26 @@ async function startServer() {
         return res.status(400).json({ error: "Token é obrigatório." });
       }
 
-      // 1. Obter paciente pelo token
-      const { data: patient, error: pError } = await supabase
+      // 1. Obter paciente pelo token (ou ID como fallback)
+      let patient = null;
+      const { data: pByToken } = await supabase
         .from('patients')
         .select('id, name')
         .eq('anamnesis_token', token)
         .maybeSingle();
 
-      if (pError || !patient) {
+      if (pByToken) {
+        patient = pByToken;
+      } else {
+        const { data: pById } = await supabase
+          .from('patients')
+          .select('id, name')
+          .eq('id', token)
+          .maybeSingle();
+        if (pById) patient = pById;
+      }
+
+      if (!patient) {
         return res.status(404).json({ error: "Paciente não encontrado ou link inválido." });
       }
 
@@ -996,14 +1008,26 @@ async function startServer() {
         return res.status(400).json({ error: "Token é obrigatório." });
       }
 
-      // 1. Obter paciente pelo token
-      const { data: patient, error: pError } = await supabase
+      // 1. Obter paciente pelo token (ou ID como fallback)
+      let patient = null;
+      const { data: pByToken } = await supabase
         .from('patients')
         .select('id')
         .eq('anamnesis_token', token)
         .maybeSingle();
 
-      if (pError || !patient) {
+      if (pByToken) {
+        patient = pByToken;
+      } else {
+        const { data: pById } = await supabase
+          .from('patients')
+          .select('id')
+          .eq('id', token)
+          .maybeSingle();
+        if (pById) patient = pById;
+      }
+
+      if (!patient) {
         return res.status(404).json({ error: "Paciente não encontrado ou link inválido." });
       }
 

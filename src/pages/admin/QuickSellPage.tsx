@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   CreditCard, DollarSign, CheckCircle2, AlertCircle, Loader2, X, Save, 
-  Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus, Search, ChevronDown, Check, Trash2, FileText
+  Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus, Search, ChevronDown, Check, Trash2, FileText,
+  Send, Sparkles
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -60,6 +61,7 @@ interface CartItem {
   service_type?: string;
   priceNum: number;
   sessionsNum: number;
+  recurrence?: 'semanal' | 'quinzenal' | 'mensal' | 'livre';
 }
 
 export default function QuickSellPage() {
@@ -85,6 +87,7 @@ export default function QuickSellPage() {
   const [customTitle, setCustomTitle] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [customSessions, setCustomSessions] = useState('1');
+  const [customRecurrence, setCustomRecurrence] = useState<'semanal' | 'quinzenal' | 'mensal' | 'livre'>('semanal');
   const [generateContract, setGenerateContract] = useState(true);
 
   const [catalogPrice, setCatalogPrice] = useState<string>('');
@@ -206,6 +209,23 @@ export default function QuickSellPage() {
   const [createdAsaasPayment, setCreatedAsaasPayment] = useState<{ url: string; amount: number; patientName: string; phone: string | null; paymentId: string } | null>(null);
   const [createdPixQrCode, setCreatedPixQrCode] = useState<{ encodedImage: string; payload: string; amount: number; patientName: string; paymentId: string } | null>(null);
 
+  // Estados dos popups didáticos de pós-venda
+  interface PostSaleSessionData {
+    patient: any;
+    therapist: any;
+    effectiveItems: CartItem[];
+    pkgList: any[];
+    totalPrice: number;
+    paymentId: string;
+    isAsaasPix: boolean;
+    asaasId?: string | null;
+    asaasLink?: string | null;
+  }
+
+  const [postSaleData, setPostSaleData] = useState<PostSaleSessionData | null>(null);
+  const [postSaleStep, setPostSaleStep] = useState<'contract' | 'anamnesis' | null>(null);
+  const [postSaleLoading, setPostSaleLoading] = useState(false);
+
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
@@ -308,7 +328,8 @@ export default function QuickSellPage() {
       service_name: svc.name,
       service_type: svc.type,
       priceNum: svc.price || 0,
-      sessionsNum: svc.sessions_count || 1
+      sessionsNum: svc.sessions_count || 1,
+      recurrence: 'semanal'
     };
 
     setCartItems(prev => [...prev, newItem]);
@@ -338,13 +359,15 @@ export default function QuickSellPage() {
       catalogSessions: '',
       service_name: customTitle.trim(),
       priceNum: price,
-      sessionsNum: parseInt(customSessions) || 1
+      sessionsNum: parseInt(customSessions) || 1,
+      recurrence: customRecurrence
     };
 
     setCartItems(prev => [...prev, newItem]);
     setCustomTitle('');
     setCustomPrice('');
     setCustomSessions('1');
+    setCustomRecurrence('semanal');
     showToast('✅ Item avulso adicionado!');
   };
 
@@ -360,6 +383,152 @@ export default function QuickSellPage() {
     setCartItems(prev => prev.map(item => 
       item.id === id ? { ...item, catalogSessions: sessionsStr, sessionsNum: num } : item
     ));
+  };
+
+  const updateCartItemRecurrence = (id: string, recurrence: 'semanal' | 'quinzenal' | 'mensal' | 'livre') => {
+    setCartItems(prev => prev.map(item => 
+      item.id === id ? { ...item, recurrence } : item
+    ));
+  };
+
+  const handleSendContractFromPopup = async () => {
+    if (!postSaleData) return;
+    setPostSaleLoading(true);
+    try {
+      const { patient, therapist, effectiveItems, pkgList, totalPrice } = postSaleData;
+      const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').maybeSingle();
+      const rawTpl = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
+
+      for (let i = 0; i < effectiveItems.length; i++) {
+        const item = effectiveItems[i];
+        const pkg = pkgList[i] || {};
+
+        const recurrenceLabel = item.recurrence === 'quinzenal' 
+          ? 'Quinzenal' 
+          : item.recurrence === 'mensal' 
+            ? 'Mensal' 
+            : item.recurrence === 'livre' 
+              ? 'Livre' 
+              : 'Semanal';
+
+        const baseName = item.service_name || item.customTitle || 'Tzion Care';
+        const itemNameWithRecurrence = baseName.toLowerCase().includes(recurrenceLabel.toLowerCase())
+          ? baseName
+          : `${baseName} (${item.sessionsNum} sessões • ${recurrenceLabel})`;
+
+        const filledTpl = fillContractTemplate(rawTpl, {
+          patient,
+          therapist,
+          package: {
+            ...pkg,
+            total_sessions: item.sessionsNum || 1,
+            price: item.priceNum || item.price || totalPrice || 0,
+            service_name: itemNameWithRecurrence
+          }
+        });
+
+        const { data: contract, error: cErr } = await supabase.from('patient_contracts').insert({
+          patient_id: patient.id,
+          content: filledTpl,
+          status: 'pending',
+        }).select().single();
+
+        if (contract && patient.phone) {
+          const firstName = patient.name.split(' ')[0];
+          const baseUrl = await getSystemBaseUrl();
+          const link = `${baseUrl}/contrato/${contract.id}`;
+          const msg = `Olá, *${firstName}*! ✨\n\nO seu termo de compromisso de serviço terapêutico foi gerado pela Clínica Tzion Terapias.\n\nPor favor, leia e assine digitalmente no link seguro abaixo:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
+          await sendWhatsAppMessage(patient.id, patient.phone, msg, 'contract_sent');
+        }
+      }
+
+      showToast('📄 Termo de Serviço enviado com sucesso via WhatsApp!');
+    } catch (err) {
+      console.error('Erro ao enviar contrato no popup:', err);
+      showToast('Erro ao emitir/enviar contrato.', 'error');
+    } finally {
+      setPostSaleLoading(false);
+      setPostSaleStep('anamnesis');
+    }
+  };
+
+  const handleSendAnamnesisFromPopup = async () => {
+    if (!postSaleData) return;
+    setPostSaleLoading(true);
+    try {
+      const { patient } = postSaleData;
+      if (!patient?.phone) {
+        showToast('Paciente não possui telefone cadastrado.', 'error');
+        finishPostSaleFlow();
+        return;
+      }
+
+      const baseUrl = await getSystemBaseUrl();
+      const token = patient.anamnesis_token || patient.id;
+      const link = `${baseUrl}/anamnese/${token}`;
+      const firstName = patient.name.split(' ')[0] || 'Paciente';
+      const msg = `[Ficha de Entrada - Tzion Terapias]\n\nOlá, *${firstName}*! ✨\n\nPor favor, preencha a sua Ficha de Anamnese antes da nossa próxima sessão. É bem rápido e nos ajuda a preparar o seu atendimento:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
+      
+      const sent = await sendWhatsAppMessage(patient.id, patient.phone, msg, 'anamnesis_invite');
+      if (sent) {
+        showToast(`📋 Ficha de Anamnese enviada para ${firstName} via WhatsApp!`);
+      } else {
+        showToast('Erro ao enviar ficha de anamnese por WhatsApp.', 'error');
+      }
+    } catch (err) {
+      console.error('Erro ao enviar anamnese no popup:', err);
+      showToast('Erro ao enviar anamnese.', 'error');
+    } finally {
+      setPostSaleLoading(false);
+      finishPostSaleFlow();
+    }
+  };
+
+  const finishPostSaleFlow = async () => {
+    const data = postSaleData;
+    setPostSaleStep(null);
+    setPostSaleData(null);
+
+    if (data?.isAsaasPix && data?.asaasId) {
+      try {
+        const { data: qrData, error: fnError } = await supabase.functions.invoke(`asaas-integration/pix`, {
+          method: 'POST',
+          body: { paymentId: data.asaasId }
+        });
+        
+        if (!fnError && qrData && (qrData.success || qrData.encodedImage)) {
+          setCreatedPixQrCode({
+            encodedImage: qrData.encodedImage,
+            payload: qrData.payload,
+            amount: data.totalPrice,
+            patientName: data.patient.name,
+            paymentId: data.paymentId
+          });
+          showToast('QR Code do PIX gerado com sucesso!');
+        }
+      } catch (err) {
+        console.error('Erro ao buscar QR Code pós-venda:', err);
+      }
+    } else if (data?.asaasLink) {
+      setCreatedAsaasPayment({
+        url: data.asaasLink,
+        amount: data.totalPrice,
+        patientName: data.patient.name,
+        phone: data.patient.phone,
+        paymentId: data.paymentId
+      });
+    } else {
+      showToast('✅ Operação pós-venda concluída com sucesso!');
+    }
+
+    setSellData(emptySell);
+    setCartItems([]);
+    setCustomTitle('');
+    setCustomPrice('');
+    setCustomSessions('1');
+    setCatalogPrice('');
+    setCatalogSessions('');
+    fetchData();
   };
 
   const handleFinalizeSale = async () => {
@@ -498,6 +667,7 @@ export default function QuickSellPage() {
     }
 
     let hasGeneratedContract = false;
+    const pkgList: any[] = [];
 
     for (const item of effectiveItems) {
       const { data: pkgData, error: pkgErr } = await supabase.from('patient_packages').insert([{
@@ -512,17 +682,30 @@ export default function QuickSellPage() {
         console.error('Erro ao criar pacote:', pkgErr);
         continue;
       }
+      if (pkgData) pkgList.push(pkgData);
 
       // Emissão de Contrato: Executa se generateContract estiver ativo ou se for pacote contratado
       const isPackage = item.sessionsNum > 1 || item.service_type === 'pacote' || (item.service_name && item.service_name.toLowerCase().includes('pacote'));
       const shouldGenerate = generateContract || isPackage;
+
+      const recurrenceLabel = item.recurrence === 'quinzenal' 
+        ? 'Quinzenal' 
+        : item.recurrence === 'mensal' 
+          ? 'Mensal' 
+          : item.recurrence === 'livre' 
+            ? 'Livre' 
+            : 'Semanal';
+
+      const baseName = item.service_name || item.customTitle || 'Tzion Care';
+      const itemNameWithRecurrence = baseName.toLowerCase().includes(recurrenceLabel.toLowerCase())
+        ? baseName
+        : `${baseName} (${item.sessionsNum} sessões • ${recurrenceLabel})`;
 
       if (!isAsaas && shouldGenerate && pkgData) {
         try {
           const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').maybeSingle();
           const rawTpl = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
           const therapistObj = therapists.find(t => t.id === sellData.therapist_id);
-          const itemName = item.service_name || item.customTitle || 'Atendimento Terapêutico';
 
           const filledTpl = fillContractTemplate(rawTpl, {
             patient,
@@ -531,7 +714,7 @@ export default function QuickSellPage() {
               ...pkgData,
               total_sessions: item.sessionsNum || 1,
               price: item.priceNum || item.price || totalPrice || 0,
-              service_name: itemName
+              service_name: itemNameWithRecurrence
             }
           });
 
@@ -557,6 +740,31 @@ export default function QuickSellPage() {
           console.error('Erro ao gerar/enviar contrato na venda rápida:', contractErr);
         }
       }
+    }
+
+    // Se a venda incluir pacotes de sessões ou plano Tzion Care, dispara o fluxo didático pós-venda
+    const isPackageSale = effectiveItems.some(item => 
+      item.sessionsNum > 1 || 
+      item.service_type === 'pacote' || 
+      (item.service_name && item.service_name.toLowerCase().includes('pacote')) ||
+      (item.service_name && item.service_name.toLowerCase().includes('care'))
+    );
+
+    if (isPackageSale) {
+      setPostSaleData({
+        patient,
+        therapist,
+        effectiveItems,
+        pkgList,
+        totalPrice,
+        paymentId: payData.id,
+        isAsaasPix,
+        asaasId,
+        asaasLink
+      });
+      setSaving(false);
+      setPostSaleStep('contract');
+      return;
     }
 
     if (isAsaasPix && asaasId) {
@@ -781,7 +989,7 @@ export default function QuickSellPage() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Valor do Lançamento (R$) *</label>
                         <input
@@ -803,6 +1011,20 @@ export default function QuickSellPage() {
                           placeholder="1"
                           className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg outline-none font-bold text-slate-800 text-left text-sm shadow-sm"
                         />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Periodicidade Sugerida</label>
+                        <select
+                          value={customRecurrence}
+                          onChange={e => setCustomRecurrence(e.target.value as any)}
+                          className="w-full px-4 py-4 bg-white border border-slate-200 rounded-lg outline-none font-bold text-slate-700 text-sm shadow-sm cursor-pointer"
+                        >
+                          <option value="semanal">📅 Semanal (7 dias)</option>
+                          <option value="quinzenal">🗓️ Quinzenal (14 dias)</option>
+                          <option value="mensal">📆 Mensal (30 dias)</option>
+                          <option value="livre">⚡ Livre / Avulso</option>
+                        </select>
                       </div>
                     </div>
 
@@ -882,7 +1104,7 @@ export default function QuickSellPage() {
                           </div>
 
                           {/* Ajustes rápidos inline do item */}
-                          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
                             <div>
                               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Valor (R$)</label>
                               <input
@@ -893,7 +1115,7 @@ export default function QuickSellPage() {
                               />
                             </div>
                             <div>
-                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Sessões / Créditos</label>
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Qtd. Sessões</label>
                               <input
                                 type="number"
                                 min="1"
@@ -901,6 +1123,19 @@ export default function QuickSellPage() {
                                 onChange={e => updateCartItemSessions(item.id, e.target.value)}
                                 className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-700 text-sm outline-none focus:bg-white focus:border-indigo-400"
                               />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Periodicidade</label>
+                              <select
+                                value={item.recurrence || 'semanal'}
+                                onChange={e => updateCartItemRecurrence(item.id, e.target.value as any)}
+                                className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-700 text-xs outline-none focus:bg-white focus:border-indigo-400 cursor-pointer"
+                              >
+                                <option value="semanal">📅 Semanal (7 dias)</option>
+                                <option value="quinzenal">🗓️ Quinzenal (14 dias)</option>
+                                <option value="mensal">📆 Mensal (30 dias)</option>
+                                <option value="livre">⚡ Livre / Avulso</option>
+                              </select>
                             </div>
                           </div>
                         </div>
@@ -1429,6 +1664,144 @@ export default function QuickSellPage() {
                 className="w-full py-5 bg-indigo-600 text-white rounded-lg font-bold shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer">
                 {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />} Salvar Lançamento
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* POPUP 1: DESEJA ENVIAR O TERMO DE SERVIÇO? */}
+      {/* ========================================================================= */}
+      {postSaleStep === 'contract' && postSaleData && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header com badge didático */}
+            <div className="p-8 pb-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-br from-indigo-50/70 to-blue-50/40">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-200">
+                  <FileText className="w-7 h-7" />
+                </div>
+                <div>
+                  <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-indigo-100 text-indigo-700">
+                    Passo 1 de 2 • Pós-Venda Didático
+                  </span>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight mt-1">
+                    Deseja enviar o Termo de Serviço?
+                  </h3>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8 space-y-6">
+              <p className="text-sm font-medium text-slate-600 leading-relaxed">
+                A venda do pacote foi registrada com sucesso! Deseja emitir o <strong>Termo de Prestação de Serviços (Contrato Digital)</strong> e enviar o link por WhatsApp para o paciente assinar digitalmente?
+              </p>
+
+              {/* Card Resumo do Paciente e Pacote */}
+              <div className="p-5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Paciente</span>
+                  <span className="font-black text-slate-800">{postSaleData.patient.name}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">WhatsApp</span>
+                  <span className="font-bold text-indigo-600">{postSaleData.patient.phone || 'Sem telefone'}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Itens Contratados</span>
+                  <span className="font-black text-slate-700 truncate max-w-[260px] text-right">{postSaleData.effectiveItems.map(i => i.service_name).join(', ')}</span>
+                </div>
+              </div>
+
+              {/* Ações */}
+              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleSendContractFromPopup}
+                  disabled={postSaleLoading}
+                  className="w-full sm:flex-1 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  {postSaleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                  Sim, Enviar Termo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPostSaleStep('anamnesis')}
+                  disabled={postSaleLoading}
+                  className="w-full sm:w-auto px-6 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-sm transition-all cursor-pointer"
+                >
+                  Não enviar agora
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* POPUP 2: DESEJA ENVIAR A ANAMNESE? */}
+      {/* ========================================================================= */}
+      {postSaleStep === 'anamnesis' && postSaleData && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header com badge didático */}
+            <div className="p-8 pb-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-br from-emerald-50/70 to-teal-50/40">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-lg shadow-emerald-200">
+                  <Send className="w-7 h-7" />
+                </div>
+                <div>
+                  <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-100 text-emerald-700">
+                    Passo 2 de 2 • Ficha do Paciente
+                  </span>
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight mt-1">
+                    Deseja enviar a Anamnese?
+                  </h3>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8 space-y-6">
+              <p className="text-sm font-medium text-slate-600 leading-relaxed">
+                Deseja enviar o link seguro da <strong>Ficha de Anamnese Clínica</strong> por WhatsApp para <strong>{postSaleData.patient.name}</strong> preencher com antecedência antes do atendimento?
+              </p>
+
+              {/* Card Resumo */}
+              <div className="p-5 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Ficha</span>
+                  <span className="font-black text-emerald-700">Anamnese Inicial Completa</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">Destinatário</span>
+                  <span className="font-bold text-slate-700">{postSaleData.patient.name}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60">
+                  <span className="font-bold text-slate-400 uppercase tracking-wider text-[10px]">WhatsApp</span>
+                  <span className="font-bold text-emerald-600">{postSaleData.patient.phone || 'Sem telefone'}</span>
+                </div>
+              </div>
+
+              {/* Ações */}
+              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleSendAnamnesisFromPopup}
+                  disabled={postSaleLoading}
+                  className="w-full sm:flex-1 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-sm shadow-xl shadow-emerald-100 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  {postSaleLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Sim, Enviar Anamnese
+                </button>
+                <button
+                  type="button"
+                  onClick={finishPostSaleFlow}
+                  disabled={postSaleLoading}
+                  className="w-full sm:w-auto px-6 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-sm transition-all cursor-pointer"
+                >
+                  Não enviar agora
+                </button>
+              </div>
             </div>
           </div>
         </div>
