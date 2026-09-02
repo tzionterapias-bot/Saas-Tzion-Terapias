@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   CreditCard, DollarSign, CheckCircle2, AlertCircle, Loader2, X, Save, 
   Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus, Search, ChevronDown, Check, Trash2, FileText,
-  Send, Sparkles
+  Send, Sparkles, RefreshCw
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -38,6 +38,7 @@ const formatCurrencyInput = (val: string) => {
 const PAYMENT_METHODS = [
   { value: 'asaas_pix', label: 'PIX (Gerar QR Code - Asaas)' },
   { value: 'asaas_credit', label: 'Cartão de Crédito Online (Enviar WhatsApp - Asaas)' },
+  { value: 'asaas_subscription', label: 'Assinatura Recorrente (Asaas - Tzion Care)' },
   { value: 'credit_card', label: 'Cartão de Crédito (Maquininha Física)' },
   { value: 'debit_card', label: 'Cartão de Débito (Maquininha Física)' },
   { value: 'cash', label: 'Dinheiro' },
@@ -92,6 +93,12 @@ export default function QuickSellPage() {
 
   const [catalogPrice, setCatalogPrice] = useState<string>('');
   const [catalogSessions, setCatalogSessions] = useState<string>('');
+
+  // Configurações de Assinatura Recorrente (Asaas - Tzion Care)
+  const [subscriptionCycle, setSubscriptionCycle] = useState<'MONTHLY' | 'WEEKLY' | 'BIWEEKLY' | 'QUARTERLY' | 'SEMIANNUALLY' | 'YEARLY'>('MONTHLY');
+  const [subscriptionBillingType, setSubscriptionBillingType] = useState<'CREDIT_CARD' | 'UNDEFINED' | 'PIX'>('CREDIT_CARD');
+  const [subscriptionDurationType, setSubscriptionDurationType] = useState<'continuous' | 'fixed'>('continuous');
+  const [subscriptionMaxPayments, setSubscriptionMaxPayments] = useState<string>('');
 
   const filteredPatients = useMemo(() => {
     if (!patientSearch || !patientSearch.trim()) return patients;
@@ -206,7 +213,16 @@ export default function QuickSellPage() {
     setSaving(false);
   };
 
-  const [createdAsaasPayment, setCreatedAsaasPayment] = useState<{ url: string; amount: number; patientName: string; phone: string | null; paymentId: string } | null>(null);
+  const [createdAsaasPayment, setCreatedAsaasPayment] = useState<{ 
+    url: string; 
+    amount: number; 
+    patientName: string; 
+    phone: string | null; 
+    paymentId: string;
+    isSubscription?: boolean;
+    cycle?: string;
+    planName?: string;
+  } | null>(null);
   const [createdPixQrCode, setCreatedPixQrCode] = useState<{ encodedImage: string; payload: string; amount: number; patientName: string; paymentId: string } | null>(null);
 
   // Estados dos popups didáticos de pós-venda
@@ -600,34 +616,60 @@ export default function QuickSellPage() {
     const description = `${itemNames} — ${patient.name}${therapist ? ` (${therapist.name})` : ''}`;
 
     let asaasId: string | null = null;
+    let asaasSubscriptionId: string | null = null;
     let asaasLink: string | null = null;
 
     const isAsaas = sellData.payment_method.startsWith('asaas_');
     const isAsaasPix = sellData.payment_method === 'asaas_pix';
+    const isAsaasSubscription = sellData.payment_method === 'asaas_subscription';
 
     // Pagamentos manuais / maquininha física já entram como pagos imediatamente
     const paymentStatus = isAsaas ? 'pending' : 'paid';
 
     if (isAsaas) {
       try {
-        const { data: result, error: fnError } = await supabase.functions.invoke('asaas-integration/checkout', {
-          method: 'POST',
-          body: {
-            valor: totalPrice,
-            pacienteId: sellData.patient_id,
-            description: `Venda Múltipla — Tzion Terapias`,
-            billingType: isAsaasPix ? 'PIX' : 'CREDIT_CARD'
+        if (isAsaasSubscription) {
+          const { data: result, error: fnError } = await supabase.functions.invoke('asaas-integration/subscription', {
+            method: 'POST',
+            body: {
+              valor: totalPrice,
+              pacienteId: sellData.patient_id,
+              description: `Assinatura: ${itemNames || 'Plano Tzion Care'}`,
+              billingType: subscriptionBillingType,
+              cycle: subscriptionCycle,
+              maxPayments: (subscriptionDurationType === 'fixed' && subscriptionMaxPayments) ? parseInt(subscriptionMaxPayments) : null
+            }
+          });
+
+          if (fnError || result?.error) {
+            showToast(result?.error || 'Erro ao gerar assinatura recorrente no Asaas.', 'error');
+            setSaving(false);
+            return;
           }
-        });
 
-        if (fnError || result?.error) {
-          showToast(result?.error || 'Erro ao gerar cobrança no Asaas.', 'error');
-          setSaving(false);
-          return;
+          asaasId = result.id;
+          asaasSubscriptionId = result.subscriptionId;
+          asaasLink = result.invoiceUrl;
+        } else {
+          const { data: result, error: fnError } = await supabase.functions.invoke('asaas-integration/checkout', {
+            method: 'POST',
+            body: {
+              valor: totalPrice,
+              pacienteId: sellData.patient_id,
+              description: `Venda Múltipla — Tzion Terapias`,
+              billingType: isAsaasPix ? 'PIX' : 'CREDIT_CARD'
+            }
+          });
+
+          if (fnError || result?.error) {
+            showToast(result?.error || 'Erro ao gerar cobrança no Asaas.', 'error');
+            setSaving(false);
+            return;
+          }
+
+          asaasId = result.id;
+          asaasLink = result.invoiceUrl;
         }
-
-        asaasId = result.id;
-        asaasLink = result.invoiceUrl;
       } catch (err) {
         console.error('Erro na integração Asaas:', err);
         showToast('Erro de rede ao conectar com o Asaas.', 'error');
@@ -638,7 +680,7 @@ export default function QuickSellPage() {
 
     const rate = (sellData.payment_method === 'credit_card' || sellData.payment_method === 'debit_card')
       ? (parseFloat(cardFeeRateInput) || 0)
-      : (sellData.payment_method === 'asaas_pix' ? 0.99 : (sellData.payment_method === 'asaas_credit' ? 3.49 : 0));
+      : (sellData.payment_method === 'asaas_pix' ? 0.99 : ((sellData.payment_method === 'asaas_credit' || sellData.payment_method === 'asaas_subscription') ? 3.49 : 0));
     const feeVal = totalPrice * (rate / 100);
     const netVal = totalPrice - feeVal;
 
@@ -646,14 +688,16 @@ export default function QuickSellPage() {
       amount: totalPrice,
       type: 'income',
       status: paymentStatus,
-      description,
-      category: 'Serviço',
-      payment_method: isAsaas ? 'asaas' : sellData.payment_method,
+      description: isAsaasSubscription ? `Assinatura: ${description}` : description,
+      category: isAsaasSubscription ? 'Plano Recorrente' : 'Serviço',
+      payment_method: isAsaasSubscription ? 'asaas_subscription' : (isAsaas ? 'asaas' : sellData.payment_method),
       patient_id: sellData.patient_id,
       therapist_id: sellData.therapist_id || null,
       referral_source: sellData.referral_source,
       created_at: new Date().toISOString(),
       asaas_id: asaasId,
+      asaas_subscription_id: asaasSubscriptionId,
+      subscription_cycle: isAsaasSubscription ? subscriptionCycle : null,
       asaas_link: asaasLink,
       card_fee_rate: rate,
       card_fee_val: feeVal,
@@ -790,27 +834,41 @@ export default function QuickSellPage() {
         console.error('Erro ao buscar QR Code:', err);
         showToast('Erro ao buscar QR Code do PIX.', 'error');
       }
-    } else if (sellData.payment_method === 'asaas_credit' && asaasLink) {
+    } else if ((sellData.payment_method === 'asaas_credit' || sellData.payment_method === 'asaas_subscription') && asaasLink) {
+      const isSub = sellData.payment_method === 'asaas_subscription';
       setCreatedAsaasPayment({
         url: asaasLink,
         amount: totalPrice,
         patientName: patient.name,
         phone: patient.phone,
-        paymentId: payData.id
+        paymentId: payData.id,
+        isSubscription: isSub,
+        cycle: subscriptionCycle,
+        planName: itemNames || 'Tzion Care'
       });
 
       if (patient.phone) {
         try {
           const firstName = patient.name.split(' ')[0];
-          const msg = `Olá, *${firstName}*! ✨\n\nSegue o link para pagamento da sua compra na Tzion Terapias:\n\n🔗 ${asaasLink}\n\n💳 Você pode parcelar no Cartão de Crédito em até 12x, ou pagar via PIX/Boleto.\n\nQualquer dúvida, estamos à disposição! 💙`;
+          const cycleLabel = subscriptionCycle === 'WEEKLY' ? 'semanalmente'
+            : subscriptionCycle === 'BIWEEKLY' ? 'quinzenalmente'
+            : subscriptionCycle === 'QUARTERLY' ? 'a cada trimestre'
+            : subscriptionCycle === 'SEMIANNUALLY' ? 'a cada semestre'
+            : subscriptionCycle === 'YEARLY' ? 'anualmente'
+            : 'mensalmente';
+
+          const msg = isSub
+            ? `Olá, *${firstName}*! ✨\n\nSegue o link seguro para adesão e ativação da sua assinatura do plano *${itemNames || 'Tzion Care'}* na Clínica Tzion Terapias:\n\n🔗 ${asaasLink}\n\n💳 O valor será cobrado no seu cartão ${cycleLabel} de forma recorrente sem comprometer o seu limite total!\n\nQualquer dúvida, estamos à disposição! 💙`
+            : `Olá, *${firstName}*! ✨\n\nSegue o link para pagamento da sua compra na Tzion Terapias:\n\n🔗 ${asaasLink}\n\n💳 Você pode parcelar no Cartão de Crédito em até 12x, ou pagar via PIX/Boleto.\n\nQualquer dúvida, estamos à disposição! 💙`;
+
           await sendWhatsAppMessage(patient.id, patient.phone, msg, 'payment_link_sent');
-          showToast('Cobrança gerada e enviada via WhatsApp!');
+          showToast(isSub ? 'Assinatura gerada e enviada via WhatsApp!' : 'Cobrança gerada e enviada via WhatsApp!');
         } catch (err) {
           console.error('Erro ao enviar WhatsApp:', err);
           showToast('Cobrança gerada, mas erro ao enviar WhatsApp.', 'error');
         }
       } else {
-        showToast('Cobrança gerada com sucesso! Copie o link abaixo.');
+        showToast(isSub ? 'Assinatura gerada com sucesso! Copie o link abaixo.' : 'Cobrança gerada com sucesso! Copie o link abaixo.');
       }
     } else {
       if (hasGeneratedContract) {
@@ -1214,6 +1272,121 @@ export default function QuickSellPage() {
               </div>
             )}
 
+            {/* Configurações de Assinatura Recorrente (Asaas - Tzion Care) */}
+            {sellData.payment_method === 'asaas_subscription' && (
+              <div className="p-5 bg-gradient-to-br from-indigo-50/80 via-white to-purple-50/50 border-2 border-indigo-200/80 rounded-2xl space-y-4 shadow-sm animate-in fade-in duration-200">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-sm">
+                      <RefreshCw className="w-5 h-5 animate-spin-slow" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-black text-slate-800">Recorrência / Assinatura Asaas</h4>
+                        <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider rounded-full">
+                          Tzion Care
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Cobrança automática por ciclo. Não compromete o limite total do cartão do paciente.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  {/* Periodicidade / Ciclo */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                      Periodicidade do Ciclo
+                    </label>
+                    <select
+                      value={subscriptionCycle}
+                      onChange={e => setSubscriptionCycle(e.target.value as any)}
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all cursor-pointer"
+                    >
+                      <option value="MONTHLY">Mensal (Padrão Tzion Care)</option>
+                      <option value="BIWEEKLY">Quinzenal</option>
+                      <option value="WEEKLY">Semanal</option>
+                      <option value="QUARTERLY">Trimestral</option>
+                      <option value="SEMIANNUALLY">Semestral</option>
+                      <option value="YEARLY">Anual</option>
+                    </select>
+                  </div>
+
+                  {/* Forma de Cobrança da Assinatura */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                      Método de Cobrança
+                    </label>
+                    <select
+                      value={subscriptionBillingType}
+                      onChange={e => setSubscriptionBillingType(e.target.value as any)}
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-700 text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all cursor-pointer"
+                    >
+                      <option value="CREDIT_CARD">Cartão de Crédito Automático (Recomendado)</option>
+                      <option value="UNDEFINED">Cliente Escolhe no Link (Cartão ou PIX)</option>
+                      <option value="PIX">PIX Recorrente</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Duração / Limite de cobranças */}
+                <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <label className="text-xs font-bold text-slate-600 flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="subDuration"
+                        checked={subscriptionDurationType === 'continuous'}
+                        onChange={() => {
+                          setSubscriptionDurationType('continuous');
+                          setSubscriptionMaxPayments('');
+                        }}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Contínua (Até cancelamento)
+                    </label>
+                    <label className="text-xs font-bold text-slate-600 flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="subDuration"
+                        checked={subscriptionDurationType === 'fixed'}
+                        onChange={() => {
+                          setSubscriptionDurationType('fixed');
+                          if (!subscriptionMaxPayments) setSubscriptionMaxPayments('6');
+                        }}
+                        className="text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Duração Fixa
+                    </label>
+                  </div>
+
+                  {subscriptionDurationType === 'fixed' && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500 font-medium">Nº de ciclos:</span>
+                      <input
+                        type="number"
+                        min="2"
+                        max="60"
+                        value={subscriptionMaxPayments}
+                        onChange={e => setSubscriptionMaxPayments(e.target.value)}
+                        placeholder="Ex: 6 ou 12"
+                        className="w-20 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 text-center outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 bg-indigo-50/50 rounded-xl text-[11px] text-indigo-900 font-medium border border-indigo-100 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>
+                    Ao ativar a assinatura, cada mensalidade futura recebida será computada <strong>automaticamente no Financeiro</strong> com as taxas já descontadas e vinculada ao terapeuta.
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Origem do Paciente */}
             <div className="space-y-3">
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Origem do Paciente</label>
@@ -1511,30 +1684,56 @@ export default function QuickSellPage() {
         </div>
       )}
 
-      {/* Asaas Payment Link Info */}
+      {/* Asaas Payment / Subscription Link Info */}
       {createdAsaasPayment && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
           <div className="bg-white rounded-[3rem] w-full max-w-md shadow-2xl border border-slate-100 overflow-hidden">
-            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50">
+            <div className={cn("p-8 border-b border-slate-100 flex items-center justify-between", 
+              createdAsaasPayment.isSubscription ? "bg-gradient-to-r from-indigo-50 via-purple-50 to-indigo-50" : "bg-indigo-50/50"
+            )}>
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-indigo-600 text-white rounded-lg"><CreditCard className="w-6 h-6" /></div>
+                <div className="p-3 bg-indigo-600 text-white rounded-lg shadow-sm">
+                  {createdAsaasPayment.isSubscription ? <RefreshCw className="w-6 h-6 animate-spin-slow" /> : <CreditCard className="w-6 h-6" />}
+                </div>
                 <div>
-                  <h3 className="text-2xl font-black text-slate-900">Cobrança Asaas</h3>
-                  <p className="text-sm text-slate-500 font-medium">Link de pagamento online gerado!</p>
+                  <h3 className="text-2xl font-black text-slate-900">
+                    {createdAsaasPayment.isSubscription ? 'Assinatura Asaas' : 'Cobrança Asaas'}
+                  </h3>
+                  <p className="text-sm text-slate-500 font-medium">
+                    {createdAsaasPayment.isSubscription ? 'Link de adesão ao plano recorrente!' : 'Link de pagamento online gerado!'}
+                  </p>
                 </div>
               </div>
               <button onClick={() => setCreatedAsaasPayment(null)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 cursor-pointer"><X className="w-6 h-6" /></button>
             </div>
             
             <div className="p-8 space-y-6">
+              {createdAsaasPayment.isSubscription && (
+                <div className="flex items-center justify-between px-4 py-2.5 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-100">
+                  <span className="flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-indigo-600" /> Plano Recorrente
+                  </span>
+                  <span className="uppercase text-[10px] tracking-wider px-2 py-0.5 bg-indigo-200/60 rounded-md">
+                    Ciclo {createdAsaasPayment.cycle === 'MONTHLY' ? 'Mensal' : createdAsaasPayment.cycle}
+                  </span>
+                </div>
+              )}
+
               <div className="space-y-4">
                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 space-y-1">
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Paciente</p>
                   <p className="text-lg font-black text-slate-800">{createdAsaasPayment.patientName}</p>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-lg border border-slate-100 space-y-1">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor da Cobrança</p>
-                  <p className="text-2xl font-black text-indigo-600">R$ {fmt(createdAsaasPayment.amount)}</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    {createdAsaasPayment.isSubscription ? 'Valor da Mensalidade / Ciclo' : 'Valor da Cobrança'}
+                  </p>
+                  <p className="text-2xl font-black text-indigo-600">
+                    R$ {fmt(createdAsaasPayment.amount)}
+                    {createdAsaasPayment.isSubscription && (
+                      <span className="text-xs text-slate-500 font-semibold ml-1.5">/ ciclo</span>
+                    )}
+                  </p>
                 </div>
               </div>
 
@@ -1543,26 +1742,29 @@ export default function QuickSellPage() {
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(createdAsaasPayment.url);
-                      showToast("Link copiado para a área de transferência!");
+                      showToast(createdAsaasPayment.isSubscription ? "Link da assinatura copiado!" : "Link copiado para a área de transferência!");
                     } catch (err) {
                       showToast("Erro ao copiar link.", "error");
                     }
                   }}
                   className="w-full py-4 bg-slate-900 text-white rounded-lg font-bold shadow-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
                 >
-                  <Save className="w-5 h-5" /> Copiar Link de Pagamento
+                  <Save className="w-5 h-5" /> 
+                  {createdAsaasPayment.isSubscription ? 'Copiar Link da Assinatura' : 'Copiar Link de Pagamento'}
                 </button>
 
                 {createdAsaasPayment.phone ? (
                   <a
                     href={`https://api.whatsapp.com/send?phone=55${createdAsaasPayment.phone.replace(/\D/g, '')}&text=${encodeURIComponent(
-                      `Olá, *${createdAsaasPayment.patientName.split(' ')[0]}*! ✨\n\nSegue o link para pagamento do seu atendimento na Tzion Terapias:\n\n🔗 ${createdAsaasPayment.url}\n\nVocê pode pagar via PIX, Cartão de Crédito ou Boleto. Qualquer dúvida, estamos à disposição! 💙`
+                      createdAsaasPayment.isSubscription
+                        ? `Olá, *${createdAsaasPayment.patientName.split(' ')[0]}*! ✨\n\nSegue o link seguro para adesão e ativação da sua assinatura do plano *${createdAsaasPayment.planName || 'Tzion Care'}* na Clínica Tzion Terapias:\n\n🔗 ${createdAsaasPayment.url}\n\n💳 O valor será cobrado no seu cartão de forma recorrente sem comprometer o seu limite total!\n\nQualquer dúvida, estamos à disposição! 💙`
+                        : `Olá, *${createdAsaasPayment.patientName.split(' ')[0]}*! ✨\n\nSegue o link para pagamento do seu atendimento na Tzion Terapias:\n\n🔗 ${createdAsaasPayment.url}\n\nVocê pode pagar via PIX, Cartão de Crédito ou Boleto. Qualquer dúvida, estamos à disposição! 💙`
                     )}`}
                     target="_blank"
                     rel="noreferrer"
                     className="w-full py-4 bg-emerald-500 text-white rounded-lg font-bold shadow-lg hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 text-center block cursor-pointer text-sm"
                   >
-                    Enviar Link via WhatsApp Manual
+                    <Send className="w-5 h-5" /> Enviar Link via WhatsApp
                   </a>
                 ) : null}
 

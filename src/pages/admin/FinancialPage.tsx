@@ -5,7 +5,7 @@ import {
   FileText, CheckCircle2, AlertCircle, Loader2, Link as LinkIcon, X, Save,
   Users, Briefcase, PieChart, Wallet, Clock, UserCheck, Percent,
   MessageCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Ban, Receipt, BarChart2, Settings,
-  Award, Check, Pencil, Trash2, Package, Search
+  Award, Check, Pencil, Trash2, Package, Search, RefreshCw
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -40,6 +40,8 @@ interface Payment {
   created_at: string;
   patients?: { name: string; phone: string };
   asaas_id?: string | null;
+  asaas_subscription_id?: string | null;
+  subscription_cycle?: string | null;
   asaas_link?: string | null;
   receipt_url?: string | null;
 }
@@ -118,6 +120,7 @@ const PAYMENT_METHODS = [
   { value: 'boleto', label: 'Boleto' },
   { value: 'asaas_pix', label: 'PIX (Gerar QR Code - Asaas)' },
   { value: 'asaas_credit', label: 'Cartão de Crédito Online (Enviar WhatsApp - Asaas)' },
+  { value: 'asaas_subscription', label: 'Assinatura Recorrente (Asaas - Tzion Care)' },
 ];
 
 // ── Taxas de pagamento configuráveis ───────────────────────────────────────
@@ -141,7 +144,7 @@ function getFeeRate(method: string, installments: number, rates: FeeRates): numb
     return rates.credit_7_12x;
   }
   if (method === 'asaas_pix') return rates.asaas_pix;
-  if (method === 'asaas_credit' || method === 'asaas') return rates.asaas_credit;
+  if (method === 'asaas_credit' || method === 'asaas' || method === 'asaas_subscription') return rates.asaas_credit;
   return 0;
 }
 
@@ -1041,7 +1044,7 @@ export default function FinancialPage() {
 
     const price = Math.abs(confirmingPayment.amount);
     const methodHasFee = confirmMethod === 'credit_card' || confirmMethod === 'debit_card'
-      || confirmMethod === 'asaas' || confirmMethod === 'asaas_pix' || confirmMethod === 'asaas_credit';
+      || confirmMethod === 'asaas' || confirmMethod === 'asaas_pix' || confirmMethod === 'asaas_credit' || confirmMethod === 'asaas_subscription';
     const rate = methodHasFee ? (parseFloat(confirmFeeRate) || 0) : 0;
     const feeVal = price * (rate / 100);
     const netVal = price - feeVal;
@@ -1775,7 +1778,14 @@ export default function FinancialPage() {
                     </td>
                     <td className="px-8 py-5 text-right text-slate-400 font-medium text-xs uppercase">
                       <div className="flex items-center justify-end gap-2">
-                        <span>{getMethodLabel(p.payment_method || 'pix')}</span>
+                        {(p.payment_method === 'asaas_subscription' || p.asaas_subscription_id) ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black bg-purple-50 text-purple-700 border border-purple-200">
+                            <RefreshCw className="w-3 h-3 text-purple-600 animate-spin-slow" />
+                            Assinatura Recorrente
+                          </span>
+                        ) : (
+                          <span>{getMethodLabel(p.payment_method || 'pix')}</span>
+                        )}
                         <button
                           onClick={() => {
                             setShowEditModal(p);
@@ -3294,7 +3304,7 @@ export default function FinancialPage() {
                   })()}
                 </div>
               )}
-              {(sellData.payment_method === 'asaas_pix' || sellData.payment_method === 'asaas_credit') && (
+              {(sellData.payment_method === 'asaas_pix' || sellData.payment_method === 'asaas_credit' || sellData.payment_method === 'asaas_subscription') && (
                 <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl flex items-start gap-3">
                   <span className="text-xl mt-0.5">🔗</span>
                   <div className="text-xs text-blue-800 space-y-0.5">
@@ -3302,6 +3312,8 @@ export default function FinancialPage() {
                     <p className="font-semibold">
                       {sellData.payment_method === 'asaas_pix'
                         ? `PIX: ~${feeRates.asaas_pix}% por transação`
+                        : sellData.payment_method === 'asaas_subscription'
+                        ? `Assinatura Recorrente: ~${feeRates.asaas_credit}% por cobrança`
                         : `Cartão Online: ~${feeRates.asaas_credit}% por transação`}
                     </p>
                     <p className="text-blue-600">Valor líquido real atualizado automaticamente após confirmação Asaas.</p>
@@ -3611,11 +3623,11 @@ export default function FinancialPage() {
                     })()}
                   </div>
                 )}
-                {(confirmMethod === 'asaas' || confirmMethod === 'asaas_pix' || confirmMethod === 'asaas_credit') && (
+                {(confirmMethod === 'asaas' || confirmMethod === 'asaas_pix' || confirmMethod === 'asaas_credit' || confirmMethod === 'asaas_subscription') && (
                   <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest ml-1">
-                        Taxa Asaas (%) — {confirmMethod === 'asaas_pix' ? 'PIX' : 'Cartão Online'}
+                        Taxa Asaas (%) — {confirmMethod === 'asaas_pix' ? 'PIX' : (confirmMethod === 'asaas_subscription' ? 'Assinatura Recorrente' : 'Cartão Online')}
                       </label>
                       <input type="number" step="0.01" min="0" max="100"
                         value={confirmFeeRate} onChange={e => setConfirmFeeRate(e.target.value)}

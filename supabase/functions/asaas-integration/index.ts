@@ -147,6 +147,113 @@ serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // ROUTE: POST /subscription (gerar-assinatura-recorrente)
+    if ((path === 'subscription' || path === 'assinatura') && req.method === 'POST') {
+      const { valor, pacienteId, billingType, cycle, description, maxPayments } = await req.json();
+
+      if (!valor || !pacienteId) {
+        return new Response(JSON.stringify({ error: "Valor e ID do paciente são obrigatórios." }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const { data: patient, error: patientErr } = await supabase
+        .from("patients")
+        .select("name, cpf, email, phone, asaas_customer_id")
+        .eq("id", pacienteId)
+        .single();
+
+      if (patientErr || !patient) {
+        return new Response(JSON.stringify({ error: "Paciente não encontrado." }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      if (!patient.cpf) {
+        return new Response(JSON.stringify({ error: "O CPF do paciente é obrigatório para gerar assinatura no Asaas." }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const cleanCpf = patient.cpf.replace(/\D/g, "");
+      if (cleanCpf.length !== 11 && cleanCpf.length !== 14) {
+        return new Response(JSON.stringify({ error: "CPF/CNPJ inválido. Digite um documento válido." }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      let asaasCustomerId = patient.asaas_customer_id;
+
+      if (!asaasCustomerId) {
+        const cleanPhone = patient.phone ? patient.phone.replace(/\D/g, "") : undefined;
+        
+        const createCustRes = await fetch(`${asaasBaseUrl}/customers`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "access_token": asaasApiKey },
+          body: JSON.stringify({
+            name: patient.name,
+            cpfCnpj: cleanCpf,
+            email: patient.email || undefined,
+            mobilePhone: cleanPhone || undefined,
+            notificationDisabled: true
+          })
+        });
+
+        if (!createCustRes.ok) {
+          const errData = await createCustRes.text();
+          return new Response(JSON.stringify({ error: `Erro no Asaas ao cadastrar cliente: ${errData}` }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const newCustData = await createCustRes.json();
+        asaasCustomerId = newCustData.id;
+
+        await supabase.from("patients").update({ asaas_customer_id: asaasCustomerId }).eq("id", pacienteId);
+      }
+
+      const dueDate = new Date().toISOString().split("T")[0];
+
+      const subPayload: any = {
+        customer: asaasCustomerId,
+        billingType: billingType || "CREDIT_CARD",
+        value: Number(valor),
+        nextDueDate: dueDate,
+        cycle: cycle || "MONTHLY",
+        description: description || "Tzion Terapias - Assinatura Plano Tzion Care",
+      };
+
+      if (maxPayments && Number(maxPayments) > 0) {
+        subPayload.maxPayments = Number(maxPayments);
+      }
+
+      const createSubRes = await fetch(`${asaasBaseUrl}/subscriptions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "access_token": asaasApiKey },
+        body: JSON.stringify(subPayload)
+      });
+
+      if (!createSubRes.ok) {
+        const errData = await createSubRes.text();
+        return new Response(JSON.stringify({ error: `Erro no Asaas ao criar assinatura recorrente: ${errData}` }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const subData = await createSubRes.json();
+
+      // Obter primeira cobrança gerada para a assinatura para devolver invoiceUrl e paymentId
+      let firstPayment: any = null;
+      try {
+        const paymentsRes = await fetch(`${asaasBaseUrl}/subscriptions/${subData.id}/payments`, {
+          headers: { "Content-Type": "application/json", "access_token": asaasApiKey }
+        });
+        if (paymentsRes.ok) {
+          const paymentsJson = await paymentsRes.json();
+          firstPayment = paymentsJson?.data?.[0];
+        }
+      } catch (err) {
+        console.error("Erro ao buscar primeira fatura da assinatura:", err);
+      }
+
+      return new Response(JSON.stringify({
+        subscriptionId: subData.id,
+        id: firstPayment ? firstPayment.id : subData.id,
+        invoiceUrl: firstPayment ? firstPayment.invoiceUrl : (subData.invoiceUrl || null),
+        status: firstPayment ? firstPayment.status : subData.status,
+        cycle: subData.cycle,
+        billingType: subData.billingType
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     // ROUTE: POST /pix
     if (path === 'pix' && req.method === 'POST') {
       const { paymentId } = await req.json();
@@ -237,12 +344,53 @@ serve(async (req) => {
         if (asaasFeeVal !== null) updateData.card_fee_val = asaasFeeVal;
         if (asaasFeeRate !== null) updateData.card_fee_rate = asaasFeeRate;
 
-        const { data: updatedPayment, error: payError } = await supabase
+        let { data: updatedPayment, error: payError } = await supabase
           .from('payments')
           .update(updateData)
           .eq('asaas_id', asaasId)
           .select()
-          .single();
+          .maybeSingle();
+
+        // 3. Se for renovação de assinatura recorrente (novo mês gerado pelo Asaas) e ainda não existir em payments:
+        if (!updatedPayment && payment.subscription) {
+          const { data: refPayment } = await supabase
+            .from('payments')
+            .select('*')
+            .eq('asaas_subscription_id', payment.subscription)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (refPayment) {
+            const desc = `Renovação de Assinatura (${refPayment.subscription_cycle || 'Mensal'}): ${refPayment.description?.replace(/^Assinatura:\s*/, '') || 'Tzion Care'}`;
+            const { data: insertedRecurrence } = await supabase
+              .from('payments')
+              .insert({
+                amount: asaasGrossVal !== null ? asaasGrossVal : refPayment.amount,
+                net_amount: asaasNetVal !== null ? asaasNetVal : (refPayment.net_amount || refPayment.amount),
+                card_fee_rate: asaasFeeRate !== null ? asaasFeeRate : refPayment.card_fee_rate,
+                card_fee_val: asaasFeeVal !== null ? asaasFeeVal : refPayment.card_fee_val,
+                type: 'income',
+                status: 'paid',
+                description: desc,
+                category: refPayment.category || 'Plano Recorrente',
+                payment_method: 'asaas_subscription',
+                patient_id: refPayment.patient_id,
+                therapist_id: refPayment.therapist_id,
+                referral_source: refPayment.referral_source,
+                asaas_id: asaasId,
+                asaas_subscription_id: payment.subscription,
+                subscription_cycle: refPayment.subscription_cycle,
+                created_at: new Date().toISOString()
+              })
+              .select()
+              .single();
+
+            if (insertedRecurrence) {
+              updatedPayment = insertedRecurrence;
+            }
+          }
+        }
           
         if (updatedPayment && updatedPayment.patient_id && updatedPayment.type === 'income') {
           // Ativar pacotes
