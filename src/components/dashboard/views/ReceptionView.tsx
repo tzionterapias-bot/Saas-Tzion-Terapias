@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Users, Calendar, Clock, Target, Loader2, Phone, MessageSquare, Plus, ArrowRight, CheckCircle2, User, X,
-  Calendar as CalendarIcon, Video, MapPin, Activity, Trash2, StickyNote
+  Calendar as CalendarIcon, Video, MapPin, Activity, Trash2, StickyNote, FileText
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -513,7 +513,13 @@ export default function ReceptionView() {
                       {new Date(session.start_time).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
                     </div>
                     <div>
-                      <p className="font-bold text-slate-900">{patientName}</p>
+                      <p 
+                        onClick={() => navigate(`/admin/pacientes?patientId=${session.patient_id}`)}
+                        className="font-bold text-slate-900 hover:text-indigo-600 cursor-pointer transition-colors"
+                        title="Abrir ficha e documentos do paciente"
+                      >
+                        {patientName}
+                      </p>
                       <p className="text-[10px] text-slate-400 font-bold uppercase">{session.type} • Com {therapistName}</p>
                       {session.status === 'arrived' && (
                         <span className="inline-block mt-1 text-[9px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md">
@@ -546,6 +552,15 @@ export default function ReceptionView() {
                         <User className="w-4.5 h-4.5" />
                       </button>
                     )}
+
+                    {/* Emitir Contrato Avulso / Manual */}
+                    <button 
+                      onClick={() => navigate(`/admin/pacientes?patientId=${session.patient_id}&contract=true`)} 
+                      className="p-2.5 bg-white text-slate-400 hover:text-emerald-600 rounded-xl shadow-sm border border-slate-100 transition-all" 
+                      title="Emitir Contrato Avulso / Manual para este paciente"
+                    >
+                      <FileText className="w-4.5 h-4.5" />
+                    </button>
 
                     {/* Anotações / Recados da Secretaria */}
                     <button 

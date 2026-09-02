@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   CreditCard, DollarSign, CheckCircle2, AlertCircle, Loader2, X, Save, 
-  Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus, Search, ChevronDown, Check, Trash2
+  Users, Briefcase, Percent, ArrowUpRight, ArrowDownRight, Plus, Search, ChevronDown, Check, Trash2, FileText
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -85,6 +85,7 @@ export default function QuickSellPage() {
   const [customTitle, setCustomTitle] = useState('');
   const [customPrice, setCustomPrice] = useState('');
   const [customSessions, setCustomSessions] = useState('1');
+  const [generateContract, setGenerateContract] = useState(true);
 
   const [catalogPrice, setCatalogPrice] = useState<string>('');
   const [catalogSessions, setCatalogSessions] = useState<string>('');
@@ -496,6 +497,8 @@ export default function QuickSellPage() {
       return; 
     }
 
+    let hasGeneratedContract = false;
+
     for (const item of effectiveItems) {
       const { data: pkgData, error: pkgErr } = await supabase.from('patient_packages').insert([{
         patient_id: sellData.patient_id,
@@ -510,21 +513,25 @@ export default function QuickSellPage() {
         continue;
       }
 
-      // Automação: Se o pagamento for direto (não-Asaas) e for um pacote, gera e envia o contrato
-      const isPackage = item.sessionsNum > 1 || item.service_type === 'pacote' || (item.title && item.title.toLowerCase().includes('pacote'));
-      if (!isAsaas && isPackage && pkgData) {
+      // Emissão de Contrato: Executa se generateContract estiver ativo ou se for pacote contratado
+      const isPackage = item.sessionsNum > 1 || item.service_type === 'pacote' || (item.service_name && item.service_name.toLowerCase().includes('pacote'));
+      const shouldGenerate = generateContract || isPackage;
+
+      if (!isAsaas && shouldGenerate && pkgData) {
         try {
           const { data: setts } = await supabase.from('settings').select('value').eq('key', 'contract_template').maybeSingle();
           const rawTpl = setts?.value || DEFAULT_CONTRACT_TEMPLATE;
           const therapistObj = therapists.find(t => t.id === sellData.therapist_id);
+          const itemName = item.service_name || item.customTitle || 'Atendimento Terapêutico';
+
           const filledTpl = fillContractTemplate(rawTpl, {
             patient,
             therapist: therapistObj,
             package: {
               ...pkgData,
               total_sessions: item.sessionsNum || 1,
-              price: item.price || totalPrice || 0,
-              service_name: item.title || 'Pacote de Sessões Terapêuticas'
+              price: item.priceNum || item.price || totalPrice || 0,
+              service_name: itemName
             }
           });
 
@@ -534,12 +541,17 @@ export default function QuickSellPage() {
             status: 'pending',
           }).select().single();
 
-          if (contract && patient.phone) {
-            const firstName = patient.name.split(' ')[0];
-            const baseUrl = await getSystemBaseUrl();
-            const link = `${baseUrl}/contrato/${contract.id}`;
-            const msg = `Olá, *${firstName}*! ✨\n\nSeu pacote foi iniciado! Por favor, assine o termo de serviço:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
-            await sendWhatsAppMessage(patient.id, patient.phone, msg, 'contract_sent');
+          if (cErr) {
+            console.error('Erro ao salvar contrato na tabela patient_contracts:', cErr);
+          } else if (contract) {
+            hasGeneratedContract = true;
+            if (patient.phone) {
+              const firstName = patient.name.split(' ')[0];
+              const baseUrl = await getSystemBaseUrl();
+              const link = `${baseUrl}/contrato/${contract.id}`;
+              const msg = `Olá, *${firstName}*! ✨\n\nO seu termo de compromisso de serviço terapêutico foi gerado pela Clínica Tzion Terapias.\n\nPor favor, leia e assine digitalmente no link seguro abaixo:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;
+              await sendWhatsAppMessage(patient.id, patient.phone, msg, 'contract_sent');
+            }
           }
         } catch (contractErr) {
           console.error('Erro ao gerar/enviar contrato na venda rápida:', contractErr);
@@ -593,7 +605,11 @@ export default function QuickSellPage() {
         showToast('Cobrança gerada com sucesso! Copie o link abaixo.');
       }
     } else {
-      showToast('✅ Venda registrada e contrato enviado via WhatsApp!');
+      if (hasGeneratedContract) {
+        showToast('✅ Venda registrada e contrato enviado via WhatsApp!');
+      } else {
+        showToast('✅ Venda registrada com sucesso!');
+      }
       setSellData(emptySell);
       setCartItems([]);
       setCustomTitle('');
@@ -1015,6 +1031,28 @@ export default function QuickSellPage() {
                   </div>
                 );
               })()}
+            </div>
+
+            {/* Emissão de Contrato Digital */}
+            <div className="p-5 bg-gradient-to-r from-indigo-50/70 to-slate-50 border border-indigo-100/80 rounded-2xl flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-100 shrink-0">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-black text-slate-800">Emissão de Contrato Digital</p>
+                  <p className="text-[11px] text-slate-500 font-medium">Gerar Termo de Adesão e enviar link seguro de assinatura via WhatsApp (para pacotes ou avulsos)</p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input 
+                  type="checkbox" 
+                  checked={generateContract} 
+                  onChange={e => setGenerateContract(e.target.checked)} 
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
             </div>
 
             {/* Confirm button */}

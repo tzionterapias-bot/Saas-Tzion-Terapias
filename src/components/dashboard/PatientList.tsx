@@ -155,6 +155,25 @@ export default function PatientList() {
     }
   }, [activeTab, selectedPatient?.id]);
 
+  // Suporte a navegação externa (?patientId=...&contract=true)
+  useEffect(() => {
+    if (patients.length > 0) {
+      const params = new URLSearchParams(window.location.search);
+      const targetId = params.get('patientId') || params.get('id');
+      const openContract = params.get('contract') === 'true';
+
+      if (targetId) {
+        const found = patients.find(p => p.id === targetId);
+        if (found) {
+          setSelectedPatient(found);
+          if (openContract) {
+            handleOpenManualContractModal(null, found);
+          }
+        }
+      }
+    }
+  }, [patients]);
+
   useEffect(() => {
     if (toastMessage) {
       const timer = setTimeout(() => setToastMessage(''), 3000);
@@ -986,14 +1005,20 @@ export default function PatientList() {
     }
   };
 
-  const handleOpenManualContractModal = (pkg?: any) => {
-    if (pkg) {
+  const handleOpenManualContractModal = (pkgOrPatient?: any, explicitPatient?: any) => {
+    if (explicitPatient) {
+      setSelectedPatient(explicitPatient);
+    } else if (pkgOrPatient && ('phone' in pkgOrPatient || 'cpf' in pkgOrPatient || 'birth_date' in pkgOrPatient)) {
+      setSelectedPatient(pkgOrPatient);
+    }
+
+    if (pkgOrPatient && !('phone' in pkgOrPatient) && !('cpf' in pkgOrPatient)) {
       setContractData({
-        package_id: pkg.id || '',
-        service_name: pkg.services?.name || 'Pacote de Sessões Terapêuticas',
-        total_sessions: String(pkg.total_sessions || 8),
+        package_id: pkgOrPatient.id || '',
+        service_name: pkgOrPatient.services?.name || 'Pacote de Sessões Terapêuticas',
+        total_sessions: String(pkgOrPatient.total_sessions || 8),
         extension_sessions: '0',
-        price: pkg.services?.price ? String(pkg.services.price) : '',
+        price: pkgOrPatient.services?.price ? String(pkgOrPatient.services.price) : '',
         therapist_name: 'Marcos Dany Teixeira Magalhães',
       });
     } else {
@@ -1292,12 +1317,21 @@ export default function PatientList() {
                           )}>
                             Anamnese: {(Array.isArray(patient.patient_anamnesis) ? patient.patient_anamnesis.length > 0 : !!patient.patient_anamnesis) ? 'Preenchida' : 'Pendente'}
                           </span>
-                          <span className={cn(
-                            "inline-flex items-center w-fit px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                            (Array.isArray(patient.patient_contracts) ? patient.patient_contracts.some((c: any) => c.status === 'signed') : patient.patient_contracts?.status === 'signed') ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
-                          )}>
-                            Contrato: {(Array.isArray(patient.patient_contracts) ? patient.patient_contracts.some((c: any) => c.status === 'signed') : patient.patient_contracts?.status === 'signed') ? 'Assinado' : 'Pendente'}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenManualContractModal(null, patient);
+                            }}
+                            className={cn(
+                              "inline-flex items-center w-fit px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all hover:scale-105 active:scale-95 cursor-pointer",
+                              (Array.isArray(patient.patient_contracts) ? patient.patient_contracts.some((c: any) => c.status === 'signed') : patient.patient_contracts?.status === 'signed') ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100" : "bg-amber-50 text-amber-600 hover:bg-amber-100 border border-amber-200/60"
+                            )}
+                            title={(Array.isArray(patient.patient_contracts) ? patient.patient_contracts.some((c: any) => c.status === 'signed') : patient.patient_contracts?.status === 'signed') ? "Contrato Assinado - Clique para emitir novo" : "Contrato Pendente - Clique para emitir contrato avulso / manual"}
+                          >
+                            <FileText className="w-3 h-3 mr-1" />
+                            Contrato: {(Array.isArray(patient.patient_contracts) ? patient.patient_contracts.some((c: any) => c.status === 'signed') : patient.patient_contracts?.status === 'signed') ? 'Assinado' : 'Pendente (Emitir)'}
+                          </button>
                           {patient.last_note && (
                             <div className="mt-1 flex items-start gap-1 p-2 bg-amber-50 border border-amber-200/50 rounded-lg max-w-[200px]">
                               <MessageCircle className="w-3 h-3 text-amber-600 mt-0.5 shrink-0" />
@@ -1311,6 +1345,17 @@ export default function PatientList() {
                       </td>
                       <td className="px-8 py-5 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenManualContractModal(null, patient);
+                            }}
+                            className="p-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl transition-colors shadow-sm"
+                            title="Emitir Contrato Avulso / Manual"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </button>
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1447,6 +1492,14 @@ export default function PatientList() {
                     Excluir Paciente
                   </button>
                 )}
+                <button 
+                  type="button"
+                  onClick={() => handleOpenManualContractModal()}
+                  className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-emerald-100 flex items-center gap-2 active:scale-95"
+                  title="Gerar e emitir contrato avulso ou de pacote para este paciente"
+                >
+                  <FileText className="w-4 h-4" /> Emitir Contrato (Avulso / Manual)
+                </button>
                 <button onClick={() => window.print()} className="px-6 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm">Imprimir Ficha</button>
               </div>
             </div>
@@ -2727,6 +2780,32 @@ export default function PatientList() {
                 <p className="text-xs text-indigo-900 font-medium leading-relaxed">
                   O sistema irá preencher o <strong>Termo de Compromisso Terapêutico</strong> com os dados cadastrais do paciente (CPF, endereço, telefone), número de sessões e valor acordado, gerando o link seguro de assinatura digital.
                 </p>
+              </div>
+
+              {/* Botões de Preenchimento Rápido (Avulso vs Pacote) */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-1">Preenchimento Rápido:</span>
+                <button
+                  type="button"
+                  onClick={() => setContractData(prev => ({ ...prev, service_name: 'Atendimento Terapêutico Avulso', total_sessions: '1', extension_sessions: '0' }))}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-xl transition-all border border-emerald-200/60 flex items-center gap-1 active:scale-95"
+                >
+                  ⚡ Atendimento Avulso (1 Sessão)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContractData(prev => ({ ...prev, service_name: 'Pacote de Sessões Terapêuticas (8 Sessões)', total_sessions: '8', extension_sessions: '0' }))}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all active:scale-95"
+                >
+                  📦 Pacote 8 Sessões
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setContractData(prev => ({ ...prev, service_name: 'Pacote de Sessões Terapêuticas (10 Sessões)', total_sessions: '10', extension_sessions: '0' }))}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all active:scale-95"
+                >
+                  📦 Pacote 10 Sessões
+                </button>
               </div>
 
               <div className="space-y-4">
