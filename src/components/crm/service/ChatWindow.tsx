@@ -217,15 +217,23 @@ export default function ChatWindow({ ticket, onBack }: Props) {
       return;
     }
 
-    const formatted: Message[] = (data || []).map(m => ({
-      id: m.id,
-      sender: m.sender_type === 'bot' ? 'bot' : (m.sender_type === 'customer' || m.sender_type === 'customer_nps' ? 'customer' : 'staff'),
-      text: m.message_body,
-      type: m.message_type || 'text',
-      mediaUrl: m.media_url,
-      time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      status: 'read'
-    }));
+    const formatted: Message[] = (data || []).map(m => {
+      const msgDate = new Date(m.created_at);
+      const isToday = msgDate.toDateString() === new Date().toDateString();
+      const timeStr = msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const dateStr = msgDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+      const displayTime = isToday ? timeStr : `${dateStr} ${timeStr}`;
+
+      return {
+        id: m.id,
+        sender: m.sender_type === 'bot' ? 'bot' : (m.sender_type === 'customer' || m.sender_type === 'customer_nps' ? 'customer' : 'staff'),
+        text: m.message_body,
+        type: m.message_type || 'text',
+        mediaUrl: m.media_url,
+        time: displayTime,
+        status: 'read'
+      };
+    });
 
     // Se o histórico não trouxer a mensagem original do paciente (ex: pq o n8n não salvou no chat_messages),
     // nós injetamos o last_message do ticket para criar a experiência de WhatsApp

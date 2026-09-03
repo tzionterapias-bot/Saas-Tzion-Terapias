@@ -229,9 +229,16 @@ export default function KanbanBoard() {
                 <div className="space-y-3">
                   <div>
                     <h4 className="font-bold text-slate-900 leading-tight group-hover:text-indigo-600 transition-colors">{lead.name}</h4>
-                    <p className="text-[10px] text-slate-400 font-bold flex items-center gap-1 mt-1">
-                      <Phone className="w-3 h-3" /> {lead.phone}
-                    </p>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold mt-1.5">
+                      <span className="flex items-center gap-1">
+                        <Phone className="w-3 h-3" /> {lead.phone}
+                      </span>
+                      {lead.lastContact && (
+                        <span className="flex items-center gap-1 text-slate-500 font-medium">
+                          <Calendar className="w-3 h-3 text-slate-400" /> {lead.lastContact}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between pt-4 border-t border-slate-50">

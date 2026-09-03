@@ -5,7 +5,7 @@ import {
   Clock, CheckCircle2, ChevronRight, Plus, Search,
   TrendingUp, Star, Award, Settings, Bell, MessageSquare, X, Save, FileText as FileIcon,
   Image as ImageIcon, MapPin, Video, MonitorSmartphone, Filter, History, Trash2, AlertCircle,
-  Receipt, Percent, Loader2, Camera, PlayCircle, Lock, MoreHorizontal
+  Receipt, Percent, Loader2, Camera, PlayCircle, Lock, MoreHorizontal, CalendarOff, BanIcon
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
@@ -77,6 +77,20 @@ export default function TherapistPage() {
   const [rooms, setRooms] = useState<any[]>([]);
   const [selectedDateAppointments, setSelectedDateAppointments] = useState<{date: Date, appts: any[]} | null>(null);
 
+  // Schedule Blocks (Agenda Pessoal)
+  const [scheduleBlocks, setScheduleBlocks] = useState<any[]>([]);
+  const [showBlockCreateModal, setShowBlockCreateModal] = useState(false);
+  const [savingBlock, setSavingBlock] = useState(false);
+  const [newBlock, setNewBlock] = useState({
+    date_start: '',
+    time_start: '08:00',
+    date_end: '',
+    time_end: '18:00',
+    reason: 'Indisponível',
+    notes: '',
+    all_day: false,
+  });
+
   // Reschedule State
   const [reschedulingAppt, setReschedulingAppt] = useState<any | null>(null);
   const [rescheduleData, setRescheduleData] = useState({ date: '', time: '' });
@@ -142,6 +156,15 @@ export default function TherapistPage() {
       cutoffStart.setDate(cutoffStart.getDate() - 90);
       const cutoffEnd = new Date();
       cutoffEnd.setDate(cutoffEnd.getDate() + 90);
+
+      // Fetch schedule blocks
+      const { data: blocksData } = await supabase
+        .from('therapist_schedule_blocks')
+        .select('*')
+        .eq('therapist_id', therapistId)
+        .gte('end_time', new Date().toISOString())
+        .order('start_time');
+      setScheduleBlocks(blocksData || []);
 
       const promises: Promise<any>[] = [
         Promise.resolve(supabase.from('appointments')
@@ -760,12 +783,100 @@ export default function TherapistPage() {
     }
   };
 
+  // ── Schedule Block Handlers ──────────────────────────────────────────────
+  const handleCreateBlock = async () => {
+    if (!newBlock.date_start || !newBlock.date_end) return;
+    setSavingBlock(true);
+    try {
+      const therapistId = defaultTherapistId;
+      if (!therapistId) return;
+
+      let startTime: string;
+      let endTime: string;
+
+      if (newBlock.all_day) {
+        startTime = `${newBlock.date_start}T00:00:00`;
+        endTime = `${newBlock.date_end}T23:59:59`;
+      } else {
+        startTime = `${newBlock.date_start}T${newBlock.time_start}:00`;
+        endTime = `${newBlock.date_end}T${newBlock.time_end}:00`;
+      }
+
+      const { error } = await supabase.from('therapist_schedule_blocks').insert([{
+        therapist_id: therapistId,
+        start_time: new Date(startTime).toISOString(),
+        end_time: new Date(endTime).toISOString(),
+        reason: newBlock.reason,
+        notes: newBlock.notes || null,
+        all_day: newBlock.all_day,
+      }]);
+
+      if (error) throw error;
+
+      setToastMessage('Bloqueio criado com sucesso!');
+      setTimeout(() => setToastMessage(null), 3500);
+      setShowBlockCreateModal(false);
+      setNewBlock({ date_start: '', time_start: '08:00', date_end: '', time_end: '18:00', reason: 'Indisponível', notes: '', all_day: false });
+      // Refresh blocks
+      const { data: blocksData } = await supabase
+        .from('therapist_schedule_blocks')
+        .select('*')
+        .eq('therapist_id', therapistId)
+        .gte('end_time', new Date().toISOString())
+        .order('start_time');
+      setScheduleBlocks(blocksData || []);
+    } catch (err: any) {
+      setToastMessage('Erro ao criar bloqueio: ' + (err.message || ''));
+      setTimeout(() => setToastMessage(null), 3500);
+    } finally {
+      setSavingBlock(false);
+    }
+  };
+
+  const handleDeleteBlock = async (blockId: string) => {
+    if (!confirm('Deseja remover este bloqueio da agenda pessoal?')) return;
+    const { error } = await supabase.from('therapist_schedule_blocks').delete().eq('id', blockId);
+    if (!error) {
+      setScheduleBlocks(prev => prev.filter(b => b.id !== blockId));
+      setToastMessage('Bloqueio removido!');
+      setTimeout(() => setToastMessage(null), 3000);
+    }
+  };
+
+  const BLOCK_REASONS = [
+    { value: 'Indisponível', label: '⚫ Indisponível', color: 'bg-slate-100 text-slate-600 border-slate-200' },
+    { value: 'Férias', label: '🏖️ Férias', color: 'bg-sky-50 text-sky-700 border-sky-200' },
+    { value: 'Folga', label: '😴 Folga', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+    { value: 'Consulta Médica', label: '🏥 Consulta Médica', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+    { value: 'Curso/Formação', label: '📚 Curso/Formação', color: 'bg-violet-50 text-violet-700 border-violet-200' },
+    { value: 'Compromisso Pessoal', label: '📌 Compromisso Pessoal', color: 'bg-orange-50 text-orange-700 border-orange-200' },
+  ];
+
+  const getBlockStyle = (reason: string) => {
+    return BLOCK_REASONS.find(r => r.value === reason)?.color || 'bg-slate-100 text-slate-600 border-slate-200';
+  };
+  // ────────────────────────────────────────────────────────────────────────
+
   const handleCreateAppointment = async () => {
     if (!newApp.patient_id || !newApp.start_time) return;
 
     const startTime = new Date(newApp.start_time);
     const endTime = new Date(startTime.getTime() + 60 * 60 * 1000).toISOString();
     const finalTherapistId = defaultTherapistId || profile?.id || '00000000-0000-0000-0000-000000000000';
+
+    // Validação de conflito de bloqueio pessoal
+    const { data: blockConflicts } = await supabase
+      .from('therapist_schedule_blocks')
+      .select('id, reason')
+      .eq('therapist_id', finalTherapistId)
+      .lt('start_time', endTime)
+      .gt('end_time', startTime.toISOString());
+
+    if (blockConflicts && blockConflicts.length > 0) {
+      const reason = blockConflicts[0]?.reason || 'Indisponível';
+      alert(`Horário bloqueado na agenda pessoal do terapeuta: ${reason}. Por favor, escolha outro horário.`);
+      return;
+    }
 
     // Validação de conflito de terapeuta
     const { data: conflicts } = await supabase
@@ -1157,11 +1268,32 @@ export default function TherapistPage() {
 
   const TABS = [
     { id: 'agenda', label: 'Minha Agenda', icon: Calendar },
+    { id: 'agenda-pessoal', label: 'Agenda Pessoal', icon: CalendarOff },
     { id: 'history', label: 'Histórico', icon: History },
     { id: 'patients', label: 'Pacientes', icon: Users },
     { id: 'repasses', label: 'Meus Repasses', icon: Receipt },
     { id: 'profile', label: 'Meu Perfil', icon: User },
   ];
+
+  // Days in current month that have schedule blocks — for mini-calendar badge
+  const blockDaysThisMonth = useMemo(() => {
+    const now = new Date();
+    return new Set(
+      scheduleBlocks.flatMap(b => {
+        const days: number[] = [];
+        const s = new Date(b.start_time);
+        const e = new Date(b.end_time);
+        let cur = new Date(s);
+        while (cur <= e) {
+          if (cur.getMonth() === now.getMonth() && cur.getFullYear() === now.getFullYear()) {
+            days.push(cur.getDate());
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+        return days;
+      })
+    );
+  }, [scheduleBlocks]);
 
   // Filtering Logic
   const filterByPeriod = (items: any[], dateField: string) => {
@@ -1515,13 +1647,15 @@ export default function TherapistPage() {
                   });
                   const count = dayAppointments.length;
 
+                  const hasBlock = blockDaysThisMonth.has(dayNum);
                   return (
                     <div 
                       key={i} 
                       onClick={() => count > 0 && setSelectedDateAppointments({ date: new Date(now.getFullYear(), now.getMonth(), dayNum), appts: dayAppointments })}
                       className={cn(
                         "aspect-square rounded-xl flex flex-col items-center justify-center font-bold text-sm transition-all relative group",
-                        dayNum === now.getDate() ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20" : count > 0 ? "hover:bg-slate-100 cursor-pointer" : "hover:bg-white/10"
+                        dayNum === now.getDate() ? "bg-indigo-600 text-white shadow-md shadow-indigo-500/20" : count > 0 ? "hover:bg-slate-100 cursor-pointer" : "hover:bg-white/10",
+                        hasBlock && dayNum !== now.getDate() ? "ring-1 ring-orange-400/60" : ""
                       )}
                     >
                       <span>{dayNum}</span>
@@ -1529,6 +1663,9 @@ export default function TherapistPage() {
                         <div className="absolute top-1 right-1 w-3.5 h-3.5 bg-rose-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border border-slate-900 group-hover:scale-110 transition-transform">
                           {count}
                         </div>
+                      )}
+                      {hasBlock && count === 0 && (
+                        <div className="absolute top-1 right-1 w-3 h-3 bg-orange-400 rounded-full border border-slate-900" title="Bloqueio pessoal" />
                       )}
                     </div>
                   );
@@ -1580,6 +1717,248 @@ export default function TherapistPage() {
                   )}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ ABA: AGENDA PESSOAL ══════════════════════════════════════════════ */}
+      {activeTab === 'agenda-pessoal' && (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
+            <div>
+              <h3 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+                <CalendarOff className="w-7 h-7 text-orange-500" />
+                Agenda Pessoal
+              </h3>
+              <p className="text-sm text-slate-500 font-medium mt-1">
+                Bloqueie horários por férias, consultas ou compromissos. Esses períodos ficarão indisponíveis para novos agendamentos.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setNewBlock({ date_start: '', time_start: '08:00', date_end: '', time_end: '18:00', reason: 'Indisponível', notes: '', all_day: false });
+                setShowBlockCreateModal(true);
+              }}
+              className="shrink-0 px-6 py-3.5 bg-orange-500 text-white rounded-2xl text-sm font-bold hover:bg-orange-600 transition-all shadow-xl shadow-orange-100 flex items-center gap-2"
+            >
+              <Plus className="w-5 h-5" />
+              Novo Bloqueio
+            </button>
+          </div>
+
+          {/* Blocks list */}
+          <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+            {scheduleBlocks.length === 0 ? (
+              <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="w-16 h-16 rounded-3xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+                  <CalendarOff className="w-8 h-8 text-slate-300" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-700">Nenhum bloqueio ativo</h4>
+                  <p className="text-sm text-slate-400 font-medium mt-1">Crie bloqueios para fechar horários quando estiver indisponível.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {scheduleBlocks.map((block) => {
+                  const start = new Date(block.start_time);
+                  const end = new Date(block.end_time);
+                  const isPast = end < new Date();
+                  return (
+                    <div
+                      key={block.id}
+                      className={cn(
+                        'flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-8 py-6 transition-all',
+                        isPast ? 'opacity-40' : 'hover:bg-slate-50/50'
+                      )}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className={cn('p-3 rounded-2xl border shrink-0', getBlockStyle(block.reason))}>
+                          <BanIcon className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={cn('px-3 py-1 rounded-full text-xs font-black border', getBlockStyle(block.reason))}>
+                              {block.reason}
+                            </span>
+                            {block.all_day && (
+                              <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold">Dia Inteiro</span>
+                            )}
+                            {isPast && (
+                              <span className="px-2 py-0.5 bg-slate-50 text-slate-400 rounded-full text-[10px] font-bold">Expirado</span>
+                            )}
+                          </div>
+                          <p className="mt-1 font-bold text-slate-800 text-sm">
+                            {start.toLocaleDateString('pt-BR')} {block.all_day ? '' : start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            {' → '}
+                            {end.toLocaleDateString('pt-BR')} {block.all_day ? '' : end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                          {block.notes && (
+                            <p className="text-xs text-slate-500 font-medium mt-0.5">{block.notes}</p>
+                          )}
+                        </div>
+                      </div>
+                      {!isPast && (
+                        <button
+                          onClick={() => handleDeleteBlock(block.id)}
+                          className="shrink-0 p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
+                          title="Remover bloqueio"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Info box */}
+          <div className="p-6 bg-orange-50 border border-orange-100 rounded-2xl flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+            <div className="text-sm text-orange-700 font-medium">
+              <strong className="font-bold">Como funciona:</strong> Quando você cria um bloqueio, os horários correspondentes ficam automaticamente indisponíveis na agenda — nenhum novo agendamento poderá ser criado nesse período. Os bloqueios são visíveis para a administração e secretaria.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Criar Bloqueio Pessoal */}
+      {showBlockCreateModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden">
+            <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-orange-50 rounded-2xl">
+                  <CalendarOff className="w-5 h-5 text-orange-500" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-lg">Novo Bloqueio</h3>
+                  <p className="text-xs text-slate-400 font-medium">Fechar horário na agenda</p>
+                </div>
+              </div>
+              <button onClick={() => setShowBlockCreateModal(false)} className="p-2.5 hover:bg-slate-100 rounded-xl transition-colors text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-8 space-y-6">
+              {/* Motivo */}
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Motivo</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {BLOCK_REASONS.map(r => (
+                    <button
+                      key={r.value}
+                      onClick={() => setNewBlock(b => ({ ...b, reason: r.value }))}
+                      className={cn(
+                        'px-4 py-3 rounded-xl text-xs font-bold border-2 transition-all text-left',
+                        newBlock.reason === r.value
+                          ? `${r.color} border-current shadow-sm`
+                          : 'border-slate-100 text-slate-500 hover:border-slate-300'
+                      )}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dia Inteiro toggle */}
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <div>
+                  <p className="font-bold text-slate-700 text-sm">Dia Inteiro</p>
+                  <p className="text-xs text-slate-400 font-medium">Bloqueia das 00:00 às 23:59</p>
+                </div>
+                <button
+                  onClick={() => setNewBlock(b => ({ ...b, all_day: !b.all_day }))}
+                  className={cn(
+                    'relative inline-flex h-7 w-12 items-center rounded-full transition-colors border-2',
+                    newBlock.all_day ? 'bg-orange-500 border-orange-500' : 'bg-slate-200 border-slate-200'
+                  )}
+                >
+                  <span className={cn('inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform', newBlock.all_day ? 'translate-x-6' : 'translate-x-0.5')} />
+                </button>
+              </div>
+
+              {/* Date/Time fields */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Data Início</label>
+                  <input
+                    type="date"
+                    value={newBlock.date_start}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={e => setNewBlock(b => ({ ...b, date_start: e.target.value, date_end: b.date_end || e.target.value }))}
+                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500/20 font-bold text-slate-700 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Data Fim</label>
+                  <input
+                    type="date"
+                    value={newBlock.date_end}
+                    min={newBlock.date_start || new Date().toISOString().split('T')[0]}
+                    onChange={e => setNewBlock(b => ({ ...b, date_end: e.target.value }))}
+                    className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500/20 font-bold text-slate-700 text-sm"
+                  />
+                </div>
+              </div>
+
+              {!newBlock.all_day && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Hora Início</label>
+                    <input
+                      type="time"
+                      value={newBlock.time_start}
+                      onChange={e => setNewBlock(b => ({ ...b, time_start: e.target.value }))}
+                      className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500/20 font-bold text-slate-700 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Hora Fim</label>
+                    <input
+                      type="time"
+                      value={newBlock.time_end}
+                      onChange={e => setNewBlock(b => ({ ...b, time_end: e.target.value }))}
+                      className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500/20 font-bold text-slate-700 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Observação */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Observação (opcional)</label>
+                <textarea
+                  value={newBlock.notes}
+                  onChange={e => setNewBlock(b => ({ ...b, notes: e.target.value }))}
+                  placeholder="Ex.: Viagem a trabalho, retorno dia 15..."
+                  rows={2}
+                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-orange-500/20 font-medium text-slate-700 text-sm resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowBlockCreateModal(false)}
+                className="px-5 py-3 rounded-xl font-bold text-sm text-slate-600 hover:bg-slate-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleCreateBlock}
+                disabled={savingBlock || !newBlock.date_start || !newBlock.date_end}
+                className="px-7 py-3.5 bg-orange-500 disabled:bg-orange-300 disabled:cursor-not-allowed text-white rounded-2xl font-bold shadow-xl shadow-orange-100 transition-all hover:bg-orange-600 active:scale-95 flex items-center gap-2"
+              >
+                {savingBlock ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarOff className="w-4 h-4" />}
+                Criar Bloqueio
+              </button>
             </div>
           </div>
         </div>

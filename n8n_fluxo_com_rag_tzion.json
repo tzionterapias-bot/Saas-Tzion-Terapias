@@ -1,43 +1,43 @@
 {
-  "name": "Automação Tzion Terapias (Com RAG)",
+  "name": "Automação Tzion Terapias (Com RAG + Triagem de Cliente)",
   "nodes": [
     {
       "parameters": {
         "promptType": "define",
         "text": "={{ $('Texto Formatado').first().json.message_text }}",
         "options": {
-          "systemMessage": "=={{ $node[\"COMANDO BD\"].json[\"ai_instructions\"] }}\n\nREGRA EXTREMA: Faça apenas UMA pergunta por mensagem. Nunca repita uma pergunta reformulada. Coloque a tag de status/lead estritamente na ÚLTIMA LINHA da resposta.\n\nVocê tem acesso à ferramenta 'consultar_base_de_conhecimento_tzion'. Sempre que o cliente perguntar sobre o Programa Tzion Care 180, especialidades de terapia, como funciona o atendimento presencial/online, regras da clínica, endereço ou corpo clínico, CONSULTE a base de conhecimento para responder com precisão cirúrgica."
+          "systemMessage": "=={{ $node[\"COMANDO BD\"].json[\"ai_instructions\"] }}\n\n{{ $node[\"Contexto Paciente\"].json[\"client_context\"] }}\n\nREGRA EXTREMA 1: Faça apenas UMA pergunta por mensagem. Nunca repita uma pergunta reformulada. Coloque a tag de status/lead estritamente na ÚLTIMA LINHA da resposta.\n\nREGRA EXTREMA 2 (SERVIÇOS): A clínica Tzion Terapias atua EXCLUSIVAMENTE com as especialidades listadas na sua base de conhecimento (como Terapia Individual, Casal, Infantil, Familiar, Ansiedade, Programa Tzion Care 180). JAMAIS, SOB NENHUMA HIPÓTESE, ofereça, cite, suponha ou confirme serviços que não prestamos (EXEMPLO DO QUE NÃO FAZEMOS: massoterapia, quiropraxia, acupuntura, etc.). Baseie-se ESTRITAMENTE nos documentos da ferramenta. Se um cliente pedir um serviço que não está na base, informe educadamente que a clínica não oferece esse tipo de atendimento.\n\nVocê tem acesso à ferramenta 'consultar_base_de_conhecimento_tzion'. Sempre que o cliente perguntar sobre o Programa Tzion Care 180, especialidades de terapia, como funciona o atendimento presencial/online, regras da clínica, endereço ou corpo clínico, CONSULTE a base de conhecimento para responder com precisão cirúrgica. ESTRITAMENTE NÃO invente serviços."
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
       "position": [
-        2704,
-        288
+        5120,
+        992
       ],
-      "id": "66b11f91-a390-4340-b281-53dacecbe82d",
+      "id": "89f9e63e-9224-4729-98ea-e4ef1019848b",
       "name": "AI Agent"
     },
     {
       "parameters": {
         "model": "deepseek/deepseek-chat",
         "options": {
-          "maxTokens": 2000,
+          "maxTokens": 3000,
           "temperature": 0.5
         }
       },
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
       "typeVersion": 1,
       "position": [
-        2688,
-        464
+        5104,
+        1168
       ],
-      "id": "49d373a1-5fc1-4040-9c29-f01c20cfc51f",
+      "id": "2a3bbac3-f8b7-4b9a-9d29-c2598ad8e236",
       "name": "OpenRouter Chat Model",
       "credentials": {
         "openRouterApi": {
-          "id": "M2pflpGAyGvliEnE",
-          "name": "OpenRouter account"
+          "id": "3zR2ZUJnjUNFKJnd",
+          "name": "OpenRouter account 2"
         }
       }
     },
@@ -49,25 +49,24 @@
       "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
       "typeVersion": 1,
       "position": [
-        2592,
-        656
+        5008,
+        1360
       ],
-      "id": "94af82ea-9754-44db-af0a-fcbe64d27cea",
+      "id": "c2811b7f-fe5a-4660-b932-fa63d78931e8",
       "name": "Base de Conhecimento Tzion"
     },
     {
       "parameters": {
         "tableName": "tzion_knowledge_documents",
-        "queryName": "match_tzion_documents",
-        "topK": 4
+        "options": {}
       },
       "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
       "typeVersion": 1,
       "position": [
-        2560,
-        912
+        4976,
+        1616
       ],
-      "id": "66e8ab5d-fa1a-4a81-b366-668c1b7c2af5",
+      "id": "49e89681-80f8-4116-8e71-3b6d69b36c68",
       "name": "Supabase Vector Store",
       "credentials": {
         "supabaseApi": {
@@ -77,16 +76,14 @@
       }
     },
     {
-      "parameters": {
-        "model": "models/gemini-embedding-001"
-      },
+      "parameters": {},
       "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
       "typeVersion": 1,
       "position": [
-        2560,
-        1104
+        4816,
+        1840
       ],
-      "id": "719e65d7-6868-4f7b-93d3-e25b61a68d19",
+      "id": "6c56dd53-8b08-40d9-a330-7ecec6006eb4",
       "name": "Embeddings Google Gemini",
       "credentials": {
         "googlePalmApi": {
@@ -104,10 +101,10 @@
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.4,
       "position": [
-        2896,
-        560
+        5312,
+        1264
       ],
-      "id": "22ee4b1e-8403-477d-ae6f-e7f2368d1a8f",
+      "id": "3e87d861-c58e-4f08-bd11-87ea5ab98ea9",
       "name": "Simple Memory"
     },
     {
@@ -209,10 +206,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        3088,
-        224
+        5504,
+        928
       ],
-      "id": "a98b6e9c-db1c-4956-a4e2-2266a2e55db3",
+      "id": "48fd5309-e9fd-491f-9088-351debbe7e1c",
       "name": "Switch"
     },
     {
@@ -257,7 +254,7 @@
             },
             {
               "name": "last_message",
-              "value": "={{ $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output }}"
+              "value": "={{ '📅 ' + new Date().toLocaleDateString('pt-BR', {timeZone:'America/Sao_Paulo'}) + ' às ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'}) + '\\n' + ($('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output.replace(/\\[.*?\\]/g,'').trim()) }}"
             },
             {
               "name": "instance_id",
@@ -270,10 +267,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3648,
-        0
+        6064,
+        704
       ],
-      "id": "56b9a8a0-3488-40d6-b295-5a03b5a9de71",
+      "id": "48af7ccd-d5c1-4bb0-884d-52eb1d76e323",
       "name": "Criar Ticket Financeiro"
     },
     {
@@ -305,10 +302,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1392,
-        304
+        3808,
+        1008
       ],
-      "id": "019a4d8a-a51c-446c-86b4-4490a21cb13b",
+      "id": "e720bd00-c426-4cf9-b4bd-6306717b0334",
       "name": "Salvar Msg Cliente"
     },
     {
@@ -358,10 +355,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2960,
-        688
+        5376,
+        1392
       ],
-      "id": "0e604cd2-8f78-4035-b6d8-cbeb2681d909",
+      "id": "1f1fe563-8fff-4df1-a4cf-b2ce221d8194",
       "name": "Salvar Msg Bot"
     },
     {
@@ -397,10 +394,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3648,
-        656
+        6064,
+        1360
       ],
-      "id": "48c52317-3d10-4001-9ffb-495fa02b553c",
+      "id": "7bc55d01-2ad3-43d6-bc91-ceab638b813b",
       "name": "WHATASPP",
       "retryOnFail": true,
       "waitBetweenTries": 3000,
@@ -424,10 +421,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        3328,
-        640
+        5744,
+        1344
       ],
-      "id": "cd729e6a-d3ef-4567-8e04-abf70085cf65",
+      "id": "c4744241-dda8-45a9-b397-4a60e77e5a41",
       "name": "fILTRO DE tAG"
     },
     {
@@ -446,10 +443,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        1552,
-        304
+        3968,
+        1008
       ],
-      "id": "69ab2a2a-4f4c-44bb-a444-2ff4a13fee13",
+      "id": "0070bc2f-b204-4909-a5e9-d7cb5221566e",
       "name": "COMANDO BD",
       "credentials": {
         "supabaseApi": {
@@ -481,10 +478,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2256,
-        80
+        4672,
+        784
       ],
-      "id": "b5d3d725-28ef-4e11-9b7f-31e093ba9296",
+      "id": "78e83e51-6bda-4f4a-b01b-59c3993e0e41",
       "name": "HTTP Request",
       "retryOnFail": true,
       "maxTries": 3,
@@ -519,10 +516,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1168,
-        320
+        3584,
+        1024
       ],
-      "id": "33213b19-c609-4c13-89b6-d06ae1e13e85",
+      "id": "985a6ac5-0c47-4cce-8af1-5f9f6522d4b5",
       "name": "FILTRO DE REAÇÕES E GRUPOS"
     },
     {
@@ -536,12 +533,57 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        1424,
-        80
+        3840,
+        784
       ],
-      "id": "1fad56ae-7f7a-43fa-a33c-006c50d3fa1f",
+      "id": "4bf89946-cfc6-46ef-b46b-f2102e369023",
       "name": "ATENDIMENTO DASHIBOARD",
       "webhookId": "34ca7f6a-4bf7-4d37-9ea7-059eb36267d8"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "=patients",
+        "limit": 1,
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "=phone",
+              "condition": "like",
+              "keyValue": "=%{{ $('Inicio').first().json.body?.data?.key?.remoteJid?.replace('@s.whatsapp.net','')?.slice(-10) }}%"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4080,
+        1008
+      ],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Verificar Paciente",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "CMbgGOC095IbrGUe",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verifica se o paciente existe e monta o contexto para o AI Agent\nconst patient = $input.first()?.json;\nconst hasPatient = patient && patient.id;\n\nlet clientContext = '';\n\nif (hasPatient) {\n  const firstName = (patient.name || '').split(' ')[0];\n  clientContext = `\n===== CONTEXTO DO CLIENTE =====\nEste contato JÁ É UM PACIENTE CADASTRADO na clínica.\nNome do Paciente: ${patient.name || 'Paciente'}\nPrimeiro Nome: ${firstName}\n\nREGRA DE TRIAGEM OBRIGATÓRIA PARA CLIENTES:\nNa PRIMEIRA mensagem desta interação (se a memória estiver vazia ou for uma saudação como 'oi', 'olá', 'bom dia', etc.), cumprimente o paciente pelo primeiro nome e apresente EXATAMENTE o seguinte menu de opções:\n\n\"Olá, ${firstName}! 😊 Que bom ter você por aqui! Como posso te ajudar hoje?\n\n1️⃣ Iniciar um novo atendimento\n2️⃣ Marcar uma sessão\n3️⃣ Remarcar uma sessão existente\n\nPor favor, digite o número da opção desejada ou me conte como posso te ajudar.\"\n\nQuando o paciente responder:\n- Se escolher \"1\" ou disser que quer novo atendimento / tirar dúvidas / falar com alguém: responda acolhendo e adicione obrigatoriamente [LEAD:QUENTE] na última linha para abrir o ticket imediatamente.\n- Se escolher \"2\" ou disser que quer marcar / agendar sessão: responda \"Perfeito, ${firstName}! 🗓️ Já estou abrindo o seu atendimento com a nossa equipe da recepção para agendar o melhor horário para você. Um momento!\" e inclua [LEAD:QUENTE] na última linha para abrir o ticket imediatamente.\n- Se escolher \"3\" ou disser que quer remarcar / reagendar sessão: responda \"Com certeza, ${firstName}! 🔄 Já estou direcionando seu atendimento para a recepção para reorganizar sua sessão. Aguarde só um instante!\" e inclua [LEAD:QUENTE] na última linha para abrir o ticket imediatamente.\n- Se o paciente já disser diretamente o que precisa (sem escolher pelo número), atenda-o com base nisso e aplique as tags [LEAD:QUENTE] ou de departamento cabíveis.\n===== FIM DO CONTEXTO =====`;\n} else {\n  clientContext = `\n===== CONTEXTO DO CLIENTE =====\nEste contato NÃO É um paciente cadastrado no sistema (é um NOVO LEAD).\nSiga o fluxo normal de acolhimento e captação de novos pacientes: colete o nome, entenda o motivo do contato, apresente as terapias disponíveis e qualifique o interesse.\n===== FIM DO CONTEXTO =====`;\n}\n\nreturn [{ json: { client_context: clientContext, is_patient: hasPatient ? true : false, patient_name: patient?.name || '' } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4240,
+        1008
+      ],
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Contexto Paciente"
     },
     {
       "parameters": {
@@ -568,10 +610,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        1712,
-        304
+        4400,
+        1008
       ],
-      "id": "231c761f-a8a1-4373-b380-c642b53759d8",
+      "id": "cb15231f-8cb7-4475-a9d8-be6ce37c321a",
       "name": "Radar de Tickets",
       "alwaysOutputData": true,
       "credentials": {
@@ -609,6 +651,16 @@
                 "type": "string",
                 "operation": "notRegex"
               }
+            },
+            {
+              "id": "ai-enabled-check",
+              "leftValue": "={{ $('COMANDO BD').first().json.ai_enabled !== false }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
             }
           ],
           "combinator": "and"
@@ -618,10 +670,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1872,
-        304
+        4560,
+        1008
       ],
-      "id": "0d52ef33-0415-49d7-854e-6c724b50c7d3",
+      "id": "fc4b4c66-a01a-4554-ba1f-588266892573",
       "name": "PRECISA DE ATENDIMENTO DE IA OU HUMANO?"
     },
     {
@@ -647,10 +699,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2304,
-        256
+        4720,
+        960
       ],
-      "id": "c0db9cba-bcb9-453c-b208-a14220d1cba9",
+      "id": "af137c5c-06b6-484f-9c84-9fde2da32068",
       "name": "Enviar Digitando (Composing)",
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -685,10 +737,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        2400,
-        304
+        4816,
+        1008
       ],
-      "id": "28f7b27a-165d-485b-94be-b80892bf5e93",
+      "id": "2f8241e7-84f0-4342-a193-d05122ecd63f",
       "name": "É Resposta de NPS?"
     },
     {
@@ -724,10 +776,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2544,
-        304
+        4960,
+        1008
       ],
-      "id": "fd71c08a-45ab-43e5-ba01-d54180ec94f8",
+      "id": "fa2f91f9-e1c8-4744-a6cb-350494764b91",
       "name": "agradecimento",
       "retryOnFail": true,
       "maxTries": 3,
@@ -749,10 +801,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        2256,
-        624
+        4672,
+        1328
       ],
-      "id": "22142166-2ed8-4cf2-ae0d-bfed59804409",
+      "id": "f3a6769f-5d5d-4810-aefd-7e5e3a28f340",
       "name": "nps_feedbacks",
       "alwaysOutputData": true,
       "credentials": {
@@ -790,25 +842,25 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        2112,
-        320
+        4528,
+        1024
       ],
-      "id": "a063fe1e-7084-4e92-9ba1-71f4b84e31ad",
+      "id": "97994f9c-3aed-4204-b442-f0f3866c6068",
       "name": "Status é Aguardando NPS?"
     },
     {
       "parameters": {
-        "content": "Fluxo de auto atendimento Tzion Terapias (Com RAG Integrado)",
+        "content": "Fluxo de auto atendimento Tzion Terapias (Com RAG + Triagem de Cliente)",
         "height": 80,
-        "width": 2768
+        "width": 2900
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1120,
-        -128
+        3536,
+        576
       ],
-      "id": "d4dca6a9-7a52-44f0-a57d-50d8638d81c6",
+      "id": "40bb7f3a-1ab4-4710-831f-c20229da7664",
       "name": "Sticky Note"
     },
     {
@@ -820,10 +872,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        1152,
-        80
+        3568,
+        784
       ],
-      "id": "4787052c-10e7-436b-8ea8-c0114184eec2",
+      "id": "1dad6b66-1140-4896-8aba-0de882d00734",
       "name": "Inicio",
       "webhookId": "b92298c2-911f-4790-aecb-e60f803abbd6"
     },
@@ -869,7 +921,7 @@
             },
             {
               "name": "last_message",
-              "value": "={{ $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output }}"
+              "value": "={{ '📅 ' + new Date().toLocaleDateString('pt-BR', {timeZone:'America/Sao_Paulo'}) + ' às ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'}) + '\\n' + ($('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output.replace(/\\[.*?\\]/g,'').trim()) }}"
             },
             {
               "name": "instance_id",
@@ -882,10 +934,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3648,
-        224
+        6064,
+        928
       ],
-      "id": "69da032c-94b9-492c-b3aa-0edc47e60aa8",
+      "id": "0eccd7c2-c091-4d07-8f6c-5105622c5d10",
       "name": "Criar Ticket ATENDIMENTO"
     },
     {
@@ -930,7 +982,7 @@
             },
             {
               "name": "last_message",
-              "value": "={{ $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output }}"
+              "value": "={{ '📅 ' + new Date().toLocaleDateString('pt-BR', {timeZone:'America/Sao_Paulo'}) + ' às ' + new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'}) + '\\n' + ($('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i) ? '📋 Resumo do Caso: ' + $('AI Agent').item.json.output.match(/\\[RESUMO:([\\s\\S]*?)\\]/i)[1].trim() : $('AI Agent').item.json.output.replace(/\\[.*?\\]/g,'').trim()) }}"
             },
             {
               "name": "instance_id",
@@ -943,10 +995,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3648,
-        464
+        6064,
+        1168
       ],
-      "id": "f1ae9831-8302-4277-9da7-2231e16bdab2",
+      "id": "bb305ebc-d951-4e62-a7b3-0d8dfc4b5a05",
       "name": "Criar Ticket COMERCIAL"
     },
     {
@@ -978,10 +1030,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        736,
-        1056
+        3152,
+        1760
       ],
-      "id": "1877c15c-d6a7-491d-9f08-bbbdb2987b65",
+      "id": "772540f5-4d05-4e75-8b25-cd275d382217",
       "name": "Fechar Ticket Apos NPS"
     },
     {
@@ -1012,10 +1064,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1168,
-        512
+        3584,
+        1216
       ],
-      "id": "505ba8f5-9692-4e53-be33-dbec8a73c65c",
+      "id": "c479b4cd-d733-4cdf-8f83-46d16d07661a",
       "name": "É Áudio?"
     },
     {
@@ -1035,10 +1087,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1392,
-        416
+        3808,
+        1120
       ],
-      "id": "a48dfac8-1adf-47ac-8554-76916d120db8",
+      "id": "7274225f-a376-4837-808a-19502cd462d0",
       "name": "Extrair Texto"
     },
     {
@@ -1048,10 +1100,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1392,
-        624
+        3808,
+        1328
       ],
-      "id": "befb00b7-9ab8-4a7a-99d5-f750260c0d7a",
+      "id": "8e9c9016-24fc-4673-ba08-ef2f1e541894",
       "name": "Converter Base64"
     },
     {
@@ -1087,10 +1139,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1600,
-        624
+        4016,
+        1328
       ],
-      "id": "1104786c-c2b4-4ea3-a05a-f27ab1668455",
+      "id": "3975a4b0-2c45-4810-927c-df1fec528c61",
       "name": "Groq Whisper API"
     },
     {
@@ -1110,10 +1162,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1792,
-        624
+        4208,
+        1328
       ],
-      "id": "cc5db220-784f-45aa-8158-0fd64f2dc522",
+      "id": "a54d8a31-0386-401a-b628-a487bd9247a2",
       "name": "Extrair Áudio"
     },
     {
@@ -1121,10 +1173,10 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
       "position": [
-        1600,
-        416
+        4016,
+        1120
       ],
-      "id": "3880d027-b2e4-4261-8488-ff0cbcdfe1bd",
+      "id": "90b97218-de50-4d13-bca2-68704224dde2",
       "name": "Texto Formatado"
     }
   ],
@@ -1265,6 +1317,28 @@
       ]
     },
     "COMANDO BD": {
+      "main": [
+        [
+          {
+            "node": "Verificar Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Paciente": {
+      "main": [
+        [
+          {
+            "node": "Contexto Paciente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contexto Paciente": {
       "main": [
         [
           {

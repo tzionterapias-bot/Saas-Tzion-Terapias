@@ -91,12 +91,18 @@ export default function TicketList({ activeTicketId, onSelectTicket, filterDeptI
           cleanPhone = cleanPhone.split('@')[0];
         }
         
+        const ticketDate = new Date(t.updated_at || t.created_at);
+        const isToday = ticketDate.toDateString() === new Date().toDateString();
+        const timePart = ticketDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const datePart = ticketDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const displayTime = isToday ? timePart : `${datePart} às ${timePart}`;
+
         return {
           id: t.id,
           customerName: t.customer_name || 'Cliente s/ Nome',
           phone: cleanPhone,
           lastMessage: t.last_message || 'Iniciando atendimento...',
-          time: new Date(t.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: displayTime,
           status: t.status,
           departmentId: t.department_id,
           departmentName: t.departments?.name,

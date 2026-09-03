@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search, Trash2, StickyNote, Plus } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search, Trash2, StickyNote, Plus, BanIcon } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useAuth } from '@/src/contexts/AuthContext';
@@ -37,6 +37,7 @@ export default function AgendaManager() {
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('week');
+  const [scheduleBlocks, setScheduleBlocks] = useState<any[]>([]);
   
   // Wizard State
   const [wizardStep, setWizardStep] = useState(1);
@@ -130,6 +131,16 @@ export default function AgendaManager() {
 
       const results = await Promise.all(promises);
       const apptsRes = results[0];
+
+      // Fetch all therapist blocks visible to admin/secretary
+      const blocksQuery = supabase
+        .from('therapist_schedule_blocks')
+        .select('*, therapists(name)')
+        .gte('end_time', startStr)
+        .lte('start_time', endStr)
+        .order('start_time');
+      const { data: blocksData } = await blocksQuery;
+      setScheduleBlocks(blocksData || []);
       
       let currentPatients = patients;
       let currentTherapists = therapists;
@@ -250,6 +261,15 @@ export default function AgendaManager() {
            const localDate = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
            return localDate === newAppt.date;
        });
+
+       // Também considerar bloqueios pessoais do terapeuta
+       const blockConflictsLocal = scheduleBlocks.filter(b => {
+           if (b.therapist_id !== newAppt.therapist_id) return false;
+           const bStart = new Date(b.start_time);
+           const bEnd = new Date(b.end_time);
+           const d = new Date(`${newAppt.date}T12:00:00`);
+           return bStart <= d && bEnd >= d;
+       });
        
        const freeSlots = allSlots.filter(slot => {
            // Constrói o range do slot selecionado
@@ -261,6 +281,14 @@ export default function AgendaManager() {
            if (isToday && slotStart < new Date()) {
                return false;
            }
+
+           // Bloqueia se houver bloqueio pessoal do terapeuta
+           const hasBlockOverlap = blockConflictsLocal.some(b => {
+               const bStart = new Date(b.start_time);
+               const bEnd = new Date(b.end_time);
+               return bStart < slotEnd && bEnd > slotStart;
+           });
+           if (hasBlockOverlap) return false;
 
            // Verifica se algum agendamento do terapeuta entra em conflito com esse range
            const hasOverlap = conflicts.some(a => {
@@ -335,6 +363,21 @@ export default function AgendaManager() {
 
       if (conflicts && conflicts.length > 0) {
         setErrorMsg('Conflito de horário! Este terapeuta já possui um agendamento neste horário. Por favor, volte e escolha outro.');
+        setLoading(false);
+        return;
+      }
+
+      // Verificar bloqueio pessoal do terapeuta
+      const { data: blockConflicts } = await supabase
+        .from('therapist_schedule_blocks')
+        .select('id, reason')
+        .eq('therapist_id', newAppt.therapist_id)
+        .lt('start_time', endTime)
+        .gt('end_time', startTime);
+
+      if (blockConflicts && blockConflicts.length > 0) {
+        const reason = blockConflicts[0]?.reason || 'Indisponível';
+        setErrorMsg(`Horário bloqueado na agenda pessoal do terapeuta: "${reason}". Por favor, escolha outro horário.`);
         setLoading(false);
         return;
       }
@@ -1176,17 +1219,35 @@ export default function AgendaManager() {
                  const d = new Date(a.start_time);
                  return d.getDate() === dayNum && d.getMonth() === month && d.getFullYear() === year;
               });
+              const dayBlocks = scheduleBlocks.filter(b => {
+                const bs = new Date(b.start_time);
+                const be = new Date(b.end_time);
+                const cellStart = new Date(year, month, dayNum, 0, 0, 0);
+                const cellEnd = new Date(year, month, dayNum, 23, 59, 59);
+                return bs <= cellEnd && be >= cellStart;
+              });
               const isToday = cellDate.toDateString() === new Date().toDateString();
+              const hasBlock = dayBlocks.length > 0;
               
               return (
                 <div 
                   key={i} 
                   onClick={() => dayAppts.length > 0 && setSelectedDateAppointments({ date: cellDate, appts: dayAppts })}
-                  className={cn("bg-white h-32 p-3 transition-all group relative", dayAppts.length > 0 ? 'hover:bg-indigo-50/30 cursor-pointer' : '')}
+                  className={cn("bg-white h-32 p-3 transition-all group relative", dayAppts.length > 0 ? 'hover:bg-indigo-50/30 cursor-pointer' : '', hasBlock ? 'bg-orange-50/40' : '')}
                 >
                   <span className={cn("text-sm font-bold", isToday ? 'bg-indigo-600 text-white w-7 h-7 flex items-center justify-center rounded-lg shadow-lg shadow-indigo-100' : 'text-slate-600')}>
                     {dayNum}
                   </span>
+                  {hasBlock && (
+                    <div className="absolute top-1 left-1 flex flex-col gap-0.5">
+                      {dayBlocks.slice(0, 2).map((b: any, bi: number) => (
+                        <div key={bi} className="flex items-center gap-1 px-1.5 py-0.5 bg-orange-100 border border-orange-200 text-orange-700 rounded text-[8px] font-bold">
+                          <BanIcon className="w-2 h-2" />
+                          <span className="truncate max-w-[60px]">{b.reason || 'Bloqueado'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="mt-2 space-y-1">
                     {dayAppts.slice(0, 2).map((appt, idx) => (
                       <div key={idx} className="px-2 py-1 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded text-[9px] font-bold truncate">
@@ -1229,9 +1290,30 @@ export default function AgendaManager() {
           ))}
           {daysToRender.map((date, i) => {
             const dayAppts = appointments.filter(a => new Date(a.start_time).toDateString() === date.toDateString());
+            const dayBlocks = scheduleBlocks.filter(b => {
+              const bs = new Date(b.start_time);
+              const be = new Date(b.end_time);
+              const cellStart = new Date(date); cellStart.setHours(0,0,0,0);
+              const cellEnd = new Date(date); cellEnd.setHours(23,59,59,999);
+              return bs <= cellEnd && be >= cellStart;
+            });
             return (
               <div key={`content-${i}`} className="bg-white h-[380px] overflow-y-auto custom-scrollbar p-2 sm:p-4 space-y-2 sm:space-y-3">
-                 {dayAppts.length === 0 && <p className="text-xs sm:text-sm text-slate-400 text-center mt-10">Livre</p>}
+                 {dayAppts.length === 0 && dayBlocks.length === 0 && <p className="text-xs sm:text-sm text-slate-400 text-center mt-10">Livre</p>}
+                 {dayBlocks.map((block: any) => (
+                   <div
+                     key={`block-${block.id}`}
+                     className="p-2 sm:p-3 bg-orange-50 rounded-xl border border-orange-200 flex flex-col gap-1 min-w-0"
+                     title={`Bloqueio: ${block.reason}${block.notes ? ' — ' + block.notes : ''}`}
+                   >
+                     <div className="flex items-center gap-1">
+                       <BanIcon className="w-3 h-3 text-orange-500 shrink-0" />
+                       <span className="text-orange-700 font-black text-[10px] sm:text-xs">{block.all_day ? 'Dia Inteiro' : `${new Date(block.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} – ${new Date(block.end_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}</span>
+                     </div>
+                     <p className="font-bold text-slate-800 text-xs truncate">{block.therapists?.name || 'Terapeuta'}</p>
+                     <p className="text-[9px] sm:text-[10px] text-orange-600 font-bold uppercase tracking-widest">{block.reason}</p>
+                   </div>
+                 ))}
                  {dayAppts.map(appt => (
                     <div 
                       key={appt.id} 

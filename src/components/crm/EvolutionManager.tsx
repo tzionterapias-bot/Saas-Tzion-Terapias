@@ -111,6 +111,18 @@ export default function EvolutionManager() {
 
   React.useEffect(() => {
     fetchInstances();
+
+    const handleExternalAiToggle = (e: any) => {
+      if (e.detail?.instanceName) {
+        setInstances(prev => prev.map(item => 
+          item.name === e.detail.instanceName 
+            ? { ...item, aiEnabled: e.detail.aiEnabled }
+            : item
+        ));
+      }
+    };
+    window.addEventListener('whatsapp-ai-toggled', handleExternalAiToggle);
+    return () => window.removeEventListener('whatsapp-ai-toggled', handleExternalAiToggle);
   }, []);
 
   // Polling para verificar status de instâncias desconectadas
@@ -228,6 +240,7 @@ export default function EvolutionManager() {
         }, { onConflict: 'instance_name' });
         
       if (error) throw error;
+      window.dispatchEvent(new CustomEvent('whatsapp-ai-toggled', { detail: { instanceName: inst.name, aiEnabled: newValue } }));
       await fetchInstances();
       handleShowToast(`Atendimento de IA ${newValue ? 'ativado' : 'desativado'} com sucesso!`);
     } catch (error) {

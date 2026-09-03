@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Calendar, Banknote, MessageSquare, 
   BookOpen, Settings, LogOut, Heart, Headset, Menu, X, Bell, Search, User, Award,
   Sun, Moon, Shield, Megaphone, PieChart, Globe, Monitor, UserCog, Briefcase, Package,
-  Lock, Phone, Save, Loader2, Trophy, CreditCard, Brain
+  Lock, Phone, Save, Loader2, Trophy, CreditCard, Brain, Bot
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
@@ -145,6 +145,99 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [pendingTherapistsCount, setPendingTherapistsCount] = useState(0);
+  
+  // AI Status State (WhatsApp Bot)
+  const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
+  const [aiInstanceName, setAiInstanceName] = useState<string>('tzion');
+  const [isTogglingAi, setIsTogglingAi] = useState(false);
+  const [aiToast, setAiToast] = useState<{ message: string; active: boolean } | null>(null);
+
+  useEffect(() => {
+    const fetchAiStatus = async () => {
+      try {
+        // Busca especificamente pela instância oficial da clínica ('tzion')
+        const { data } = await supabase
+          .from('whatsapp_instances')
+          .select('instance_name, ai_enabled')
+          .eq('instance_name', 'tzion')
+          .maybeSingle();
+
+        if (data) {
+          setAiEnabled(data.ai_enabled ?? false);
+          setAiInstanceName(data.instance_name);
+        } else {
+          // Fallback para primeira instância caso o nome seja diferente
+          const { data: fallback } = await supabase
+            .from('whatsapp_instances')
+            .select('instance_name, ai_enabled')
+            .order('instance_name', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (fallback) {
+            setAiEnabled(fallback.ai_enabled ?? false);
+            setAiInstanceName(fallback.instance_name);
+          } else {
+            setAiEnabled(false);
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao buscar status da IA:', err);
+      }
+    };
+
+    fetchAiStatus();
+
+    const channel = supabase
+      .channel('header_whatsapp_ai_status')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_instances' }, (payload: any) => {
+        if (payload.new && (payload.new.instance_name === 'tzion' || payload.new.instance_name === aiInstanceName)) {
+          setAiEnabled(payload.new.ai_enabled ?? false);
+        }
+      })
+      .subscribe();
+
+    const handleLocalSync = (e: any) => {
+      if (e.detail && typeof e.detail.aiEnabled !== 'undefined') {
+        setAiEnabled(e.detail.aiEnabled);
+      }
+    };
+    window.addEventListener('whatsapp-ai-toggled', handleLocalSync);
+
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener('whatsapp-ai-toggled', handleLocalSync);
+    };
+  }, [aiInstanceName]);
+
+  const handleToggleGlobalAI = async () => {
+    if (isTogglingAi) return;
+    const targetInstance = aiInstanceName || 'tzion';
+    try {
+      setIsTogglingAi(true);
+      const newVal = !aiEnabled;
+      const { error } = await supabase
+        .from('whatsapp_instances')
+        .upsert({
+          instance_name: targetInstance,
+          ai_enabled: newVal
+        }, { onConflict: 'instance_name' });
+
+      if (error) throw error;
+      setAiEnabled(newVal);
+      window.dispatchEvent(new CustomEvent('whatsapp-ai-toggled', { detail: { instanceName: targetInstance, aiEnabled: newVal } }));
+      setAiToast({ 
+        message: newVal ? 'IA Ativada! Ela responderá aos clientes automaticamente.' : 'IA Pausada! As mensagens ficarão aguardando a secretária.', 
+        active: newVal 
+      });
+      setTimeout(() => setAiToast(null), 4000);
+    } catch (err: any) {
+      console.error('Erro ao alternar IA:', err);
+      setAiToast({ message: 'Erro ao alternar status da IA.', active: false });
+      setTimeout(() => setAiToast(null), 4000);
+    } finally {
+      setIsTogglingAi(false);
+    }
+  };
   
   // Fechar dropdowns ao clicar fora seria ideal, mas usaremos onBlur ou toggle simples por enquanto
   const toggleNotifications = () => {
@@ -551,6 +644,38 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </div>
             </div>
 
+            {/* Botão de Controle Manual da IA no WhatsApp */}
+            {aiEnabled !== null && (
+              <button
+                onClick={handleToggleGlobalAI}
+                disabled={isTogglingAi}
+                className={cn(
+                  "flex items-center gap-2 px-3 sm:px-4 py-2 rounded-2xl text-xs font-bold transition-all shadow-sm active:scale-95 border cursor-pointer",
+                  aiEnabled
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 shadow-emerald-100"
+                    : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 shadow-amber-100"
+                )}
+                title={
+                  aiEnabled
+                    ? "A IA está ATIVADA e respondendo aos clientes. Clique para pausar e atender manualmente."
+                    : "A IA está PAUSADA (Atendimento Humano da Secretária). Clique para ativar a IA."
+                }
+              >
+                {isTogglingAi ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <span className={cn(
+                    "w-2.5 h-2.5 rounded-full shrink-0",
+                    aiEnabled ? "bg-emerald-500 animate-pulse shadow-sm shadow-emerald-400" : "bg-amber-500"
+                  )} />
+                )}
+                <Bot className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">
+                  {aiEnabled ? "IA Ativa" : "IA Pausada"}
+                </span>
+              </button>
+            )}
+
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
@@ -821,6 +946,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Toast de status da IA */}
+      {aiToast && (
+        <div className={cn(
+          "fixed bottom-8 right-8 z-[200] px-6 py-4 rounded-2xl shadow-2xl text-white font-bold text-sm flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5",
+          aiToast.active ? "bg-emerald-600 shadow-emerald-600/30" : "bg-slate-900 shadow-slate-900/30"
+        )}>
+          <Bot className="w-5 h-5 shrink-0" />
+          <span>{aiToast.message}</span>
         </div>
       )}
     </div>
