@@ -6,7 +6,7 @@
         "promptType": "define",
         "text": "={{ $('Texto Formatado').first().json.message_text }}",
         "options": {
-          "systemMessage": "=={{ $node[\"COMANDO BD\"].json[\"ai_instructions\"] }}\n\n{{ $node[\"Contexto Paciente\"].json[\"client_context\"] }}\n\nREGRA EXTREMA 1: Faça apenas UMA pergunta por mensagem. Nunca repita uma pergunta reformulada. Coloque a tag de status/lead estritamente na ÚLTIMA LINHA da resposta.\n\nREGRA EXTREMA 2 (SERVIÇOS): A clínica Tzion Terapias atua EXCLUSIVAMENTE com as especialidades listadas na sua base de conhecimento (como Terapia Individual, Casal, Infantil, Familiar, Ansiedade, Programa Tzion Care 180). JAMAIS, SOB NENHUMA HIPÓTESE, ofereça, cite, suponha ou confirme serviços que não prestamos (EXEMPLO DO QUE NÃO FAZEMOS: massoterapia, quiropraxia, acupuntura, etc.). Baseie-se ESTRITAMENTE nos documentos da ferramenta. Se um cliente pedir um serviço que não está na base, informe educadamente que a clínica não oferece esse tipo de atendimento.\n\nVocê tem acesso à ferramenta 'consultar_base_de_conhecimento_tzion'. Sempre que o cliente perguntar sobre o Programa Tzion Care 180, especialidades de terapia, como funciona o atendimento presencial/online, regras da clínica, endereço ou corpo clínico, CONSULTE a base de conhecimento para responder com precisão cirúrgica. ESTRITAMENTE NÃO invente serviços."
+          "systemMessage": "=={{ $node[\"COMANDO BD\"].json[\"ai_instructions\"] }}\n\n{{ $node[\"Contexto Paciente\"].json[\"client_context\"] }}\n\nREGRA EXTREMA 1: Faça apenas UMA pergunta por mensagem. Nunca repita uma pergunta reformulada. Coloque a tag de status/lead estritamente na ÚLTIMA LINHA da resposta.\n\nREGRA EXTREMA 2 (SERVIÇOS): A clínica Tzion Terapias atua EXCLUSIVAMENTE com as especialidades listadas na sua base de conhecimento (como Terapia Individual, Casal, Infantil, Familiar, Ansiedade, Programa Tzion Care 180). JAMAIS, SOB NENHUMA HIPÓTESE, ofereça, cite, suponha ou confirme serviços que não prestamos (EXEMPLO DO QUE NÃO FAZEMOS: massoterapia, quiropraxia, acupuntura, etc.). Baseie-se ESTRITAMENTE nos documentos da ferramenta. Se um cliente pedir um serviço que não está na base, informe educadamente que a clínica não oferece esse tipo de atendimento.\n\nREGRA EXTREMA 3 (CONSULTA DE AGENDAMENTOS POR CPF): Você tem acesso à ferramenta 'consultar_agendamentos_cpf'. Sempre que o cliente perguntar sobre suas sessões agendadas, horário, data ou status de atendimento, solicite os 3 últimos dígitos do CPF (caso ele ainda não tenha informado) e chame a ferramenta 'consultar_agendamentos_cpf'. Ao obter o retorno da ferramenta:\n- Se houver sessão agendada: informe de maneira acolhedora o nome do paciente, dia da semana, data, hora, modalidade (Presencial em Araguaína - TO ou Online) e o nome do terapeuta. Finalize colocando [STATUS:INFORMATIVO] na última linha.\n- Se o paciente não tiver sessões futuras: informe carinhosamente que o cadastro foi localizado mas não há sessões futuras agendadas, e pergunte se deseja agendar.\n- Se os dígitos não forem encontrados: peça educadamente para conferir e enviar novamente os 3 últimos dígitos do CPF.\n- Se o cliente desejar REMARCAR ou MARCAR NOVA SESSÃO: encaminhe imediatamente para a recepção com [LEAD:QUENTE] [DEP:AGENDAMENTO] na última linha.\n\nVocê também tem acesso à ferramenta 'consultar_base_de_conhecimento_tzion'. Sempre que o cliente perguntar sobre o Programa Tzion Care 180, especialidades de terapia, como funciona o atendimento presencial/online, regras da clínica, endereço ou corpo clínico, CONSULTE a base de conhecimento para responder com precisão cirúrgica. ESTRITAMENTE NÃO invente serviços."
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
@@ -574,7 +574,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Verifica se o paciente existe e monta o contexto para o AI Agent\nconst patient = $input.first()?.json;\nconst hasPatient = patient && patient.id;\n\nlet clientContext = '';\n\nif (hasPatient) {\n  const firstName = (patient.name || '').split(' ')[0];\n  clientContext = `\n===== CONTEXTO DO CLIENTE =====\nEste contato JÁ É UM PACIENTE CADASTRADO na clínica.\nNome do Paciente: ${patient.name || 'Paciente'}\nPrimeiro Nome: ${firstName}\n\nREGRA DE TRIAGEM OBRIGATÓRIA PARA CLIENTES:\nNa PRIMEIRA mensagem desta interação (se a memória estiver vazia ou for uma saudação como 'oi', 'olá', 'bom dia', etc.), cumprimente o paciente pelo primeiro nome e apresente EXATAMENTE o seguinte menu de opções:\n\n\"Olá, ${firstName}! 😊 Que bom ter você por aqui! Como posso te ajudar hoje?\n\n1️⃣ Iniciar um novo atendimento\n2️⃣ Marcar uma sessão\n3️⃣ Remarcar uma sessão existente\n\nPor favor, digite o número da opção desejada ou me conte como posso te ajudar.\"\n\nQuando o paciente responder:\n- Se escolher \"1\" ou disser que quer novo atendimento / tirar dúvidas / falar com alguém: responda acolhendo e adicione obrigatoriamente [LEAD:QUENTE] na última linha para abrir o ticket imediatamente.\n- Se escolher \"2\" ou disser que quer marcar / agendar sessão: responda \"Perfeito, ${firstName}! 🗓️ Já estou abrindo o seu atendimento com a nossa equipe da recepção para agendar o melhor horário para você. Um momento!\" e inclua [LEAD:QUENTE] na última linha para abrir o ticket imediatamente.\n- Se escolher \"3\" ou disser que quer remarcar / reagendar sessão: responda \"Com certeza, ${firstName}! 🔄 Já estou direcionando seu atendimento para a recepção para reorganizar sua sessão. Aguarde só um instante!\" e inclua [LEAD:QUENTE] na última linha para abrir o ticket imediatamente.\n- Se o paciente já disser diretamente o que precisa (sem escolher pelo número), atenda-o com base nisso e aplique as tags [LEAD:QUENTE] ou de departamento cabíveis.\n===== FIM DO CONTEXTO =====`;\n} else {\n  clientContext = `\n===== CONTEXTO DO CLIENTE =====\nEste contato NÃO É um paciente cadastrado no sistema (é um NOVO LEAD).\nSiga o fluxo normal de acolhimento e captação de novos pacientes: colete o nome, entenda o motivo do contato, apresente as terapias disponíveis e qualifique o interesse.\n===== FIM DO CONTEXTO =====`;\n}\n\nreturn [{ json: { client_context: clientContext, is_patient: hasPatient ? true : false, patient_name: patient?.name || '' } }];"
+        "jsCode": "// Verifica se o paciente existe e monta o contexto para o AI Agent\nconst patient = $input.first()?.json;\nconst hasPatient = patient && patient.id;\n\nlet clientContext = '';\n\nif (hasPatient) {\n  const firstName = (patient.name || '').split(' ')[0];\n  clientContext = `\n===== CONTEXTO DO CLIENTE =====\nEste contato JÁ É UM PACIENTE CADASTRADO na clínica.\nNome do Paciente: ${patient.name || 'Paciente'}\nPrimeiro Nome: ${firstName}\n\nREGRA DE TRIAGEM OBRIGATÓRIA PARA CLIENTES:\nNa PRIMEIRA mensagem desta interação (se a memória estiver vazia ou for uma saudação como 'oi', 'olá', 'bom dia', etc.), cumprimente o paciente pelo primeiro nome e apresente EXATAMENTE o seguinte menu de opções:\n\n\"Olá, ${firstName}! 😊 Que bom ter você por aqui! Como posso te ajudar hoje?\n\n1️⃣ Iniciar um novo atendimento\n2️⃣ Marcar uma sessão\n3️⃣ Remarcar uma sessão existente\n4️⃣ Consultar meus agendamentos\n\nPor favor, digite o número da opção desejada ou me conte como posso te ajudar.\"\n\nQuando o paciente responder:\n- Se escolher \"1\" ou disser que quer novo atendimento / tirar dúvidas / falar com alguém: responda acolhendo e adicione obrigatoriamente [LEAD:QUENTE] na última linha para abrir o ticket imediatamente.\n- Se escolher \"2\" ou disser que quer marcar / agendar sessão: responda \"Perfeito, ${firstName}! 🗓️ Já estou abrindo o seu atendimento com a nossa equipe da recepção para agendar o melhor horário para você. Um momento!\" e inclua [LEAD:QUENTE] na última linha para abrir o ticket imediatamente.\n- Se escolher \"3\" ou disser que quer remarcar / reagendar sessão: responda \"Com certeza, ${firstName}! 🔄 Já estou direcionando seu atendimento para a recepção para reorganizar sua sessão. Aguarde só um instante!\" e inclua [LEAD:QUENTE] na última linha para abrir o ticket imediatamente.\n- Se escolher \"4\" ou perguntar sobre suas sessões/agendamentos (ex: \"como está minha sessão?\", \"quando é minha consulta?\"): peça educadamente para confirmar os 3 últimos dígitos do CPF dele. Assim que ele informar (ou se já tiver informado), use a ferramenta 'consultar_agendamentos_cpf' para buscar no banco de dados.\n- Se o paciente já disser diretamente o que precisa (sem escolher pelo número), atenda-o com base nisso e aplique as tags [LEAD:QUENTE] ou de departamento cabíveis.\n===== FIM DO CONTEXTO =====`;\n} else {\n  clientContext = `\n===== CONTEXTO DO CLIENTE =====\nEste contato NÃO É um paciente cadastrado no sistema (é um NOVO LEAD).\nSiga o fluxo normal de acolhimento e captação de novos pacientes: colete o nome, entenda o motivo do contato, apresente as terapias disponíveis e qualifique o interesse.\n\nREGRA DE CONSULTA DE AGENDAMENTOS:\nSe mesmo não identificado pelo número o usuário perguntar sobre agendamento, consulta ou sessão marcada (ex: \"como está minha sessão para semana que vem?\", \"quero saber da minha consulta\"), solicite os 3 últimos dígitos do CPF dele. Ao receber, consulte a ferramenta 'consultar_agendamentos_cpf'.\n===== FIM DO CONTEXTO =====`;\n}\n\nreturn [{ json: { client_context: clientContext, is_patient: hasPatient ? true : false, patient_name: patient?.name || '', patient_phone: $('Inicio').first().json.body?.data?.key?.remoteJid?.replace('@s.whatsapp.net', '') || '' } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1178,6 +1178,52 @@
       ],
       "id": "90b97218-de50-4d13-bca2-68704224dde2",
       "name": "Texto Formatado"
+    },
+    {
+      "parameters": {
+        "name": "consultar_agendamentos_cpf",
+        "description": "Consulta os agendamentos e sessões de terapia de um paciente no banco de dados da clínica Tzion Terapias a partir dos 3 últimos dígitos do CPF informados pelo cliente (ou CPF completo). Chame esta ferramenta SEMPRE que o cliente perguntar sobre o dia, data, horário, modalidade ou status da sua sessão ou consulta marcada.",
+        "method": "POST",
+        "url": "https://tzionterapias.com.br/api/agendamentos/consultar-cpf",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "values": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "cpf_digitos",
+              "value": "{cpf_digitos}"
+            },
+            {
+              "name": "telefone",
+              "value": "={{ $('Inicio').first().json.body?.data?.key?.remoteJid?.replace('@s.whatsapp.net', '') }}"
+            }
+          ]
+        },
+        "placeholderDefinitions": {
+          "values": [
+            {
+              "name": "cpf_digitos",
+              "description": "Os 3 últimos dígitos do CPF informados pelo cliente (ex: 100, 148, 921) ou o CPF completo com apenas números"
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        5232,
+        1360
+      ],
+      "id": "e4a7c821-4f12-421b-87cf-65d1d6a992bc",
+      "name": "Consultar Agendamentos por CPF"
     }
   ],
   "connections": {
@@ -1534,6 +1580,17 @@
           {
             "node": "Salvar Msg Cliente",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Agendamentos por CPF": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
             "index": 0
           }
         ]

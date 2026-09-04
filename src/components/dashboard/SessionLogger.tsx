@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PlayCircle, Clock, Save, FileText, User, Search, CheckCircle2, AlertCircle, X, ChevronRight, History, Calendar, ExternalLink, Plus, Loader2, MessageSquare, Heart, Edit, Send } from 'lucide-react';
+import { PlayCircle, Clock, Save, FileText, User, Search, CheckCircle2, AlertCircle, X, ChevronRight, History, Calendar, ExternalLink, Plus, Loader2, MessageSquare, Heart, Edit, Send, Image as ImageIcon, Mic, Paperclip, Trash2, UploadCloud, Music, FileCheck } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useActiveSession } from '@/src/contexts/ActiveSessionContext';
@@ -43,6 +43,63 @@ export default function SessionLogger() {
   useEffect(() => {
     sessionStorage.setItem('@tzion:session-logger:secretary-note', secretaryNote);
   }, [secretaryNote]);
+
+  // Upload de Anexo (Imagem, Áudio, PDF) para Orientação
+  interface GuidanceAttachment {
+    file: File;
+    base64: string;
+    mimeType: string;
+    fileName: string;
+    size: number;
+    type: 'image' | 'audio' | 'pdf';
+  }
+
+  const [guidanceAttachment, setGuidanceAttachment] = useState<GuidanceAttachment | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [fileFilterType, setFileFilterType] = useState<string>('image/*,audio/*,application/pdf');
+
+  const handleTriggerUpload = (filter: string) => {
+    setFileFilterType(filter);
+    setTimeout(() => {
+      fileInputRef.current?.click();
+    }, 50);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 15 * 1024 * 1024) {
+      alert('Arquivo muito grande! O limite para envio via WhatsApp é 15MB.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    let detectedType: 'image' | 'audio' | 'pdf' = 'pdf';
+    if (file.type.startsWith('image/')) detectedType = 'image';
+    else if (file.type.startsWith('audio/')) detectedType = 'audio';
+    else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) detectedType = 'pdf';
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setGuidanceAttachment({
+        file,
+        base64: reader.result as string,
+        mimeType: file.type || (detectedType === 'pdf' ? 'application/pdf' : detectedType === 'audio' ? 'audio/mpeg' : 'image/jpeg'),
+        fileName: file.name,
+        size: file.size,
+        type: detectedType
+      });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   const [therapistsList, setTherapistsList] = useState<any[]>([]);
   const [selectedTherapistId, setSelectedTherapistId] = useState<string>(() => sessionStorage.getItem('@tzion:session-logger:therapistId') || '');
@@ -236,20 +293,102 @@ export default function SessionLogger() {
 
       setIndicators({ anxiety: 5, vitality: 5, physical_pain: 0, sleep_quality: 5 });
 
-      if (guidance.trim()) {
-         await supabase.from('patient_evolutions').insert({
+      if (guidance.trim() || guidanceAttachment) {
+         let finalNotes = guidance.trim();
+         if (guidanceAttachment) {
+           finalNotes += (finalNotes ? '\n\n' : '') + `📎 [Anexo: ${guidanceAttachment.fileName}]`;
+         }
+
+         const { data: evoInsert } = await supabase.from('patient_evolutions').insert({
             patient_id: selectedPatient.patientId,
             therapist_id: selectedPatient.therapistId,
-            notes: guidance,
+            notes: finalNotes || 'Orientação enviada com anexo de mídia',
             type: 'Orientação'
-         });
+         }).select().maybeSingle();
          
-         const { data: patientData } = await supabase.from('patients').select('phone').eq('id', selectedPatient.patientId).single();
+         const { data: patientData } = await supabase.from('patients').select('phone, name').eq('id', selectedPatient.patientId).single();
          if (patientData?.phone) {
              const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
-             const msg = `*Orientação do seu terapeuta:*\n\n${guidance}`;
-             await sendWhatsAppMessage(selectedPatient.patientId, patientData.phone, msg, 'patient_guidance');
+             const msg = guidance.trim() ? `*Orientação do seu terapeuta:*\n\n${guidance}` : '*Orientação do seu terapeuta*';
+
+             if (guidanceAttachment) {
+               if (guidanceAttachment.type === 'audio') {
+                 // Envia áudio como nota de voz no WhatsApp
+                 await sendWhatsAppMessage(
+                   selectedPatient.patientId,
+                   patientData.phone,
+                   '',
+                   'patient_guidance',
+                   {
+                     base64: guidanceAttachment.base64,
+                     mimeType: guidanceAttachment.mimeType,
+                     fileName: guidanceAttachment.fileName
+                   }
+                 );
+                 if (guidance.trim()) {
+                   await sendWhatsAppMessage(selectedPatient.patientId, patientData.phone, msg, 'patient_guidance');
+                 }
+               } else {
+                 // Imagem ou PDF com legenda
+                 await sendWhatsAppMessage(
+                   selectedPatient.patientId,
+                   patientData.phone,
+                   msg,
+                   'patient_guidance',
+                   {
+                     base64: guidanceAttachment.base64,
+                     mimeType: guidanceAttachment.mimeType,
+                     fileName: guidanceAttachment.fileName
+                   }
+                 );
+               }
+             } else {
+               await sendWhatsAppMessage(selectedPatient.patientId, patientData.phone, msg, 'patient_guidance');
+             }
          }
+
+         // Arquiva em patient_documents
+         if (guidanceAttachment && user?.id) {
+           try {
+             const uniquePath = `orientacoes/${selectedPatient.patientId}/${Date.now()}_${guidanceAttachment.fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+             const base64Content = guidanceAttachment.base64.split(',')[1];
+             if (base64Content) {
+               const binaryStr = window.atob(base64Content);
+               const bytes = new Uint8Array(binaryStr.length);
+               for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+               const { error: upErr } = await supabase.storage.from('patient-documents').upload(uniquePath, bytes.buffer, {
+                 contentType: guidanceAttachment.mimeType,
+                 upsert: true
+               });
+               if (!upErr) {
+                 const { data: pubData } = supabase.storage.from('patient-documents').getPublicUrl(uniquePath);
+                 await supabase.from('patient_documents').insert({
+                   patient_id: selectedPatient.patientId,
+                   title: `Orientação: ${guidanceAttachment.fileName}`,
+                   file_url: pubData?.publicUrl || uniquePath,
+                   file_type: guidanceAttachment.type,
+                   file_path: uniquePath,
+                   created_by: user.id
+                 });
+
+                 // Se a evolução foi criada e as colunas de anexo existirem, vincula a URL
+                 if (evoInsert?.id && pubData?.publicUrl) {
+                   try {
+                     await supabase.from('patient_evolutions').update({
+                       attachment_url: pubData.publicUrl,
+                       attachment_type: guidanceAttachment.type,
+                       attachment_name: guidanceAttachment.fileName
+                     }).eq('id', evoInsert.id);
+                   } catch (_) {}
+                 }
+               }
+             }
+           } catch (attachErr) {
+             console.warn('Erro ao salvar em patient_documents:', attachErr);
+           }
+         }
+
+         setGuidanceAttachment(null);
       }
 
       // 3. Salvar Autocuidado / Home Care se houver itens preenchidos
@@ -619,17 +758,134 @@ export default function SessionLogger() {
               </div>
             ) : workspaceTab === 'guidance' ? (
               <div className="space-y-4">
-                <div className="bg-emerald-50 text-emerald-700 p-4 rounded-2xl text-sm font-medium flex items-center gap-3">
-                   <div className="p-2 bg-emerald-100 rounded-lg"><CheckCircle2 className="w-5 h-5" /></div>
-                   O texto abaixo será enviado automaticamente para o WhatsApp do paciente ao finalizar a sessão.
+                <div className="bg-emerald-50 text-emerald-700 p-4 rounded-2xl text-sm font-medium flex items-center justify-between gap-3">
+                   <div className="flex items-center gap-3">
+                     <div className="p-2 bg-emerald-100 rounded-lg"><CheckCircle2 className="w-5 h-5" /></div>
+                     <span>O texto e os anexos abaixo serão enviados automaticamente para o WhatsApp do paciente ao finalizar a sessão.</span>
+                   </div>
                 </div>
+
                 <textarea 
-                  rows={13}
+                  rows={8}
                   value={guidance}
                   onChange={(e) => setGuidance(e.target.value)}
                   placeholder="Ex: Olá! Como combinado hoje na sessão, lembre-se de fazer o exercício de respiração sempre que sentir ansiedade..."
                   className="w-full p-8 text-slate-700 bg-emerald-50/30 border border-emerald-100 rounded-[2rem] focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all text-xl leading-relaxed placeholder:text-slate-300 shadow-inner"
                 ></textarea>
+
+                {/* Área de Anexos: Imagem, Áudio e PDF */}
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 text-slate-700 font-bold text-sm">
+                      <Paperclip className="w-4 h-4 text-emerald-600" />
+                      <span>Anexar Material p/ Envio no WhatsApp</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleTriggerUpload('image/*')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 rounded-xl text-xs font-bold text-slate-600 shadow-sm transition-all active:scale-95"
+                      >
+                        <ImageIcon className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>Foto / Imagem</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleTriggerUpload('audio/*')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 rounded-xl text-xs font-bold text-slate-600 shadow-sm transition-all active:scale-95"
+                      >
+                        <Mic className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Áudio / Voz</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleTriggerUpload('application/pdf')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 rounded-xl text-xs font-bold text-slate-600 shadow-sm transition-all active:scale-95"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-rose-500" />
+                        <span>PDF / Doc</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Input oculto de arquivo */}
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    accept={fileFilterType} 
+                    onChange={handleFileChange} 
+                    className="hidden" 
+                  />
+
+                  {/* Pré-visualização do Anexo */}
+                  {guidanceAttachment ? (
+                    <div className="p-4 bg-white border-2 border-emerald-200 rounded-2xl shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <div className="flex items-center gap-4 w-full sm:w-auto">
+                        {guidanceAttachment.type === 'image' && (
+                          <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200 flex-shrink-0 bg-slate-100">
+                            <img 
+                              src={guidanceAttachment.base64} 
+                              alt="Preview" 
+                              className="w-full h-full object-cover" 
+                            />
+                          </div>
+                        )}
+
+                        {guidanceAttachment.type === 'audio' && (
+                          <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center flex-shrink-0 text-emerald-600">
+                            <Music className="w-6 h-6 animate-pulse" />
+                          </div>
+                        )}
+
+                        {guidanceAttachment.type === 'pdf' && (
+                          <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center flex-shrink-0 text-rose-600">
+                            <FileText className="w-6 h-6" />
+                          </div>
+                        )}
+
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md",
+                              guidanceAttachment.type === 'image' ? "bg-indigo-100 text-indigo-700" :
+                              guidanceAttachment.type === 'audio' ? "bg-emerald-100 text-emerald-700" :
+                              "bg-rose-100 text-rose-700"
+                            )}>
+                              {guidanceAttachment.type === 'image' ? 'Imagem' : guidanceAttachment.type === 'audio' ? 'Áudio' : 'Documento PDF'}
+                            </span>
+                            <span className="text-xs text-slate-400 font-semibold">{formatFileSize(guidanceAttachment.size)}</span>
+                          </div>
+                          <p className="text-sm font-bold text-slate-800 truncate max-w-xs">{guidanceAttachment.fileName}</p>
+
+                          {guidanceAttachment.type === 'audio' && (
+                            <audio controls src={guidanceAttachment.base64} className="h-8 mt-2 w-full max-w-xs" />
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setGuidanceAttachment(null)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition-all self-end sm:self-center"
+                        title="Remover anexo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Remover</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div 
+                      onClick={() => handleTriggerUpload('image/*,audio/*,application/pdf')}
+                      className="border-2 border-dashed border-slate-200 hover:border-emerald-400 rounded-2xl p-6 text-center cursor-pointer bg-white/60 hover:bg-emerald-50/20 transition-all group"
+                    >
+                      <UploadCloud className="w-8 h-8 text-slate-300 group-hover:text-emerald-500 mx-auto mb-2 transition-colors" />
+                      <p className="text-xs font-bold text-slate-600 group-hover:text-emerald-700">Clique aqui para anexar uma imagem, áudio gravado ou documento PDF</p>
+                      <p className="text-[10px] text-slate-400 mt-1">Formatos suportados: PNG, JPG, MP3, WAV, OGG, PDF (máx. 15MB)</p>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="space-y-6">

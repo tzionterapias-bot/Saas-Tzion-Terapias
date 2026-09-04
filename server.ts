@@ -175,6 +175,167 @@ async function startServer() {
     res.json({ status: "ok", system: "Tzion Terapias" });
   });
 
+  // --- CONSULTA DE AGENDAMENTOS POR CPF (USADO PELA IA / N8N / CRM) ---
+  const handleConsultarAgendamentosCpf = async (req: any, res: any) => {
+    try {
+      const rawCpf = req.body?.cpf_digitos || req.query?.cpf_digitos || req.body?.cpf || req.query?.cpf || '';
+      const rawTelefone = req.body?.telefone || req.query?.telefone || req.body?.phone || req.query?.phone || '';
+      
+      const cpfDigitos = String(rawCpf).replace(/\D/g, '');
+      const telefone = String(rawTelefone).replace(/\D/g, '').slice(-8);
+
+      if (!cpfDigitos || cpfDigitos.length < 3) {
+        res.status(400).json({
+          sucesso: false,
+          encontrado: false,
+          mensagem: "Por favor, informe pelo menos os 3 últimos dígitos do CPF."
+        });
+        return;
+      }
+
+      // 1. Tenta chamar a RPC consultar_agendamentos_cpf se disponível
+      try {
+        const { data: rpcData, error: rpcError } = await supabase.rpc('consultar_agendamentos_cpf', {
+          p_cpf_digitos: cpfDigitos,
+          p_telefone: telefone || null
+        });
+
+        if (!rpcError && rpcData) {
+          res.json(rpcData);
+          return;
+        }
+      } catch (rpcErr) {
+        // Fallback manual caso a RPC não tenha sido criada ainda no banco
+        console.warn("[CONSULTA CPF] RPC falhou ou não existe, executando fallback direto via Supabase Client:", rpcErr);
+      }
+
+      // 2. Fallback direto via Supabase Client
+      const { data: patients, error: patientErr } = await supabase
+        .from('patients')
+        .select('id, name, cpf, phone')
+        .not('cpf', 'is', null);
+
+      if (patientErr || !patients || patients.length === 0) {
+        res.status(500).json({
+          sucesso: false,
+          encontrado: false,
+          mensagem: "Erro ao consultar pacientes no banco de dados."
+        });
+        return;
+      }
+
+      let matchedPatients = patients.filter(p => {
+        const cleanCpf = (p.cpf || '').replace(/\D/g, '');
+        if (cleanCpf.length < 3) return false;
+        if (cleanCpf.endsWith(cpfDigitos)) return true;
+        if (cpfDigitos.length === 3 && cleanCpf.length >= 9 && cleanCpf.slice(-5, -2) === cpfDigitos) return true;
+        return cleanCpf.includes(cpfDigitos);
+      });
+
+      // Se informou telefone e houver múltiplos, prioriza quem bate o telefone
+      if (telefone && matchedPatients.length > 1) {
+        const phoneMatch = matchedPatients.filter(p => (p.phone || '').replace(/\D/g, '').includes(telefone));
+        if (phoneMatch.length > 0) {
+          matchedPatients = phoneMatch;
+        }
+      }
+
+      if (matchedPatients.length === 0) {
+        res.json({
+          sucesso: false,
+          encontrado: false,
+          mensagem: `Não localizei nenhum paciente com os dígitos de CPF informados (${cpfDigitos}). Por favor, confirme se os dígitos estão corretos.`
+        });
+        return;
+      }
+
+      const patient = matchedPatients[0];
+      const nowMinus4Hours = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+
+      const { data: appointments, error: appErr } = await supabase
+        .from('appointments')
+        .select('id, start_time, end_time, status, type, meet_link, therapists(name), services(name)')
+        .eq('patient_id', patient.id)
+        .in('status', ['scheduled', 'confirmed'])
+        .gte('start_time', nowMinus4Hours)
+        .order('start_time', { ascending: true })
+        .limit(5);
+
+      if (appErr) {
+        res.status(500).json({
+          sucesso: false,
+          encontrado: true,
+          paciente_nome: patient.name,
+          mensagem: "Erro ao buscar sessões do paciente."
+        });
+        return;
+      }
+
+      const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+
+      const agendamentosFormatados = (appointments || []).map(a => {
+        const dateObj = new Date(a.start_time);
+        // Formata para fuso horário de Brasília (UTC-3)
+        const dateStr = dateObj.toLocaleDateString('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        });
+        const timeStr = dateObj.toLocaleTimeString('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        const diaSemana = diasSemana[new Date(dateObj.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getDay()];
+
+        const isOnline = (a.type || '').toLowerCase().includes('online');
+        const modalidade = isOnline ? 'Online' : 'Presencial';
+        const local = isOnline ? 'Online (Videochamada privativa)' : 'Presencial (Clínica Tzion em Araguaína - TO)';
+
+        return {
+          id: a.id,
+          data_hora_inicio: a.start_time,
+          data_formatada: `${dateStr} às ${timeStr}`,
+          dia_semana: diaSemana,
+          status: a.status === 'scheduled' ? 'Agendado' : a.status === 'confirmed' ? 'Confirmado' : a.status,
+          modalidade,
+          local,
+          terapeuta: (Array.isArray(a.therapists) ? a.therapists[0]?.name : (a.therapists as any)?.name) || 'Equipe Tzion Terapias',
+          servico: (Array.isArray(a.services) ? a.services[0]?.name : (a.services as any)?.name) || 'Sessão de Terapia',
+          meet_link: a.meet_link || null
+        };
+      });
+
+      if (agendamentosFormatados.length === 0) {
+        res.json({
+          sucesso: true,
+          encontrado: true,
+          paciente_nome: patient.name,
+          total_agendamentos: 0,
+          agendamentos: [],
+          mensagem: `Cadastro de ${patient.name} localizado com sucesso, porém no momento não constam sessões futuras agendadas no sistema.`
+        });
+        return;
+      }
+
+      res.json({
+        sucesso: true,
+        encontrado: true,
+        paciente_nome: patient.name,
+        total_agendamentos: agendamentosFormatados.length,
+        agendamentos: agendamentosFormatados,
+        mensagem: `Agendamento(s) localizado(s) com sucesso para ${patient.name}.`
+      });
+    } catch (err: any) {
+      console.error("[CONSULTA CPF] Erro inesperado:", err);
+      res.status(500).json({ sucesso: false, error: err.message });
+    }
+  };
+
+  app.post("/api/agendamentos/consultar-cpf", handleConsultarAgendamentosCpf);
+  app.get("/api/agendamentos/consultar-cpf", handleConsultarAgendamentosCpf);
+
   // --- SECURE N8N WEBHOOK PROXY ---
   app.post("/api/n8n-proxy", requireAuth, async (req, res) => {
     try {
