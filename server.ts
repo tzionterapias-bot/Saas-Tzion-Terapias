@@ -249,26 +249,34 @@ async function startServer() {
         return;
       }
 
-      const patient = matchedPatients[0];
+      let patient = matchedPatients[0];
       const nowMinus4Hours = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
 
-      const { data: appointments, error: appErr } = await supabase
-        .from('appointments')
-        .select('id, start_time, end_time, status, type, meet_link, therapists(name), services(name)')
-        .eq('patient_id', patient.id)
-        .in('status', ['scheduled', 'confirmed'])
-        .gte('start_time', nowMinus4Hours)
-        .order('start_time', { ascending: true })
-        .limit(5);
+      // Se houver múltiplos pacientes com o mesmo final de CPF, prioriza quem realmente tem agendamentos futuros
+      let appointments: any[] = [];
+      let foundActive = false;
 
-      if (appErr) {
-        res.status(500).json({
-          sucesso: false,
-          encontrado: true,
-          paciente_nome: patient.name,
-          mensagem: "Erro ao buscar sessões do paciente."
-        });
-        return;
+      for (const p of matchedPatients) {
+        const { data: apps, error: appErr } = await supabase
+          .from('appointments')
+          .select('id, start_time, end_time, status, type, meet_link, therapists(name), services(name)')
+          .eq('patient_id', p.id)
+          .in('status', ['scheduled', 'confirmed'])
+          .gte('start_time', nowMinus4Hours)
+          .order('start_time', { ascending: true })
+          .limit(5);
+
+        if (!appErr && apps && apps.length > 0) {
+          patient = p;
+          appointments = apps;
+          foundActive = true;
+          break;
+        }
+      }
+
+      if (!foundActive) {
+        patient = matchedPatients[0];
+        appointments = [];
       }
 
       const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
