@@ -20,7 +20,7 @@ import { playCheckinChime } from '@/src/lib/soundAlerts';
 export default function TherapistPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { startActiveSession } = useActiveSession();
+  const { activeSession, startActiveSession } = useActiveSession();
   const [activeTab, setActiveTab] = useState('agenda');
   const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1439,17 +1439,36 @@ export default function TherapistPage() {
                   <p className="text-xs text-slate-500 font-medium">Portal do Terapeuta — Registro em tempo real</p>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  setShowSessionLoggerModal(false);
-                  fetchData();
-                }}
-                className="px-4 py-2 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 rounded-2xl text-slate-600 font-bold transition-all border border-slate-200 flex items-center gap-2"
-                title="Fechar Painel"
-              >
-                <X className="w-5 h-5" />
-                <span className="text-xs">Fechar Painel</span>
-              </button>
+              <div className="flex items-center gap-3">
+                {activeSession && (
+                  <button
+                    onClick={async () => {
+                      if (activeSession.patientId) {
+                        const { data } = await supabase.from('patients').select('*').eq('id', activeSession.patientId).single();
+                        setProfilePatient(data || { id: activeSession.patientId, name: activeSession.patient });
+                        setShowProfileModal(true);
+                      }
+                    }}
+                    className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-2xl text-xs font-bold transition-all border border-indigo-200 flex items-center gap-2 shadow-sm cursor-pointer"
+                    title="Consultar Prontuário 360º deste Paciente"
+                  >
+                    <FileIcon className="w-4 h-4 text-indigo-600" />
+                    <span className="hidden sm:inline">Ver Prontuário 360º</span>
+                    <span className="sm:hidden">Prontuário</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setShowSessionLoggerModal(false);
+                    fetchData();
+                  }}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl text-xs font-bold transition-all border border-slate-200 flex items-center gap-2 cursor-pointer"
+                  title="Minimizar (a sessão continuará ativa)"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Minimizar</span>
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-2 sm:p-6">
               <SessionLogger />
@@ -1459,6 +1478,25 @@ export default function TherapistPage() {
       )}
       {showProfileModal && profilePatient && (
           <PatientProfileModal patient={profilePatient} onClose={() => setShowProfileModal(false)} />
+      )}
+      {/* Floating Active Session Pill when minimized */}
+      {activeSession && !showSessionLoggerModal && (
+        <div className="fixed bottom-6 right-6 z-40 bg-indigo-600 text-white px-5 py-3.5 rounded-3xl shadow-2xl flex items-center gap-4 border border-indigo-400 animate-in slide-in-from-bottom-5">
+          <div className="relative flex items-center justify-center">
+            <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping absolute" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 relative" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest">Sessão em Andamento</p>
+            <p className="text-xs font-black truncate max-w-[160px] sm:max-w-[200px]">{activeSession.patient}</p>
+          </div>
+          <button
+            onClick={() => setShowSessionLoggerModal(true)}
+            className="px-3.5 py-2 bg-white text-indigo-700 hover:bg-indigo-50 rounded-2xl text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer"
+          >
+            Retomar
+          </button>
+        </div>
       )}
       {/* Welcome Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6 bg-white p-6 sm:p-10 rounded-[2rem] sm:rounded-[3rem] border border-slate-100 shadow-sm">

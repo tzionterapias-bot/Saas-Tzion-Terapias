@@ -5,7 +5,7 @@ import {
   FileText, CheckCircle2, AlertCircle, Loader2, Link as LinkIcon, X, Save,
   Users, Briefcase, PieChart, Wallet, Clock, UserCheck, Percent,
   MessageCircle, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Ban, Receipt, BarChart2, Settings,
-  Award, Check, Pencil, Trash2, Package, Search, RefreshCw
+  Award, Check, Pencil, Trash2, Package, Search, RefreshCw, RotateCcw
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -255,6 +255,27 @@ export default function FinancialPage() {
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showPayoutModal, setShowPayoutModal] = useState<CommissionPayout | null>(null);
+  const [itemPayoutModal, setItemPayoutModal] = useState<{
+    therapist: Therapist;
+    commissionItem: any;
+    items: Array<{
+      id: string;
+      patientName: string;
+      patientPhone: string;
+      description: string;
+      paymentMethod: string;
+      createdAt: string;
+      baseAmount: number;
+      isClinic: boolean;
+      rate: number;
+      clinicShare: number;
+      therapistNet: number;
+    }>;
+  } | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<Record<string, string[]>>({});
+  const [itemPayoutMethod, setItemPayoutMethod] = useState('pix');
+  const [itemPayoutNote, setItemPayoutNote] = useState('');
+  const [itemNotifyWhatsApp, setItemNotifyWhatsApp] = useState(true);
   const [showTherapistConfigModal, setShowTherapistConfigModal] = useState<Therapist | null>(null);
   const [showBonusModal, setShowBonusModal] = useState<StaffBonus | null>(null);
   const [bonusPayMethod, setBonusPayMethod] = useState('pix');
@@ -1240,6 +1261,293 @@ export default function FinancialPage() {
     setPayoutMethod('pix');
     fetchAll();
     setSaving(false);
+  };
+
+  // ─── Repasse Individual e em Lote (Helpers e Handlers) ─────────────────────────
+
+  const parsePayoutNotes = (rawNotes: string | null) => {
+    if (!rawNotes) return { paid_payment_ids: [] as string[], user_notes: '', history: [] as any[] };
+    try {
+      const parsed = JSON.parse(rawNotes);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          paid_payment_ids: Array.isArray(parsed.paid_payment_ids) ? (parsed.paid_payment_ids as string[]) : [],
+          user_notes: (parsed.user_notes || parsed.note || '') as string,
+          history: Array.isArray(parsed.history) ? parsed.history : []
+        };
+      }
+    } catch {
+      // legacy raw string note
+    }
+    return { paid_payment_ids: [] as string[], user_notes: rawNotes, history: [] as any[] };
+  };
+
+  const isPaymentItemPaid = (paymentId: string, c: typeof commissionData[0]): boolean => {
+    if (!c || !c.existingPayout) return false;
+    const notesData = parsePayoutNotes(c.existingPayout.notes);
+    if (notesData.paid_payment_ids && notesData.paid_payment_ids.length > 0) {
+      return notesData.paid_payment_ids.includes(paymentId);
+    }
+    return c.existingPayout.status === 'paid';
+  };
+
+  const handleOpenSingleItemPayout = (
+    item: any,
+    commissionItem: typeof commissionData[0]
+  ) => {
+    if (!commissionItem) return;
+    setItemPayoutModal({
+      therapist: commissionItem.therapist,
+      commissionItem,
+      items: [item]
+    });
+    setItemPayoutMethod('pix');
+    setItemPayoutNote('');
+    setItemNotifyWhatsApp(true);
+  };
+
+  const handleOpenBatchItemPayout = (commissionItem: typeof commissionData[0]) => {
+    if (!commissionItem) return;
+    const selectedIds = selectedItemIds[commissionItem.therapist.id] || [];
+    const itemsToPay = commissionItem.paymentsList.filter(p => selectedIds.includes(p.id));
+    if (itemsToPay.length === 0) {
+      showToast('Nenhum repasse selecionado.', 'error');
+      return;
+    }
+    setItemPayoutModal({
+      therapist: commissionItem.therapist,
+      commissionItem,
+      items: itemsToPay
+    });
+    setItemPayoutMethod('pix');
+    setItemPayoutNote('');
+    setItemNotifyWhatsApp(true);
+  };
+
+  const handleOpenAllRemainingPayout = (commissionItem: typeof commissionData[0]) => {
+    if (!commissionItem) return;
+    const pending = commissionItem.paymentsList.filter(p => !isPaymentItemPaid(p.id, commissionItem));
+    if (pending.length === 0) {
+      showToast('Todos os repasses deste mês já foram baixados.', 'info');
+      return;
+    }
+    setItemPayoutModal({
+      therapist: commissionItem.therapist,
+      commissionItem,
+      items: pending
+    });
+    setItemPayoutMethod('pix');
+    setItemPayoutNote('');
+    setItemNotifyWhatsApp(true);
+  };
+
+  const toggleSelectPaymentItem = (therapistId: string, paymentId: string) => {
+    setSelectedItemIds(prev => {
+      const current = prev[therapistId] || [];
+      const updated = current.includes(paymentId)
+        ? current.filter(id => id !== paymentId)
+        : [...current, paymentId];
+      return { ...prev, [therapistId]: updated };
+    });
+  };
+
+  const toggleSelectAllPendingForTherapist = (commissionItem: typeof commissionData[0]) => {
+    if (!commissionItem) return;
+    const pending = commissionItem.paymentsList.filter(p => !isPaymentItemPaid(p.id, commissionItem));
+    const current = selectedItemIds[commissionItem.therapist.id] || [];
+    if (current.length === pending.length && pending.length > 0) {
+      setSelectedItemIds(prev => ({ ...prev, [commissionItem.therapist.id]: [] }));
+    } else {
+      setSelectedItemIds(prev => ({ ...prev, [commissionItem.therapist.id]: pending.map(p => p.id) }));
+    }
+  };
+
+  const handleConfirmItemPayout = async () => {
+    if (!itemPayoutModal) return;
+    setSaving(true);
+    try {
+      const { therapist, commissionItem: c, items } = itemPayoutModal;
+      const notesData = parsePayoutNotes(c.existingPayout?.notes || null);
+
+      const newPaidIds = new Set(notesData.paid_payment_ids);
+      items.forEach(it => newPaidIds.add(it.id));
+      const updatedPaidIds = Array.from(newPaidIds);
+
+      const totalNetToPay = items.reduce((acc, it) => acc + it.therapistNet, 0);
+      const mesRepasse = MONTH_NAMES[commissionMonth];
+
+      let expenseDesc = '';
+      if (items.length === 1) {
+        expenseDesc = `Repasse ${mesRepasse}/${filterYear} — ${items[0].patientName} (${items[0].description}) — ${therapist.name}`;
+      } else {
+        const patientSummary = items.map(it => it.patientName).slice(0, 3).join(', ');
+        expenseDesc = `Repasse ${mesRepasse}/${filterYear} (${items.length} atendimentos: ${patientSummary}${items.length > 3 ? '...' : ''}) — ${therapist.name}`;
+      }
+
+      const { data: expData, error: expErr } = await supabase.from('payments').insert([{
+        amount: totalNetToPay,
+        type: 'expense',
+        status: 'paid',
+        description: expenseDesc,
+        category: 'Repasse Terapeuta',
+        payment_method: itemPayoutMethod,
+        therapist_id: therapist.id,
+        created_at: new Date().toISOString(),
+      }]).select('id').single();
+
+      if (expErr) {
+        console.warn('Aviso: Erro ao registrar despesa de repasse:', expErr);
+      }
+
+      const historyEntry = {
+        payment_ids: items.map(it => it.id),
+        patient_name: items.length === 1 ? items[0].patientName : `${items.length} pacientes`,
+        description: items.length === 1 ? items[0].description : `${items.length} atendimentos`,
+        therapist_net: totalNetToPay,
+        paid_at: new Date().toISOString(),
+        method: itemPayoutMethod,
+        note: itemPayoutNote || undefined,
+        expense_payment_id: expData?.id || undefined
+      };
+
+      const isAllPaid = updatedPaidIds.length >= c.paymentsList.length;
+
+      const newNotesJson = JSON.stringify({
+        paid_payment_ids: updatedPaidIds,
+        user_notes: itemPayoutNote || notesData.user_notes || '',
+        history: [...(notesData.history || []), historyEntry]
+      });
+
+      const payoutPayload: any = {
+        therapist_id: therapist.id,
+        month: commissionMonth + 1,
+        year: filterYear,
+        gross_total: c.grossTotal,
+        clinic_share: c.totalClinicShare,
+        therapist_net: c.therapistNet,
+        status: isAllPaid ? 'paid' : 'pending',
+        payment_method: itemPayoutMethod,
+        notes: newNotesJson,
+      };
+      if (isAllPaid) {
+        payoutPayload.paid_at = new Date().toISOString();
+      }
+      if (c.existingPayout?.id) {
+        payoutPayload.id = c.existingPayout.id;
+      }
+
+      const { error: poErr } = await supabase.from('commission_payouts').upsert(payoutPayload, { onConflict: 'id' });
+      if (poErr) {
+        console.error('Erro ao atualizar commission_payouts:', poErr);
+        showToast('Erro ao registrar baixa: ' + poErr.message, 'error');
+        setSaving(false);
+        return;
+      }
+
+      if (itemNotifyWhatsApp && therapist.phone) {
+        try {
+          let msg = '';
+          if (items.length === 1) {
+            const it = items[0];
+            msg =
+              `✅ *Repasse Confirmado — Tzion Terapias*\n\n` +
+              `Olá, *${therapist.name}*!\n\n` +
+              `Foi processado o repasse referente ao paciente *${it.patientName}*:\n\n` +
+              `📝 Atendimento: ${it.description}\n` +
+              `💰 Valor do Atendimento: R$ ${fmt(it.baseAmount)}\n` +
+              `🏥 Taxa Clínica (${it.rate}%): R$ ${fmt(it.clinicShare)}\n` +
+              `✅ *Valor Líquido Pago: R$ ${fmt(it.therapistNet)}*\n\n` +
+              `💳 Método: ${itemPayoutMethod.toUpperCase()}\n` +
+              (therapist.pix_key ? `🔑 Chave PIX: ${therapist.pix_key}\n` : '') +
+              (itemPayoutNote ? `📝 Obs: ${itemPayoutNote}\n` : '') +
+              `\nQualquer dúvida, estamos à disposição! 💙`;
+          } else {
+            msg =
+              `✅ *Repasse Confirmado — Tzion Terapias*\n\n` +
+              `Olá, *${therapist.name}*!\n\n` +
+              `Foi processado o repasse de *${items.length} atendimentos* (${mesRepasse}/${filterYear}):\n\n` +
+              items.map(it => `• ${it.patientName}: R$ ${fmt(it.therapistNet)}`).join('\n') +
+              `\n\n✅ *Total Líquido Pago: R$ ${fmt(totalNetToPay)}*\n` +
+              `💳 Método: ${itemPayoutMethod.toUpperCase()}\n` +
+              (therapist.pix_key ? `🔑 Chave PIX: ${therapist.pix_key}\n` : '') +
+              (itemPayoutNote ? `📝 Obs: ${itemPayoutNote}\n` : '') +
+              `\nQualquer dúvida, estamos à disposição! 💙`;
+          }
+          await sendWhatsAppMessage(null, therapist.phone, msg, 'commission_paid');
+        } catch (wErr) {
+          console.error('Erro ao enviar WhatsApp:', wErr);
+        }
+      }
+
+      setSelectedItemIds(prev => ({ ...prev, [therapist.id]: [] }));
+      showToast(`Baixa de repasse realizada com sucesso!`);
+      setItemPayoutModal(null);
+      setItemPayoutNote('');
+      fetchAll();
+    } catch (err: any) {
+      showToast('Erro inesperado: ' + (err?.message || err), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUndoItemPayout = async (
+    item: any,
+    c: typeof commissionData[0]
+  ) => {
+    if (!c) return;
+    if (!window.confirm(`Deseja desfazer a baixa do repasse de ${item.patientName} (R$ ${fmt(item.therapistNet)})?`)) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const notesData = parsePayoutNotes(c.existingPayout?.notes || null);
+      
+      let basePaidIds = notesData.paid_payment_ids;
+      if (basePaidIds.length === 0 && c.existingPayout?.status === 'paid') {
+        basePaidIds = c.paymentsList.map(p => p.id);
+      }
+      const updatedPaidIds = basePaidIds.filter(id => id !== item.id);
+
+      const historyItem = notesData.history?.find((h: any) => 
+        h.payment_id === item.id || (h.payment_ids && h.payment_ids.includes(item.id))
+      );
+      if (historyItem?.expense_payment_id) {
+        await supabase.from('payments').delete().eq('id', historyItem.expense_payment_id);
+      } else {
+        await supabase.from('payments')
+          .delete()
+          .eq('type', 'expense')
+          .eq('category', 'Repasse Terapeuta')
+          .like('description', `%${item.patientName}%`)
+          .eq('therapist_id', c.therapist.id);
+      }
+
+      const updatedHistory = (notesData.history || []).filter((h: any) => 
+        h.payment_id !== item.id && !(h.payment_ids && h.payment_ids.includes(item.id))
+      );
+
+      const newNotesJson = JSON.stringify({
+        paid_payment_ids: updatedPaidIds,
+        user_notes: notesData.user_notes || '',
+        history: updatedHistory
+      });
+
+      if (c.existingPayout) {
+        await supabase.from('commission_payouts').update({
+          notes: newNotesJson,
+          status: 'pending',
+          paid_at: null
+        }).eq('id', c.existingPayout.id);
+      }
+
+      showToast(`Baixa do repasse de ${item.patientName} desfeita.`);
+      fetchAll();
+    } catch (err: any) {
+      showToast('Erro ao desfazer baixa: ' + (err?.message || err), 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Registrar repasse como pendente (para terapeutas sem payout ainda)
@@ -2330,12 +2638,20 @@ export default function FinancialPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {commissionData.map((c, i) => {
-                    const isPaid = c.existingPayout?.status === 'paid';
-                    const isPending = c.existingPayout?.status === 'pending';
                     const isExpanded = expandedTherapistIds.includes(c.therapist.id);
+                    const paidItems = c.paymentsList.filter(p => isPaymentItemPaid(p.id, c));
+                    const pendingItems = c.paymentsList.filter(p => !isPaymentItemPaid(p.id, c));
+                    const paidCount = paidItems.length;
+                    const pendingCount = pendingItems.length;
+                    const totalCount = c.paymentsList.length;
+                    const paidNet = paidItems.reduce((acc, p) => acc + p.therapistNet, 0);
+                    const pendingNet = pendingItems.reduce((acc, p) => acc + p.therapistNet, 0);
+                    const isAllPaid = paidCount === totalCount && totalCount > 0;
+                    const isPartiallyPaid = paidCount > 0 && pendingCount > 0;
+
                     return (
                       <React.Fragment key={c.therapist.id || i}>
-                        <tr className={cn("hover:bg-slate-50/50 transition-colors", isPaid && "opacity-60", isExpanded && "bg-indigo-50/20")}>
+                        <tr className={cn("hover:bg-slate-50/50 transition-colors", isAllPaid && "opacity-60", isExpanded && "bg-indigo-50/20")}>
                           <td className="px-8 py-5">
                             <div className="flex items-center gap-3">
                               <button
@@ -2355,7 +2671,7 @@ export default function FinancialPage() {
                                   </p>
                                   <button
                                     onClick={() => toggleTherapistExpand(c.therapist.id)}
-                                    className="text-slate-400 hover:text-indigo-600 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                                    className="text-slate-400 hover:text-indigo-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
                                     title={isExpanded ? "Recolher extrato" : "Ver extrato detalhado"}
                                   >
                                     {isExpanded ? <ChevronUp className="w-4 h-4 text-indigo-600" /> : <ChevronDown className="w-4 h-4" />}
@@ -2375,7 +2691,7 @@ export default function FinancialPage() {
                               <button
                                 onClick={() => toggleTherapistExpand(c.therapist.id)}
                                 className={cn(
-                                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition-all border",
+                                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition-all border cursor-pointer",
                                   isExpanded
                                     ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
                                     : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200"
@@ -2394,7 +2710,14 @@ export default function FinancialPage() {
                             {c.clinicShareFromClinic > 0 && <p className="text-[10px] text-slate-400">{c.rateClinic}% de R$ {fmt(c.grossClinic)}</p>}
                             {c.clinicShareFromSelf > 0 && <p className="text-[10px] text-slate-400">{c.rateSelf}% de R$ {fmt(c.grossSelf)}</p>}
                           </td>
-                          <td className="px-8 py-5 font-black text-emerald-600 text-lg">R$ {fmt(c.therapistNet)}</td>
+                          <td className="px-8 py-5">
+                            <p className="font-black text-emerald-600 text-lg">R$ {fmt(c.therapistNet)}</p>
+                            {isPartiallyPaid && (
+                              <p className="text-[10px] font-bold text-amber-600 mt-0.5">
+                                R$ {fmt(paidNet)} pago · R$ {fmt(pendingNet)} pendente
+                              </p>
+                            )}
+                          </td>
                           <td className="px-8 py-5 text-right">
                             <div className="flex items-center justify-end gap-2">
                               {/* Config button */}
@@ -2408,30 +2731,33 @@ export default function FinancialPage() {
                                     phone: c.therapist.phone || '',
                                   });
                                 }}
-                                className="p-2 bg-slate-50 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                className="p-2 bg-slate-50 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
                                 title="Configurar taxas"
                               >
                                 <Settings className="w-4 h-4" />
                               </button>
 
-                              {isPaid ? (
+                              {isAllPaid ? (
                                 <span className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black border border-emerald-200 flex items-center gap-1">
-                                  <CheckCircle2 className="w-3.5 h-3.5" /> Pago
+                                  <CheckCircle2 className="w-3.5 h-3.5" /> Pago (Todos)
                                 </span>
-                              ) : isPending ? (
+                              ) : isPartiallyPaid ? (
                                 <button
-                                  onClick={() => setShowPayoutModal(c.existingPayout!)}
-                                  className="px-4 py-2 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-amber-200"
+                                  onClick={() => handleOpenAllRemainingPayout(c)}
+                                  disabled={saving}
+                                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                  title="Dar baixa em todos os repasses restantes deste mês"
                                 >
-                                  Dar Baixa
+                                  <Check className="w-3.5 h-3.5" /> Baixar Restante ({pendingCount})
                                 </button>
                               ) : (
                                 <button
-                                  onClick={() => handleCreatePendingPayout(c)}
+                                  onClick={() => handleOpenAllRemainingPayout(c)}
                                   disabled={saving}
-                                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-indigo-100 disabled:opacity-50"
+                                  className="px-4 py-2 bg-amber-50 hover:bg-amber-500 text-amber-600 hover:text-white rounded-xl text-xs font-bold transition-all border border-amber-200 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                  title="Dar baixa no total de repasses deste mês"
                                 >
-                                  Gerar Repasse
+                                  Dar Baixa Total
                                 </button>
                               )}
                             </div>
@@ -2443,8 +2769,8 @@ export default function FinancialPage() {
                           <tr className="bg-slate-50/70 border-y border-slate-200/80">
                             <td colSpan={6} className="p-0">
                               <div className="p-6 bg-gradient-to-b from-slate-50 to-indigo-50/20 space-y-4">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse" />
                                     <h5 className="text-xs font-black uppercase tracking-wider text-slate-800">
                                       Detalhamento Item a Item — {c.therapist.name}
@@ -2452,16 +2778,57 @@ export default function FinancialPage() {
                                     <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">
                                       {c.paymentsList.length} pagamento(s)
                                     </span>
+                                    {paidCount > 0 && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full flex items-center gap-1">
+                                        <CheckCircle2 className="w-3 h-3" /> {paidCount} baixado(s)
+                                      </span>
+                                    )}
+                                    {pendingCount > 0 && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">
+                                        {pendingCount} pendente(s)
+                                      </span>
+                                    )}
                                   </div>
-                                  <p className="text-[11px] text-slate-500 font-medium">
-                                    Exibindo cada recebimento, percentual aplicado e taxa da clínica correspondente
-                                  </p>
+                                  
+                                  <div className="flex items-center gap-2">
+                                    {(selectedItemIds[c.therapist.id]?.length || 0) > 0 && (
+                                      <button
+                                        onClick={() => handleOpenBatchItemPayout(c)}
+                                        disabled={saving}
+                                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <Check className="w-3.5 h-3.5" /> Baixar Selecionados ({selectedItemIds[c.therapist.id].length})
+                                      </button>
+                                    )}
+                                    {pendingCount > 0 && (
+                                      <button
+                                        onClick={() => handleOpenAllRemainingPayout(c)}
+                                        disabled={saving}
+                                        className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <Check className="w-3.5 h-3.5" /> Baixar Todos Pendentes ({pendingCount})
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
 
                                 <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                                   <table className="w-full text-left text-xs">
                                     <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-wider">
                                       <tr>
+                                        <th className="px-3 py-3 w-8 text-center">
+                                          <input
+                                            type="checkbox"
+                                            title="Selecionar todos os pendentes"
+                                            checked={
+                                              pendingCount > 0 &&
+                                              (selectedItemIds[c.therapist.id]?.length || 0) === pendingCount
+                                            }
+                                            onChange={() => toggleSelectAllPendingForTherapist(c)}
+                                            disabled={pendingCount === 0}
+                                            className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                          />
+                                        </th>
                                         <th className="px-5 py-3">Data</th>
                                         <th className="px-5 py-3">Paciente</th>
                                         <th className="px-5 py-3">Descrição / Forma</th>
@@ -2469,54 +2836,102 @@ export default function FinancialPage() {
                                         <th className="px-5 py-3 text-right">Valor Bruto</th>
                                         <th className="px-5 py-3 text-right text-indigo-600">Taxa Clínica</th>
                                         <th className="px-5 py-3 text-right text-emerald-600">Líquido Terapeuta</th>
+                                        <th className="px-5 py-3 text-center">Status / Ação</th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 font-medium">
-                                      {c.paymentsList.map((p) => (
-                                        <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                                          <td className="px-5 py-3 text-slate-600 whitespace-nowrap">
-                                            {p.createdAt ? new Date(p.createdAt).toLocaleDateString('pt-BR') : '—'}
-                                          </td>
-                                          <td className="px-5 py-3 font-bold text-slate-900">
-                                            {p.patientName}
-                                          </td>
-                                          <td className="px-5 py-3 text-slate-600">
-                                            <p className="font-semibold text-slate-800">{p.description}</p>
-                                            {p.paymentMethod && (
-                                              <span className="inline-block mt-0.5 text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase">
-                                                {p.paymentMethod}
-                                              </span>
-                                            )}
-                                          </td>
-                                          <td className="px-5 py-3">
-                                            {p.isClinic ? (
-                                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg text-[11px] font-bold">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                                                Clínica ({p.rate}%)
-                                              </span>
-                                            ) : (
-                                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg text-[11px] font-bold">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                                Terapeuta ({p.rate}%)
-                                              </span>
-                                            )}
-                                          </td>
-                                          <td className="px-5 py-3 text-right font-bold text-slate-700">
-                                            R$ {fmt(p.baseAmount)}
-                                          </td>
-                                          <td className="px-5 py-3 text-right font-bold text-indigo-600">
-                                            R$ {fmt(p.clinicShare)}
-                                            <span className="block text-[9px] text-slate-400 font-normal">{p.rate}% do valor</span>
-                                          </td>
-                                          <td className="px-5 py-3 text-right font-black text-emerald-600">
-                                            R$ {fmt(p.therapistNet)}
-                                          </td>
-                                        </tr>
-                                      ))}
+                                      {c.paymentsList.map((p) => {
+                                        const itemPaid = isPaymentItemPaid(p.id, c);
+                                        const isSelected = (selectedItemIds[c.therapist.id] || []).includes(p.id);
+
+                                        return (
+                                          <tr key={p.id} className={cn(
+                                            "transition-colors",
+                                            itemPaid ? "bg-emerald-50/20 hover:bg-emerald-50/40" : "hover:bg-slate-50/70",
+                                            isSelected && "bg-indigo-50/60"
+                                          )}>
+                                            <td className="px-3 py-3 text-center">
+                                              {!itemPaid ? (
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isSelected}
+                                                  onChange={() => toggleSelectPaymentItem(c.therapist.id, p.id)}
+                                                  className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                                />
+                                              ) : (
+                                                <span className="text-emerald-500 font-bold text-xs" title="Repasse baixado">✓</span>
+                                              )}
+                                            </td>
+                                            <td className="px-5 py-3 text-slate-600 whitespace-nowrap">
+                                              {p.createdAt ? new Date(p.createdAt).toLocaleDateString('pt-BR') : '—'}
+                                            </td>
+                                            <td className="px-5 py-3 font-bold text-slate-900">
+                                              {p.patientName}
+                                            </td>
+                                            <td className="px-5 py-3 text-slate-600">
+                                              <p className="font-semibold text-slate-800">{p.description}</p>
+                                              {p.paymentMethod && (
+                                                <span className="inline-block mt-0.5 text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold uppercase">
+                                                  {p.paymentMethod}
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="px-5 py-3">
+                                              {p.isClinic ? (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg text-[11px] font-bold">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                                  Clínica ({p.rate}%)
+                                                </span>
+                                              ) : (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-lg text-[11px] font-bold">
+                                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                  Terapeuta ({p.rate}%)
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="px-5 py-3 text-right font-bold text-slate-700">
+                                              R$ {fmt(p.baseAmount)}
+                                            </td>
+                                            <td className="px-5 py-3 text-right font-bold text-indigo-600">
+                                              R$ {fmt(p.clinicShare)}
+                                              <span className="block text-[9px] text-slate-400 font-normal">{p.rate}% do valor</span>
+                                            </td>
+                                            <td className="px-5 py-3 text-right font-black text-emerald-600">
+                                              R$ {fmt(p.therapistNet)}
+                                            </td>
+                                            <td className="px-5 py-3 text-center whitespace-nowrap">
+                                              {itemPaid ? (
+                                                <div className="inline-flex items-center gap-1.5">
+                                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-lg text-[11px] font-bold border border-emerald-200 shadow-xs">
+                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Baixado
+                                                  </span>
+                                                  <button
+                                                    onClick={() => handleUndoItemPayout(p, c)}
+                                                    title="Desfazer baixa deste repasse"
+                                                    disabled={saving}
+                                                    className="p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                                  >
+                                                    <RotateCcw className="w-3.5 h-3.5" />
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <button
+                                                  onClick={() => handleOpenSingleItemPayout(p, c)}
+                                                  disabled={saving}
+                                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm shadow-amber-200 hover:shadow-md cursor-pointer disabled:opacity-50"
+                                                  title="Dar baixa individual neste repasse"
+                                                >
+                                                  <Check className="w-3.5 h-3.5" /> Dar Baixa
+                                                </button>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
                                     </tbody>
                                     <tfoot className="bg-slate-50/90 border-t border-slate-200 text-xs font-black text-slate-900">
                                       <tr>
-                                        <td colSpan={4} className="px-5 py-3.5 text-right uppercase tracking-wider text-[10px] text-slate-500">
+                                        <td colSpan={5} className="px-5 py-3.5 text-right uppercase tracking-wider text-[10px] text-slate-500">
                                           Totalizador do Mês:
                                         </td>
                                         <td className="px-5 py-3.5 text-right text-slate-900">
@@ -2527,6 +2942,16 @@ export default function FinancialPage() {
                                         </td>
                                         <td className="px-5 py-3.5 text-right text-emerald-600">
                                           R$ {fmt(c.therapistNet)}
+                                        </td>
+                                        <td className="px-5 py-3.5 text-center text-[10px] text-slate-500 font-bold whitespace-nowrap">
+                                          {paidCount > 0 ? (
+                                            <span className="text-emerald-600 font-black">R$ {fmt(paidNet)} pago</span>
+                                          ) : (
+                                            <span className="text-slate-400">0 baixados</span>
+                                          )}
+                                          {pendingCount > 0 && (
+                                            <span className="block text-amber-600 font-bold">R$ {fmt(pendingNet)} pendente</span>
+                                          )}
                                         </td>
                                       </tr>
                                     </tfoot>
@@ -3669,6 +4094,163 @@ export default function FinancialPage() {
           </div>
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {/* MODAL: DAR BAIXA EM REPASSE INDIVIDUAL OU EM LOTE                       */}
+      {/* ═══════════════════════════════════════════════════════════════════════ */}
+      {itemPayoutModal && (() => {
+        const { therapist, items } = itemPayoutModal;
+        const totalGross = items.reduce((acc, it) => acc + it.baseAmount, 0);
+        const totalClinic = items.reduce((acc, it) => acc + it.clinicShare, 0);
+        const totalNet = items.reduce((acc, it) => acc + it.therapistNet, 0);
+        const isSingle = items.length === 1;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-6 animate-in fade-in duration-200">
+            <div className="bg-white rounded-[3rem] w-full max-w-lg shadow-2xl border border-slate-100 overflow-hidden">
+              {/* Header */}
+              <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-emerald-50/50">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-emerald-500 text-white rounded-2xl shadow-sm shadow-emerald-200">
+                    <Receipt className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900">
+                      {isSingle ? 'Dar Baixa em Repasse' : `Dar Baixa em ${items.length} Repasses`}
+                    </h3>
+                    <p className="text-sm text-slate-500 font-medium">
+                      Terapeuta: <strong className="text-slate-800">{therapist.name}</strong>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setItemPayoutModal(null)}
+                  className="p-2 hover:bg-slate-100 rounded-full text-slate-400 transition-colors cursor-pointer"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="p-8 space-y-5 max-h-[75vh] overflow-y-auto">
+                {/* Resumo financeiro */}
+                <div className="bg-slate-50 rounded-2xl p-5 space-y-2 border border-slate-200/80">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium">Faturamento Bruto</span>
+                    <span className="font-bold text-slate-800">R$ {fmt(totalGross)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-500 font-medium">Taxa Clínica Retida</span>
+                    <span className="font-bold text-indigo-600">− R$ {fmt(totalClinic)}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm border-t border-slate-200 pt-3 mt-2">
+                    <span className="font-black text-slate-900 text-base">Valor Líquido a Pagar</span>
+                    <span className="font-black text-emerald-600 text-2xl">R$ {fmt(totalNet)}</span>
+                  </div>
+                </div>
+
+                {/* Atendimento(s) incluído(s) */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                    {isSingle ? 'Atendimento Correspondente' : `Atendimentos Selecionados (${items.length})`}
+                  </label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {items.map((it) => (
+                      <div key={it.id} className="p-3 bg-white border border-slate-200/80 rounded-xl text-xs flex items-center justify-between shadow-xs">
+                        <div className="min-w-0 pr-2">
+                          <p className="font-bold text-slate-900 truncate">{it.patientName}</p>
+                          <p className="text-[11px] text-slate-400 truncate">{it.description}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="font-black text-emerald-600 block text-xs">R$ {fmt(it.therapistNet)}</span>
+                          <span className="text-[10px] text-slate-400 font-semibold">{it.isClinic ? 'Clínica' : 'Terapeuta'} ({it.rate}%)</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Dados bancários do terapeuta se houver */}
+                {therapist.pix_key && (
+                  <div className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-center justify-between text-xs">
+                    <div>
+                      <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider block">Chave PIX do Terapeuta</span>
+                      <span className="font-mono font-bold text-slate-800">{therapist.pix_key}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(therapist.pix_key || '');
+                        showToast('Chave PIX copiada!');
+                      }}
+                      className="px-2.5 py-1 bg-white hover:bg-indigo-100 text-indigo-600 font-bold rounded-lg border border-indigo-200 transition-colors cursor-pointer text-[11px]"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                )}
+
+                {/* Forma de pagamento */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Forma de Pagamento</label>
+                  <select
+                    value={itemPayoutMethod}
+                    onChange={e => setItemPayoutMethod(e.target.value)}
+                    className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-bold text-slate-700 appearance-none"
+                  >
+                    {PAYMENT_METHODS.filter(m => !m.value.startsWith('asaas')).map(m => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Observações */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Observações (opcional)</label>
+                  <input
+                    value={itemPayoutNote}
+                    onChange={e => setItemPayoutNote(e.target.value)}
+                    className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none font-medium text-slate-700 text-sm"
+                    placeholder="Ex: Transferência Bradesco / PIX confirmado"
+                  />
+                </div>
+
+                {/* Notificar WhatsApp */}
+                <div className="flex items-center gap-2.5 p-3.5 bg-emerald-50/50 rounded-2xl border border-emerald-100">
+                  <input
+                    type="checkbox"
+                    id="notifyWhatsAppItem"
+                    checked={itemNotifyWhatsApp}
+                    onChange={e => setItemNotifyWhatsApp(e.target.checked)}
+                    className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer w-4 h-4"
+                  />
+                  <label htmlFor="notifyWhatsAppItem" className="text-xs text-slate-700 font-medium cursor-pointer">
+                    Notificar <strong className="text-slate-900">{therapist.name}</strong> via WhatsApp com comprovante
+                  </label>
+                </div>
+
+                {/* Botões */}
+                <div className="space-y-2 pt-2">
+                  <button
+                    onClick={handleConfirmItemPayout}
+                    disabled={saving}
+                    className="w-full py-4.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 text-base"
+                  >
+                    {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+                    Confirmar Baixa de R$ {fmt(totalNet)}
+                  </button>
+                  <button
+                    onClick={() => setItemPayoutModal(null)}
+                    disabled={saving}
+                    className="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold transition-all text-center text-sm cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ═══════════════════════════════════════════════════════════════════════ */}
       {/* MODAL: DAR BAIXA EM REPASSE                                              */}

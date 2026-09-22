@@ -42,29 +42,7 @@ export const ActiveSessionProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, []);
 
-  const [hasReachedSessionPage, setHasReachedSessionPage] = useState(false);
-
-  // Sync session page reach status
-  useEffect(() => {
-    if (activeSession) {
-      if (location.pathname === '/admin/sessoes') {
-        setHasReachedSessionPage(true);
-      }
-    } else {
-      setHasReachedSessionPage(false);
-    }
-  }, [location.pathname, activeSession]);
-
-  // Block route changes when there is an active session
-  useEffect(() => {
-    if (activeSession && location.pathname !== '/admin/sessoes') {
-      // Force user to stay on the session page
-      navigate('/admin/sessoes', { replace: true });
-      if (hasReachedSessionPage) {
-        setShowBlockModal(true);
-      }
-    }
-  }, [location.pathname, activeSession, navigate, hasReachedSessionPage]);
+  // Maintain active session state safely across route changes without blocking navigation
 
   // Block page close or reload
   useEffect(() => {

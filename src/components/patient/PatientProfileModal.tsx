@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   X, User, Calendar, CreditCard, ClipboardList, Activity, 
   Award, Clock, CheckCircle2, ChevronRight, DollarSign, Loader2, FileText,
@@ -354,8 +355,8 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
+  const modalContent = (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-300">
         <div className="bg-white rounded-[3rem] w-full max-w-4xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
             {/* Header */}
             <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -738,6 +739,8 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
         </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }
 
 export default function PatientProfileModal(props: PatientProfileModalProps) {

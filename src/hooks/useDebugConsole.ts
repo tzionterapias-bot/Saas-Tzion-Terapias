@@ -11,7 +11,7 @@ export function useDebugConsole() {
     const originalOnUnhandledRejection = window.onunhandledrejection;
     window.onunhandledrejection = (e) => { 
       alert('Promise Error: ' + e.reason); 
-      if (originalOnUnhandledRejection) return originalOnUnhandledRejection(e);
+      if (originalOnUnhandledRejection) return originalOnUnhandledRejection.call(window, e);
       return false;
     }; 
   }, []); 

@@ -20,6 +20,8 @@ interface Appointment {
   status?: string;
   notes?: string;
   google_event_id?: string;
+  package_id?: string | null;
+  package_name?: string | null;
 }
 
 export default function AgendaManager() {
@@ -105,7 +107,7 @@ export default function AgendaManager() {
       }
 
       let apptQuery = supabase.from('appointments')
-        .select('*, patients(name), therapists(name)')
+        .select('*, patients(name), therapists(name), patient_packages(id, total_sessions, used_sessions, services(name))')
         .gte('start_time', startStr)
         .lte('start_time', endStr)
         .order('start_time', { ascending: true });
@@ -186,7 +188,9 @@ export default function AgendaManager() {
         type: a.type || 'Presencial',
         meet_link: a.meet_link,
         status: a.status,
-        notes: a.notes
+        notes: a.notes,
+        package_id: a.package_id || null,
+        package_name: a.patient_packages?.services?.name || null,
       }));
 
       setAppointments(formatted);
@@ -560,11 +564,26 @@ export default function AgendaManager() {
           await supabase.from('appointments').update(updateData).eq('id', createdAppt.id);
       }
 
-      // 4. Envia as mensagens no WhatsApp formatadas
+      // 4. Calcula o número da sessão no pacote (se houver)
+      let sessionInfoMsg = '';
+      if (newAppt.use_package_id) {
+          const pkg = patientPackages.find(p => p.id === newAppt.use_package_id);
+          if (pkg) {
+              const sessaoAtual = (pkg.used_sessions || 0) + 1; // já foi incrementado antes, então é o novo valor
+              const totalSessoes = pkg.total_sessions || '?';
+              const nomeServico = pkg.services?.name || pkg.patient_package_items?.[0]?.services?.name || '';
+              sessionInfoMsg = nomeServico
+                ? `📌 *Sessão:* ${sessaoAtual}ª de ${totalSessoes} - ${nomeServico}`
+                : `📌 *Sessão:* ${sessaoAtual}ª de ${totalSessoes} (pacote)`;
+          }
+      }
+
+      // 5. Envia as mensagens no WhatsApp formatadas
       if (patientData && patientData.phone) {
           const firstName = patientData.name.split(' ')[0];
           let mensagem = `Olá, *${firstName}*! ✨\n\n`;
           mensagem += `Seu agendamento na *Clínica Tzion Terapias* está confirmado!\n\n`;
+          if (sessionInfoMsg) mensagem += `${sessionInfoMsg}\n`;
           mensagem += `📅 *Data:* ${dataFormatada}\n`;
           mensagem += `⏰ *Horário:* ${newAppt.time}\n`;
           mensagem += `📍 *Modalidade:* ${newAppt.type}\n\n`;
@@ -586,6 +605,7 @@ export default function AgendaManager() {
           let msgTerapeuta = `Olá, *${therapistData.name.split(' ')[0]}*! 👋\n\n`;
           msgTerapeuta += `Você tem um novo agendamento marcado.\n\n`;
           msgTerapeuta += `👤 *Paciente:* ${patientData?.name || 'Não informado'}\n`;
+          if (sessionInfoMsg) msgTerapeuta += `${sessionInfoMsg}\n`;
           msgTerapeuta += `📅 *Quando:* ${dataFormatada} às ${newAppt.time}\n`;
           msgTerapeuta += `📍 *Tipo:* ${newAppt.type}\n`;
           
@@ -1036,6 +1056,23 @@ export default function AgendaManager() {
 
   const todayEvents = appointments.filter(a => new Date(a.start_time).toDateString() === new Date().toDateString() && a.status !== 'cancelled');
 
+  // Retorna a label da sessão do paciente com aquele terapeuta (ex: "3ª Sessão")
+  // Conta todos os agendamentos do mesmo paciente com o mesmo terapeuta na janela carregada
+  const getSessionLabel = (appt: Appointment): string | null => {
+    if (!appt.patient_id || !appt.therapist_id) return null;
+    const history = appointments
+      .filter(a =>
+        a.patient_id === appt.patient_id &&
+        a.therapist_id === appt.therapist_id &&
+        a.status !== 'cancelled'
+      )
+      .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+    const idx = history.findIndex(a => a.id === appt.id);
+    if (idx === -1) return null;
+    const num = idx + 1;
+    return `${num}ª Sessão`;
+  };
+
   const handleSendReminder = async (event: Appointment) => {
     try {
        const { data: patientData } = await supabase.from('patients').select('phone').eq('id', event.patient_id).single();
@@ -1063,8 +1100,12 @@ export default function AgendaManager() {
        const dataFormatada = new Date(event.start_time).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
        const horaFormatada = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
+       const sessionLabel = getSessionLabel(event);
        const firstName = event.patient_name.split(' ')[0];
        let mensagem = `Olá, *${firstName}*! ✨\n\nPassando aqui para lembrar da sua sessão na *Clínica Tzion Terapias* marcada para hoje!\n\n`;
+       if (sessionLabel) {
+           mensagem += `📌 *Sessão:* ${sessionLabel}\n`;
+       }
        mensagem += `⏰ *Horário:* ${horaFormatada}\n`;
        mensagem += `📍 *Modalidade:* ${event.type}\n\n`;
 
@@ -1314,7 +1355,9 @@ export default function AgendaManager() {
                      <p className="text-[9px] sm:text-[10px] text-orange-600 font-bold uppercase tracking-widest">{block.reason}</p>
                    </div>
                  ))}
-                 {dayAppts.map(appt => (
+                 {dayAppts.map(appt => {
+                   const sessionLbl = getSessionLabel(appt);
+                   return (
                     <div 
                       key={appt.id} 
                       onClick={() => setSelectedDateAppointments({ date: date, appts: dayAppts })}
@@ -1326,17 +1369,25 @@ export default function AgendaManager() {
                      </div>
                      <h4 className="font-bold text-slate-900 text-xs sm:text-sm leading-tight truncate">{appt.patient_name}</h4>
                      <p className="text-[10px] sm:text-xs text-slate-500 font-medium truncate">Com {appt.therapist_name}</p>
+                     {sessionLbl && (
+                       <div className="flex items-center gap-1 mt-0.5">
+                         <span className="w-2 h-2 rounded-full bg-indigo-500 shrink-0" />
+                         <span className="text-[9px] sm:text-[10px] text-indigo-600 font-bold truncate">{sessionLbl}</span>
+                       </div>
+                     )}
                      {appt.notes && (
                        <div className="mt-0.5 flex items-start gap-1 p-1 bg-amber-100/50 rounded text-[9px] text-amber-700 font-bold border border-amber-200" title={appt.notes}>
                          <MessageCircle className="w-2.5 h-2.5 shrink-0 mt-0.5" />
                          <span className="line-clamp-2">{appt.notes}</span>
                        </div>
                      )}
-                   </div>
-                 ))}
+                    </div>
+                  );
+                 })}
               </div>
             );
           })}
+
         </div>
       </div>
     );
@@ -1377,109 +1428,150 @@ export default function AgendaManager() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
           <h3 className="text-xl font-bold text-slate-900 tracking-tight">Sessões do Dia ({new Date().toLocaleDateString('pt-BR')})</h3>
-          <div className="space-y-4">
-            {todayEvents.map((event, i) => (
-              <div key={i} className="group p-4 sm:p-6 border border-slate-100 rounded-3xl hover:border-indigo-200 hover:bg-slate-50/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-4 sm:gap-6 min-w-0 flex-1 w-full sm:w-auto">
-                  <div className="text-indigo-600 font-mono font-bold text-lg sm:text-xl shrink-0">
-                    {new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+          <div className="space-y-3">
+            {todayEvents.map((event, i) => {
+              const todaySessionLbl = getSessionLabel(event);
+              const hora = new Date(event.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+              const statusBadge = event.status === 'completed' ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-bold border border-emerald-100 shrink-0">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Finalizado
+                </div>
+              ) : event.status === 'calling' ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold animate-pulse shrink-0">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Sala Liberada!
+                </div>
+              ) : event.status === 'in_progress' ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold border border-blue-100 shrink-0">
+                  <Activity className="w-3.5 h-3.5" /> Em Atendimento
+                </div>
+              ) : event.status === 'arrived' ? (
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 rounded-xl text-xs font-bold border border-amber-200 shrink-0">
+                    <Clock className="w-3.5 h-3.5" /> Aguardando
                   </div>
-                  <div className="h-10 w-px bg-slate-200 shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <h4 className="font-bold text-base sm:text-lg text-slate-900 group-hover:text-indigo-600 transition-colors truncate">{event.patient_name}</h4>
-                    <p className="text-xs sm:text-sm text-slate-500 font-medium truncate">Com {event.therapist_name}</p>
-                    {event.notes && (
-                      <div className="mt-2 flex items-start gap-1.5 p-2 bg-amber-50 rounded-xl text-[11px] text-amber-700 font-bold border border-amber-200 shadow-sm max-w-sm">
-                        <MessageCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
-                        <span>{event.notes}</span>
+                  <button
+                    onClick={() => handleReleaseRoom(event)}
+                    title="Liberar Sala"
+                    className="px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-emerald-200 shrink-0 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Liberar Sala
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleCheckin(event)}
+                  title="Fazer Check-in"
+                  className="px-4 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-indigo-100 shrink-0 cursor-pointer"
+                >
+                  <User className="w-3.5 h-3.5" /> Check-in
+                </button>
+              );
+
+              return (
+                <div key={i} className={cn(
+                  "group rounded-2xl border transition-all",
+                  event.status === 'in_progress'
+                    ? "bg-blue-50/60 border-blue-200"
+                    : event.status === 'completed'
+                    ? "bg-emerald-50/40 border-emerald-100"
+                    : event.status === 'arrived'
+                    ? "bg-amber-50/40 border-amber-200"
+                    : "bg-white border-slate-100 hover:border-indigo-200 hover:bg-slate-50/50"
+                )}>
+                  {/* Linha principal */}
+                  <div className="flex items-center gap-3 p-4 pb-2">
+                    {/* Horário */}
+                    <div className="text-indigo-600 font-mono font-black text-base w-14 shrink-0">{hora}</div>
+                    <div className="w-px h-8 bg-slate-200 shrink-0" />
+                    {/* Nome + terapeuta + sessão */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-bold text-sm sm:text-base text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight">
+                          {event.patient_name}
+                        </h4>
+                        {todaySessionLbl && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-[11px] font-black whitespace-nowrap shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                            {todaySessionLbl}
+                          </span>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 sm:gap-4 flex-wrap w-full sm:w-auto justify-end border-t border-slate-100 sm:border-0 pt-3 sm:pt-0">
-                  <div className={cn(
-                    "flex items-center gap-1.5 px-3 py-1 sm:px-4 sm:py-1.5 rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-widest shrink-0",
-                    event.type === 'Online' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'
-                  )}>
-                    {event.type === 'Online' ? <Video className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> : <MapPin className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
-                    {event.type}
-                  </div>
-                  <button 
-                    onClick={() => setNotesPatient({ id: event.patient_id, name: event.patient_name })}
-                    title="Anotações / Recados do Paciente (Secretaria)"
-                    className="p-2 hover:bg-amber-100 hover:text-amber-700 rounded-xl transition-colors text-slate-400 shrink-0"
-                  >
-                    <StickyNote className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
-                  <button 
-                    onClick={() => handleSendReminder(event)}
-                    title="Enviar Lembrete por WhatsApp"
-                    className="p-2 hover:bg-emerald-100 hover:text-emerald-600 rounded-xl transition-colors text-slate-400 shrink-0"
-                  >
-                    <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" />
-                  </button>
-                  {event.status === 'completed' ? (
-                     <div title="Sessão Finalizada" className="p-2 bg-emerald-50 text-emerald-500 rounded-xl flex items-center gap-1.5 font-bold text-xs shrink-0">
-                        <CheckCircle2 className="w-4 h-4" /> Finalizado
-                     </div>
-                  ) : event.status === 'calling' ? (
-                     <div title="Sala Liberada pelo Terapeuta" className="flex items-center gap-2 px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold animate-pulse shadow-sm shrink-0">
-                        <CheckCircle2 className="w-4 h-4" /> Sala Liberada!
-                     </div>
-                  ) : event.status === 'in_progress' ? (
-                     <div title="Em Atendimento" className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold shadow-sm shrink-0">
-                        <Activity className="w-4 h-4" /> Em Atendimento
-                     </div>
-                  ) : event.status === 'arrived' ? (
-                     <div className="flex items-center gap-1.5 shrink-0">
-                        <div title="Paciente Aguardando na Recepção" className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-50 text-amber-700 rounded-xl text-xs font-bold shrink-0 border border-amber-200/60">
-                           <Clock className="w-3.5 h-3.5" /> Aguardando
+                      <p className="text-xs text-slate-400 font-medium mt-0.5">Com {event.therapist_name}</p>
+                      {event.notes && (
+                        <div className="mt-1.5 flex items-start gap-1.5 p-2 bg-amber-50 rounded-xl text-[11px] text-amber-700 font-bold border border-amber-200 max-w-sm">
+                          <MessageCircle className="w-3 h-3 shrink-0 mt-0.5 text-amber-600" />
+                          <span>{event.notes}</span>
                         </div>
-                        <button
-                          onClick={() => handleReleaseRoom(event)}
-                          title="Liberar Sala e Chamar Paciente (Alerta Sonoro em Tempo Real)"
-                          className="px-2.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm border border-emerald-200 shrink-0 cursor-pointer"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Liberar Sala
-                        </button>
-                     </div>
-                  ) : (
-                     <button 
-                        onClick={() => handleCheckin(event)}
-                        title="Fazer Check-in (Paciente Chegou)"
-                        className="px-3 py-1.5 sm:px-4 sm:py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm shrink-0"
-                     >
-                        <User className="w-4 h-4" /> Check-in
-                     </button>
-                  )}
-                  {event.status !== 'completed' && (
-                     <div className="flex gap-1 shrink-0">
-                      <button 
-                        onClick={() => handleOpenRescheduleModal(event)}
-                        title="Reagendar Sessão"
-                        className="p-2 hover:bg-slate-100 hover:text-indigo-600 rounded-xl transition-colors text-slate-300"
+                      )}
+                    </div>
+                    {/* Tipo online/presencial */}
+                    <div className={cn(
+                      "hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest shrink-0",
+                      event.type === 'Online' ? 'bg-blue-50 text-blue-500' : 'bg-slate-100 text-slate-400'
+                    )}>
+                      {event.type === 'Online' ? <Video className="w-3 h-3" /> : <MapPin className="w-3 h-3" />}
+                      {event.type}
+                    </div>
+                  </div>
+
+                  {/* Linha de ações */}
+                  <div className="flex items-center justify-between px-4 pb-3 pt-0 gap-2">
+                    {/* Ações utilitárias */}
+                    <div className="flex items-center gap-0.5">
+                      <div className={cn(
+                        "sm:hidden flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold uppercase mr-1",
+                        event.type === 'Online' ? 'bg-blue-50 text-blue-500' : 'bg-slate-100 text-slate-400'
+                      )}>
+                        {event.type === 'Online' ? <Video className="w-3 h-3" /> : <MapPin className="w-3 h-3" />}
+                        {event.type}
+                      </div>
+                      <button
+                        onClick={() => setNotesPatient({ id: event.patient_id, name: event.patient_name })}
+                        title="Anotações do Paciente"
+                        className="p-1.5 hover:bg-amber-100 hover:text-amber-700 rounded-lg transition-colors text-slate-300"
                       >
-                        <CalendarIcon className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+                        <StickyNote className="w-4 h-4" />
                       </button>
-                      <button 
-                        onClick={() => handleCancelAppointment(event)}
-                        title="Desmarcar Sessão"
-                        className="p-2 hover:bg-slate-100 hover:text-rose-600 rounded-xl transition-colors text-slate-300"
+                      <button
+                        onClick={() => handleSendReminder(event)}
+                        title="Enviar Lembrete WhatsApp"
+                        className="p-1.5 hover:bg-emerald-100 hover:text-emerald-600 rounded-lg transition-colors text-slate-300"
                       >
-                        <X className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+                        <MessageCircle className="w-4 h-4" />
                       </button>
-                      <button 
-                        onClick={() => handleFinishSession(event)}
-                        title="Finalizar Sessão"
-                        className="p-2 hover:bg-slate-100 hover:text-emerald-600 rounded-xl transition-colors text-slate-300"
-                      >
-                        <CheckCircle2 className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
-                      </button>
-                     </div>
-                  )}
+                      {event.status !== 'completed' && (
+                        <>
+                          <button
+                            onClick={() => handleOpenRescheduleModal(event)}
+                            title="Reagendar"
+                            className="p-1.5 hover:bg-slate-100 hover:text-indigo-600 rounded-lg transition-colors text-slate-300"
+                          >
+                            <CalendarIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleCancelAppointment(event)}
+                            title="Cancelar"
+                            className="p-1.5 hover:bg-rose-50 hover:text-rose-500 rounded-lg transition-colors text-slate-300"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleFinishSession(event)}
+                            title="Finalizar Sessão"
+                            className="p-1.5 hover:bg-emerald-50 hover:text-emerald-600 rounded-lg transition-colors text-slate-300"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    {/* Status / CTA principal */}
+                    {statusBadge}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {!loading && todayEvents.length === 0 && (
               <div className="py-20 text-center text-slate-400 font-medium">Nenhuma sessão marcada para hoje.</div>
             )}

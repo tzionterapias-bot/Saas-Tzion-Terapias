@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Users, Calendar, Banknote, MessageSquare, 
   BookOpen, Settings, LogOut, Heart, Headset, Menu, X, Bell, Search, User, Award,
   Sun, Moon, Shield, Megaphone, PieChart, Globe, Monitor, UserCog, Briefcase, Package,
-  Lock, Phone, Save, Loader2, Trophy, CreditCard, Brain, Bot
+  Lock, Phone, Save, Loader2, Trophy, CreditCard, Brain, Bot, ArrowRight
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
@@ -564,13 +564,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       <Link
                         key={item.path}
                         to={item.path}
-                        onClick={(e) => {
-                          setIsMobileMenuOpen(false);
-                          if (activeSession && item.path !== '/admin/sessoes') {
-                            e.preventDefault();
-                            setShowBlockModal(true);
-                          }
-                        }}
+                        onClick={() => setIsMobileMenuOpen(false)}
                         className={cn(
                           "flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all group",
                           isActive 
@@ -616,7 +610,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
         {/* Header */}
         <header className="h-14 lg:h-20 bg-white border-b border-slate-200 px-4 lg:px-8 flex items-center justify-between sticky top-0 z-30">
           <div className="flex items-center gap-4">
@@ -791,12 +785,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </header>
 
+        {/* Active Session Notification Bar */}
+        {activeSession && location.pathname !== '/admin/sessoes' && (
+          <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-indigo-800 text-white px-4 lg:px-8 py-2.5 flex items-center justify-between text-xs sm:text-sm font-semibold shadow-inner shrink-0 animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-2.5 truncate mr-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+              <span className="truncate">
+                Atendimento em Andamento: <strong className="font-black text-white">{activeSession.patient}</strong> <span className="opacity-80 hidden sm:inline">({activeSession.therapy})</span>
+              </span>
+            </div>
+            <Link
+              to="/admin/sessoes"
+              className="px-3.5 py-1.5 bg-white text-indigo-700 hover:bg-indigo-50 rounded-xl font-black text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 hover:scale-105 active:scale-95"
+            >
+              <span>Retomar Atendimento</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        )}
+
         {/* Content Area */}
         <div className={cn(
-          "flex-1 min-h-0",
+          "flex-1 min-h-0 min-w-0",
           ['/admin/editor-site', '/admin/atendimento'].includes(location.pathname)
             ? "overflow-hidden flex flex-col"
-            : "overflow-y-auto p-4 lg:p-8 xl:p-12"
+            : "overflow-y-auto overflow-x-hidden p-4 lg:p-8 xl:p-12"
         )}>
           {(() => {
             // Rotas com versão mobile simplificada

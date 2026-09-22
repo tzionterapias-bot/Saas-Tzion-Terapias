@@ -4,6 +4,7 @@ import { cn } from '@/src/lib/utils';
 import { supabase } from '@/src/lib/supabase';
 import { useActiveSession } from '@/src/contexts/ActiveSessionContext';
 import { useAuth } from '@/src/contexts/AuthContext';
+import PatientProfileModal from '@/src/components/patient/PatientProfileModal';
 
 export default function SessionLogger() {
   const { user } = useAuth();
@@ -17,7 +18,48 @@ export default function SessionLogger() {
   const [timer, setTimer] = useState(0);
   const [workspaceTab, setWorkspaceTab] = useState<'evolution' | 'guidance' | 'homecare'>('evolution');
   const [showFullRecord, setShowFullRecord] = useState(false);
+  const [showPatientProfileModal, setShowPatientProfileModal] = useState(false);
+  const [fullPatientData, setFullPatientData] = useState<any | null>(null);
+  const [loadingPatientProfile, setLoadingPatientProfile] = useState(false);
   const [showLastGuidance, setShowLastGuidance] = useState(false);
+
+  const handleOpenPatientProfile = async () => {
+    const targetPatientId = selectedPatient?.patientId;
+    if (!targetPatientId) {
+      alert('Paciente não identificado nesta sessão.');
+      return;
+    }
+
+    try {
+      setLoadingPatientProfile(true);
+      const { data, error } = await supabase
+        .from('patients')
+        .select('*')
+        .eq('id', targetPatientId)
+        .single();
+
+      if (!error && data) {
+        setFullPatientData(data);
+      } else {
+        setFullPatientData({
+          id: targetPatientId,
+          name: selectedPatient?.patient || 'Paciente',
+          phone: '',
+          email: ''
+        });
+      }
+      setShowPatientProfileModal(true);
+    } catch (err) {
+      console.error('Erro ao buscar prontuário:', err);
+      setFullPatientData({
+        id: targetPatientId,
+        name: selectedPatient?.patient || 'Paciente'
+      });
+      setShowPatientProfileModal(true);
+    } finally {
+      setLoadingPatientProfile(false);
+    }
+  };
   const [activeTab, setActiveTab] = useState<'evolution' | 'documents' | 'history' | 'anamnesis'>('evolution');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [editingEvolution, setEditingEvolution] = useState<{ id: string; notes: string } | null>(null);
@@ -618,11 +660,28 @@ export default function SessionLogger() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-6 bg-slate-900/40 p-6 rounded-3xl backdrop-blur-xl border border-white/10 shadow-inner">
-          <Clock className="w-8 h-8 text-indigo-200" />
-          <div className="text-center">
-            <span className="text-4xl font-mono font-bold tracking-[0.2em]">{formatTime(timer)}</span>
-            <p className="text-[10px] text-indigo-300 font-bold uppercase mt-1 opacity-70">Tempo de Sessão</p>
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4 w-full md:w-auto justify-end">
+          <button
+            type="button"
+            onClick={handleOpenPatientProfile}
+            disabled={loadingPatientProfile}
+            className="flex-1 sm:flex-none px-5 py-3.5 bg-white text-indigo-700 hover:bg-indigo-50 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-black/10 hover:shadow-xl hover:scale-105 active:scale-95 cursor-pointer border border-white/30"
+            title="Consultar Prontuário Completo e Ficha 360º do Paciente"
+          >
+            {loadingPatientProfile ? (
+              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+            ) : (
+              <FileText className="w-4 h-4 text-indigo-600" />
+            )}
+            <span>Consultar Prontuário 360º</span>
+          </button>
+
+          <div className="flex items-center gap-4 bg-slate-900/40 p-4 sm:p-5 rounded-2xl backdrop-blur-xl border border-white/10 shadow-inner">
+            <Clock className="w-7 h-7 text-indigo-200 shrink-0" />
+            <div className="text-center">
+              <span className="text-2xl sm:text-3xl font-mono font-bold tracking-[0.2em]">{formatTime(timer)}</span>
+              <p className="text-[10px] text-indigo-300 font-bold uppercase mt-0.5 opacity-70">Tempo de Sessão</p>
+            </div>
           </div>
         </div>
       </div>
@@ -1024,19 +1083,33 @@ export default function SessionLogger() {
               ))}
               {history.length === 0 && <p className="text-xs text-slate-400 italic">Sem registros anteriores.</p>}
             </div>
-            <button 
-              onClick={() => setShowFullRecord(true)}
-              className="w-full py-4 bg-white text-indigo-600 rounded-2xl text-xs font-bold border border-indigo-100 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm"
-            >
-              Ver Prontuário Completo <ExternalLink className="w-3.5 h-3.5" />
-            </button>
+            <div className="space-y-2">
+              <button 
+                onClick={handleOpenPatientProfile}
+                disabled={loadingPatientProfile}
+                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer active:scale-95"
+              >
+                {loadingPatientProfile ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileText className="w-4 h-4" />
+                )}
+                Prontuário Completo 360º
+              </button>
+              <button 
+                onClick={() => setShowFullRecord(true)}
+                className="w-full py-2.5 bg-white text-indigo-600 rounded-2xl text-xs font-bold border border-indigo-100 hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              >
+                Histórico de Evoluções <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Full Record Modal */}
       {showFullRecord && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-6 animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex items-center justify-center p-6 animate-in fade-in duration-300">
           <div className="bg-white rounded-[3rem] w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col shadow-2xl relative border border-slate-100">
             <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
               <div className="flex items-center gap-4">
@@ -1192,6 +1265,14 @@ export default function SessionLogger() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Patient Profile 360 Modal */}
+      {showPatientProfileModal && fullPatientData && (
+        <PatientProfileModal
+          patient={fullPatientData}
+          onClose={() => setShowPatientProfileModal(false)}
+        />
       )}
 
       {/* Native Toast */}
