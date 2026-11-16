@@ -76,11 +76,15 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
       // 1. Appointments
       appointments.forEach(app => {
          const date = new Date(app.start_time || new Date());
+         const catLabel = app.session_category === 'consulta_inicial' ? '🌟 Consulta Inicial'
+           : app.session_category === 'sessao_pacote' ? `📦 Sessão de Pacote${app.session_number ? ` nº ${app.session_number}` : ''}`
+           : app.session_category === 'retorno' ? '🔄 Retorno'
+           : '🎯 Sessão Avulsa';
          events.push({
              id: `app-${app.id}`,
              type: 'appointment',
              date: isNaN(date.getTime()) ? new Date() : date,
-             title: `Sessão ${app.status === 'completed' ? 'Realizada' : 'Agendada'}`,
+             title: `${catLabel} — ${app.status === 'completed' ? 'Realizada' : 'Agendada'}`,
              description: `Modalidade: ${app.type || 'Presencial'} | Terapeuta: ${app.therapists?.name || 'Não atribuído'}`,
              status: app.status
          });

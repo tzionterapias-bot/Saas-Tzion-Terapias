@@ -1,4 +1,4 @@
-﻿﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search, Trash2, StickyNote, Plus, BanIcon } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
@@ -66,7 +66,9 @@ export default function AgendaManager() {
     batch_schedule: false,
     batch_count: 4,
     recurrence: 'semanal',
-    batch_dates: [] as {date: string, time: string}[]
+    batch_dates: [] as {date: string, time: string}[],
+    session_category: 'sessao_avulsa',
+    session_number: 1
   });
 
   // Reschedule State
@@ -414,6 +416,8 @@ export default function AgendaManager() {
           type: newAppt.type,
           service_id: newAppt.service_id || null,
           package_id: newAppt.use_package_id || null,
+          session_category: (newAppt as any).session_category || 'sessao_avulsa',
+          session_number: (newAppt as any).session_number || null,
           status: 'scheduled'
         }).select('id').single();
 
@@ -669,6 +673,8 @@ export default function AgendaManager() {
             start_time: startTime,
             end_time: endTime,
             type: newAppt.type,
+            session_category: (newAppt as any).session_category || 'sessao_avulsa',
+            session_number: (newAppt as any).session_number || null,
             status: 'scheduled'
          };
       });
@@ -1690,6 +1696,42 @@ export default function AgendaManager() {
                               <span>Online (Meet)</span>
                            </button>
                         </div>
+                     </div>
+                     {/* Categoria da Sessão */}
+                     <div className="space-y-4">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Sessão</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          {[
+                            { value: 'consulta_inicial', label: '🌟 Consulta Inicial' },
+                            { value: 'sessao_avulsa', label: '🎯 Sessão Avulsa' },
+                            { value: 'sessao_pacote', label: '📦 Sessão de Pacote' },
+                            { value: 'retorno', label: '🔄 Retorno' },
+                          ].map(({ value, label }) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => setNewAppt({ ...newAppt, session_category: value } as any)}
+                              className={cn(
+                                "px-3 py-2 rounded-xl text-xs font-semibold border transition-all",
+                                (newAppt as any).session_category === value
+                                  ? 'bg-indigo-600 text-white border-indigo-600'
+                                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-indigo-300'
+                              )}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {(newAppt as any).session_category === 'sessao_pacote' && (
+                          <input
+                            type="number"
+                            min={1}
+                            placeholder="Número da sessão (ex: 3)"
+                            value={(newAppt as any).session_number || 1}
+                            onChange={(e) => setNewAppt({...newAppt, session_number: parseInt(e.target.value)} as any)}
+                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none mt-2"
+                          />
+                        )}
                      </div>
                      <div className="space-y-4">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Terapeuta</label>
