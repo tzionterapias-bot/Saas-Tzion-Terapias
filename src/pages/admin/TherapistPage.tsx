@@ -339,8 +339,8 @@ export default function TherapistPage() {
       const fetchPatientDetails = async () => {
         const currentTherapistId = defaultTherapistId || profile?.id;
         
-        // Fetch responsibility status dynamically from DB
-        let isResp = user?.role === 'admin';
+        // Terapeutas e administradores da clínica possuem acesso clínico completo ao prontuário
+        let isResp = user?.role === 'admin' || user?.role === 'terapeuta';
         if (!isResp && currentTherapistId) {
           const { data: apptExists } = await supabase
             .from('appointments')

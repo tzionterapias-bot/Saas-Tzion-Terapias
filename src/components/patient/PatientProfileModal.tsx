@@ -20,7 +20,7 @@ interface PatientProfileModalProps {
 
 function PatientProfileModalContent({ patient, onClose }: PatientProfileModalProps) {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'timeline' | 'records' | 'documents' | 'notes'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'anamnesis' | 'records' | 'documents' | 'notes'>('timeline');
   const [loading, setLoading] = useState(true);
   
   // Data
@@ -29,6 +29,14 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
   const [documents, setDocuments] = useState<any[]>([]);
   const [patientNotes, setPatientNotes] = useState<any[]>([]);
   const [generatingContractId, setGeneratingContractId] = useState<string | null>(null);
+
+  // Anamnesis State
+  const [anamnesisData, setAnamnesisData] = useState<any>(null);
+  const [anamnesisTemplate, setAnamnesisTemplate] = useState<any>(null);
+  const [anamnesisResponses, setAnamnesisResponses] = useState<Record<string, any>>({});
+  const [anamnesisComplaint, setAnamnesisComplaint] = useState('');
+  const [savingAnamnesis, setSavingAnamnesis] = useState(false);
+  const [anamnesisSaved, setAnamnesisSaved] = useState(false);
 
   // New Note State
   const [newNoteText, setNewNoteText] = useState('');
@@ -48,14 +56,15 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
     if (!patient?.id) return;
     setLoading(true);
     try {
-      const [appRes, recRes, evoRes, payRes, packRes, conRes, docRes] = await Promise.all([
+      const [appRes, recRes, evoRes, payRes, packRes, conRes, docRes, anaRes] = await Promise.all([
         supabase.from('appointments').select('*, therapists(name)').eq('patient_id', patient.id),
         supabase.from('medical_records').select('*, therapists(name)').eq('patient_id', patient.id),
         supabase.from('patient_evolutions').select('*, therapists(name)').eq('patient_id', patient.id),
         supabase.from('payments').select('*').eq('patient_id', patient.id).order('created_at', { ascending: false }),
         supabase.from('patient_packages').select('*, services(name, price, type)').eq('patient_id', patient.id),
         supabase.from('patient_contracts').select('*').eq('patient_id', patient.id).order('created_at', { ascending: false }),
-        supabase.from('patient_documents').select('*').eq('patient_id', patient.id).order('created_at', { ascending: false })
+        supabase.from('patient_documents').select('*').eq('patient_id', patient.id).order('created_at', { ascending: false }),
+        supabase.from('patient_anamnesis').select('*').eq('patient_id', patient.id).maybeSingle()
       ]);
 
       const appointments = appRes.data || [];
@@ -69,6 +78,27 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
       setPackages(pkgs);
       setDocuments(docs);
       setPatientNotes(evolutions);
+
+      if (anaRes.data) {
+        setAnamnesisData(anaRes.data);
+        setAnamnesisResponses(anaRes.data.responses || {});
+        setAnamnesisComplaint(anaRes.data.complaint || '');
+        if (anaRes.data.template_id) {
+          const { data: tmpl } = await supabase.from('clinical_templates').select('*').eq('id', anaRes.data.template_id).maybeSingle();
+          setAnamnesisTemplate(tmpl);
+        }
+      }
+      if (!anaRes.data?.template_id) {
+        const { data: activeTmpls } = await supabase
+          .from('clinical_templates')
+          .select('*')
+          .eq('category', 'anamnesis')
+          .eq('active', true)
+          .order('created_at', { ascending: false });
+        if (activeTmpls && activeTmpls.length > 0) {
+          setAnamnesisTemplate(activeTmpls[0]);
+        }
+      }
 
       // Normalize events for the timeline
       let events: any[] = [];
@@ -292,6 +322,34 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
     }
   };
 
+  const handleSaveAnamnesis = async () => {
+    if (!patient?.id) return;
+    try {
+      setSavingAnamnesis(true);
+      const payload: any = {
+        patient_id: patient.id,
+        template_id: anamnesisTemplate?.id || null,
+        responses: anamnesisResponses,
+        complaint: anamnesisComplaint
+      };
+      if (anamnesisData?.id) {
+        const { error } = await supabase.from('patient_anamnesis').update(payload).eq('id', anamnesisData.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('patient_anamnesis').insert([payload]);
+        if (error) throw error;
+      }
+      setAnamnesisSaved(true);
+      setTimeout(() => setAnamnesisSaved(false), 3000);
+      await fetchPatientData();
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao salvar anamnese: ' + (err.message || err));
+    } finally {
+      setSavingAnamnesis(false);
+    }
+  };
+
   const renderIcon = (type: string) => {
       switch(type) {
           case 'appointment': return <Calendar className="w-5 h-5 text-indigo-600" />;
@@ -382,6 +440,7 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
             <div className="flex border-b border-slate-100 px-8 overflow-x-auto no-scrollbar">
                 {[
                     { id: 'timeline', label: 'Linha do Tempo 360º', icon: Activity },
+                    { id: 'anamnesis', label: 'Ficha de Anamnese', icon: ClipboardList },
                     { id: 'notes', label: 'Anotações da Recepção', icon: StickyNote },
                     { id: 'records', label: 'Pacotes & Créditos', icon: Award },
                     { id: 'documents', label: 'Documentos & Anexos', icon: FileText },
@@ -460,6 +519,142 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
                             )}
                         </div>
                     )}
+
+                        {activeTab === 'anamnesis' && (
+                            <div className="space-y-8 animate-in fade-in duration-300">
+                                <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl shadow-sm">
+                                                <ClipboardList className="w-6 h-6" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xl font-black text-slate-900 tracking-tight">Ficha Clínica de Anamnese</h4>
+                                                <p className="text-xs text-slate-500 font-medium">
+                                                    {anamnesisData?.created_at 
+                                                      ? `Preenchida em ${new Date(anamnesisData.created_at).toLocaleDateString('pt-BR')} às ${new Date(anamnesisData.created_at).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}` 
+                                                      : 'Ficha disponível para consulta e registro clínico'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveAnamnesis}
+                                            disabled={savingAnamnesis}
+                                            className={cn(
+                                                "px-6 py-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-95",
+                                                anamnesisSaved 
+                                                  ? "bg-emerald-600 text-white shadow-emerald-200" 
+                                                  : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100"
+                                            )}
+                                        >
+                                            {savingAnamnesis ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : anamnesisSaved ? (
+                                                <CheckCircle2 className="w-4 h-4 text-white" />
+                                            ) : (
+                                                <FileText className="w-4 h-4" />
+                                            )}
+                                            <span>{anamnesisSaved ? 'Anamnese Salva!' : 'Salvar Alterações'}</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Queixa Principal */}
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                                            Queixa Principal & Motivo da Consulta
+                                        </label>
+                                        <textarea
+                                            value={anamnesisComplaint}
+                                            onChange={(e) => setAnamnesisComplaint(e.target.value)}
+                                            placeholder="Descreva as queixas, sintomas, histórico das dores ou relato do paciente..."
+                                            rows={4}
+                                            className="w-full p-5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-700 font-medium leading-relaxed focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all outline-none text-sm"
+                                        />
+                                    </div>
+
+                                    {/* Campos do Template Dinâmico */}
+                                    {anamnesisTemplate?.fields && anamnesisTemplate.fields.length > 0 ? (
+                                        <div className="space-y-6 pt-4 border-t border-slate-100">
+                                            {anamnesisTemplate.fields.map((field: any, idx: number) => {
+                                                const val = anamnesisResponses[field.id] !== undefined ? anamnesisResponses[field.id] : '';
+                                                return (
+                                                    <div key={field.id} className="space-y-2">
+                                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                                                            <span className="w-5 h-5 rounded-lg bg-indigo-50 text-indigo-600 font-extrabold flex items-center justify-center text-[9px]">{idx + 1}</span>
+                                                            {field.label} {field.required && <span className="text-rose-500">*</span>}
+                                                        </label>
+                                                        {field.type === 'textarea' ? (
+                                                            <textarea
+                                                                value={val}
+                                                                onChange={(e) => setAnamnesisResponses({ ...anamnesisResponses, [field.id]: e.target.value })}
+                                                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none min-h-[90px] focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all font-medium text-slate-700 text-sm"
+                                                                placeholder="Digite a resposta ou observação..."
+                                                            />
+                                                        ) : field.type === 'select' ? (
+                                                            <select
+                                                                value={val}
+                                                                onChange={(e) => setAnamnesisResponses({ ...anamnesisResponses, [field.id]: e.target.value })}
+                                                                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all text-sm appearance-none cursor-pointer"
+                                                            >
+                                                                <option value="">Selecione...</option>
+                                                                {field.options && field.options.map((opt: string, i: number) => (
+                                                                    <option key={i} value={opt}>{opt}</option>
+                                                                ))}
+                                                            </select>
+                                                        ) : field.type === 'yesno' ? (
+                                                            <div className="flex gap-2">
+                                                                {['Sim', 'Não'].map(opt => (
+                                                                    <button
+                                                                        key={opt}
+                                                                        type="button"
+                                                                        onClick={() => setAnamnesisResponses({ ...anamnesisResponses, [field.id]: opt })}
+                                                                        className={cn(
+                                                                            "px-6 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer",
+                                                                            val === opt
+                                                                                ? opt === 'Sim' ? "bg-indigo-600 text-white border-indigo-600" : "bg-slate-700 text-white border-slate-700"
+                                                                                : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+                                                                        )}
+                                                                    >
+                                                                        {opt}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <input
+                                                                type="text"
+                                                                value={val}
+                                                                onChange={(e) => setAnamnesisResponses({ ...anamnesisResponses, [field.id]: e.target.value })}
+                                                                className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
+                                                                placeholder="Resposta..."
+                                                            />
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4 pt-4 border-t border-slate-100">
+                                            {/* Campos padrão de histórico quando sem template */}
+                                            {Object.entries(anamnesisResponses).length > 0 ? (
+                                                <div className="space-y-4">
+                                                    {Object.entries(anamnesisResponses).map(([k, v]: [string, any], i) => (
+                                                        <div key={k} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{k}</p>
+                                                            <p className="text-sm font-semibold text-slate-800">{String(v || '(Em branco)')}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="text-center py-8 text-slate-400 text-sm font-medium">
+                                                    Nenhum questionário respondido previamente. Use o campo de Queixa Principal acima para registrar as observações da consulta.
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {activeTab === 'records' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -87,7 +87,7 @@ export default function PatientList() {
         const { data } = await supabase
           .from('therapists')
           .select('id')
-          .eq('user_id', user.id)
+          .or(`user_id.eq.${user.id},email.eq.${user.email}`)
           .maybeSingle();
         if (data?.id) {
           currentTId = data.id;
@@ -124,23 +124,7 @@ export default function PatientList() {
       }
 
       if (!error && data) {
-        if (user?.role === 'terapeuta') {
-          if (myTId) {
-            const { data: appts } = await supabase
-              .from('appointments')
-              .select('patient_id')
-              .eq('therapist_id', myTId);
-
-            const allowedPatientIds = new Set((appts || []).map((a: any) => a.patient_id).filter(Boolean));
-
-            const filtered = data.filter((p: any) => allowedPatientIds.has(p.id));
-            setPatients(filtered);
-          } else {
-            setPatients([]);
-          }
-        } else {
-          setPatients(data);
-        }
+        setPatients(data);
       }
     } catch (err) {
       console.error("Exception fetching patients:", err);
@@ -207,33 +191,12 @@ export default function PatientList() {
 
     setLoadingTab(prev => ({ ...prev, [tab]: true }));
     try {
+      // Permissão para visualização clínica e anamnese do paciente
+      let isResp = user?.role === 'admin' || user?.role === 'terapeuta' || user?.role === 'atendimento';
+      setIsResponsible(isResp);
+
       if (tab === 'info') {
-        let isResp = user?.role === 'admin' || user?.role === 'atendimento';
-        if (user?.role === 'terapeuta') {
-          let tId = therapistId;
-          if (!tId) {
-            const { data } = await supabase
-              .from('therapists')
-              .select('id')
-              .eq('user_id', user.id)
-              .maybeSingle();
-            tId = data?.id || '';
-            if (tId) setTherapistId(tId);
-          }
-          if (tId) {
-            const { data: apptExists } = await supabase
-              .from('appointments')
-              .select('id')
-              .eq('patient_id', patientId)
-              .eq('therapist_id', tId)
-              .limit(1)
-              .maybeSingle();
-            if (apptExists) {
-              isResp = true;
-            }
-          }
-        }
-        setIsResponsible(isResp);
+        // Aba de dados cadastrais
       } 
       else if (tab === 'anamnesis') {
         const { data: anaData } = await supabase.from('patient_anamnesis').select('*').eq('patient_id', patientId).maybeSingle();
