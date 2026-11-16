@@ -423,7 +423,7 @@ serve(async (req) => {
                   if (contract && patient.phone) {
                     const firstName = patient.name.split(' ')[0];
                     const { data: clinicProfileSetting } = await supabase.from('settings').select('value').eq('key', 'clinic_profile').maybeSingle();
-                    const siteUrl = clinicProfileSetting?.value?.system_url || Deno.env.get('APP_URL') || "https://tzionterapias.com.br";
+                    const siteUrl = clinicProfileSetting?.value?.system_url || Deno.env.get('APP_URL') || "https://app.tzionterapias.com.br";
                     const cleanSiteUrl = siteUrl.replace(/\/+$/, '');
                     const link = `${cleanSiteUrl}/contrato/${contract.id}`;
                     const msg = `Olá, *${firstName}*! ✨\n\nSeu pacote foi iniciado! Por favor, assine o termo de serviço:\n\n🔗 ${link}\n\nQualquer dúvida, estamos à disposição! 💙`;

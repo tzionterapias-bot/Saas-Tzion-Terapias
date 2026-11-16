@@ -134,8 +134,9 @@ export default function SendLogsView() {
 
       // 2. Limpar tag de anexo caso exista e substituir localhost pelo domínio oficial
       let cleanContent = log.content.replace('[Anexo Enviado] ', '');
-      cleanContent = cleanContent.replace(/http:\/\/localhost:3000/g, 'https://tzionterapias.com.br')
-                                 .replace(/https:\/\/saas-tzion-terapias-six\.vercel\.app/g, 'https://tzionterapias.com.br');
+      cleanContent = cleanContent.replace(/http:\/\/localhost:3000/g, 'https://app.tzionterapias.com.br')
+                                 .replace(/https:\/\/saas-tzion-terapias-six\.vercel\.app/g, 'https://app.tzionterapias.com.br')
+                                 .replace(/https:\/\/tzionterapias\.com\.br/g, 'https://app.tzionterapias.com.br');
 
       // 3. Disparar mensagem com o telefone fornecido
       const success = await sendWhatsAppMessage(

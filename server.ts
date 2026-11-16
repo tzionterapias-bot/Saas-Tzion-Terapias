@@ -49,7 +49,7 @@ async function getEvolutionConfig() {
     }
   }
 }
-const DEFAULT_SYSTEM_URL = "https://tzionterapias.com.br";
+const DEFAULT_SYSTEM_URL = "https://app.tzionterapias.com.br";
 
 async function getSystemBaseUrlBackend(req?: any): Promise<string> {
   try {

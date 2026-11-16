@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿﻿import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Calendar as CalendarIcon, Clock, User, ChevronLeft, ChevronRight, Video, MapPin, MoreHorizontal, X, Loader2, CheckCircle2, MessageCircle, Activity, DoorOpen, Search, Trash2, StickyNote, Plus, BanIcon } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
@@ -869,12 +869,28 @@ export default function AgendaManager() {
       const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
       if (patientData && patientData.phone) {
          const firstName = patientData.name.split(' ')[0];
+         const catStr = (rescheduleData as any).session_category || reschedulingAppt.session_category || 'sessao_avulsa';
+         const numVal = (rescheduleData as any).session_number || reschedulingAppt.session_number || 1;
+         let sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'consulta_inicial') sessionTypeName = 'Consulta Inicial 🌟';
+         if (catStr === 'sessao_avulsa') sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'sessao_pacote') sessionTypeName = 'Sessão de Pacote 📦 (Sessão ' + numVal + ')';
+         if (catStr === 'retorno') sessionTypeName = 'Retorno 🔄';
+
          let msg = `Olá, *${firstName}*! 👋\n\nConfirmamos o cancelamento da sua sessão na *Clínica Tzion Terapias*.\n\n📅 *Data original:* ${dataFormatada} às ${horaFormatada}\n👤 *Terapeuta:* ${event.therapist_name}\n\nSe precisar reagendar, entre em contato conosco! 💙`;
          await sendWhatsAppMessage(event.patient_id, patientData.phone, msg, 'appointment_cancelled');
       }
 
       if (therapistData && therapistData.phone) {
          const firstNameT = therapistData.name.split(' ')[0];
+         const catStr = (rescheduleData as any).session_category || reschedulingAppt.session_category || 'sessao_avulsa';
+         const numVal = (rescheduleData as any).session_number || reschedulingAppt.session_number || 1;
+         let sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'consulta_inicial') sessionTypeName = 'Consulta Inicial 🌟';
+         if (catStr === 'sessao_avulsa') sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'sessao_pacote') sessionTypeName = 'Sessão de Pacote 📦 (Sessão ' + numVal + ')';
+         if (catStr === 'retorno') sessionTypeName = 'Retorno 🔄';
+
          let msg = `Olá, *${firstNameT}*! ⚠️\n\nA sessão com o(a) paciente *${patientData?.name || event.patient_name}* agendada para ${dataFormatada} às ${horaFormatada} foi *cancelada/desmarcada*.`;
          await sendWhatsAppMessage(null, therapistData.phone, msg, 'appointment_cancelled_therapist');
       }
@@ -933,8 +949,10 @@ export default function AgendaManager() {
      setRescheduleData({
         date: initialDate,
         time: '',
-        type: app.type || 'Presencial'
-     } as any);
+        type: app.type || 'Presencial',
+         session_category: (app as any).session_category || 'sessao_avulsa',
+         session_number: (app as any).session_number || 1
+      } as any);
   };
 
   const handleRescheduleAppointment = async () => {
@@ -958,7 +976,9 @@ export default function AgendaManager() {
           start_time: startTime,
           end_time: endTime,
           type: finalType,
-          status: 'scheduled'
+          status: 'scheduled',
+          session_category: (rescheduleData as any).session_category || (reschedulingAppt as any).session_category || 'sessao_avulsa',
+          session_number: (rescheduleData as any).session_number || (reschedulingAppt as any).session_number || null
         })
         .eq('id', reschedulingAppt.id);
 
@@ -1018,7 +1038,15 @@ export default function AgendaManager() {
       const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
       if (patientData && patientData.phone) {
          const firstName = patientData.name.split(' ')[0];
-         let msg = `Olá, *${firstName}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* ${dataFormatada}\n⏰ *Novo Horário:* ${newTime}\n📍 *Modalidade:* ${finalType}\n\n`;
+         const catStr = (rescheduleData as any).session_category || reschedulingAppt.session_category || 'sessao_avulsa';
+         const numVal = (rescheduleData as any).session_number || reschedulingAppt.session_number || 1;
+         let sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'consulta_inicial') sessionTypeName = 'Consulta Inicial 🌟';
+         if (catStr === 'sessao_avulsa') sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'sessao_pacote') sessionTypeName = 'Sessão de Pacote 📦 (Sessão ' + numVal + ')';
+         if (catStr === 'retorno') sessionTypeName = 'Retorno 🔄';
+
+         let msg = `Olá, *${firstName}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* ${dataFormatada}\n⏰ *Novo Horário:* ${newTime}\n📍 *Modalidade:* ${finalType}\n📍 *Atendimento:* ${sessionTypeName}\n\n`;
          if (finalType === 'Online') {
             if (reschedulingAppt.meet_link) {
                msg += `💻 *Acesso à Sessão Online:*\n🔗 ${reschedulingAppt.meet_link}\n\n`;
@@ -1034,6 +1062,14 @@ export default function AgendaManager() {
 
       if (therapistData && therapistData.phone) {
          const firstNameT = therapistData.name.split(' ')[0];
+         const catStr = (rescheduleData as any).session_category || reschedulingAppt.session_category || 'sessao_avulsa';
+         const numVal = (rescheduleData as any).session_number || reschedulingAppt.session_number || 1;
+         let sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'consulta_inicial') sessionTypeName = 'Consulta Inicial 🌟';
+         if (catStr === 'sessao_avulsa') sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'sessao_pacote') sessionTypeName = 'Sessão de Pacote 📦 (Sessão ' + numVal + ')';
+         if (catStr === 'retorno') sessionTypeName = 'Retorno 🔄';
+
          let msg = `Olá, *${firstNameT}*! 🔄\n\nA sessão do paciente *${patientData?.name || reschedulingAppt.patient_name}* foi reagendada.\n\n📅 *Novo horário:* ${dataFormatada} às ${newTime}\n📍 *Modalidade:* ${finalType}\n`;
          if (finalType === 'Online' && reschedulingAppt.meet_link) {
             msg += `\n🔗 *Link do Meet da Sessão:*\n${reschedulingAppt.meet_link}`;
@@ -2320,6 +2356,47 @@ export default function AgendaManager() {
                          </button>
                      </div>
                   </div>
+
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Atendimento</label>
+                     <div className="grid grid-cols-2 gap-3">
+                        {([
+                          { value: 'consulta_inicial', label: 'Consulta Inicial', emoji: '🌟' },
+                          { value: 'sessao_avulsa',    label: 'Sessão Avulsa',    emoji: '🎯' },
+                          { value: 'sessao_pacote',    label: 'Sessão de Pacote', emoji: '📦' },
+                          { value: 'retorno',          label: 'Retorno',          emoji: '🔄' },
+                        ] as const).map(({ value, label, emoji }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setRescheduleData({ ...rescheduleData, session_category: value } as any)}
+                            className={cn(
+                              "py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all text-sm",
+                              (rescheduleData as any).session_category === value
+                                ? "bg-violet-50 border-violet-500 text-violet-700 shadow-sm"
+                                : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+                            )}
+                          >
+                            <span>{emoji}</span> {label}
+                          </button>
+                        ))}
+                     </div>
+                  </div>
+
+                  {(rescheduleData as any).session_category === 'sessao_pacote' && (
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Qual sessão do pacote?</label>
+                        <select
+                           value={(rescheduleData as any).session_number || 1}
+                           onChange={(e) => setRescheduleData({...rescheduleData, session_number: parseInt(e.target.value)} as any)}
+                           className="w-full p-5 bg-white border-2 border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl outline-none font-bold text-slate-700 text-lg transition-all"
+                        >
+                           {[1,2,3,4,5,6,7,8,9,10,11,12].map(num => (
+                              <option key={num} value={num}>Sessão {num}</option>
+                           ))}
+                        </select>
+                     </div>
+                  )}
 
                   <div className="space-y-2">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nova Data</label>

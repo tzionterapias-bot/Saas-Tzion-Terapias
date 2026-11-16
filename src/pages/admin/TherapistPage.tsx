@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿﻿﻿﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Calendar, Users, DollarSign, User, ClipboardList, 
@@ -73,7 +73,7 @@ export default function TherapistPage() {
   const [patientPackages, setPatientPackages] = useState<any[]>([]);
   const [newRecord, setNewRecord] = useState({ type: 'evolution', content: '' });
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
-  const [newApp, setNewApp] = useState({ patient_id: '', start_time: '', type: 'Presencial', room_id: '' });
+  const [newApp, setNewApp] = useState({ patient_id: '', start_time: '', type: 'Presencial', room_id: '', session_category: 'sessao_avulsa', session_number: 1 });
   const [rooms, setRooms] = useState<any[]>([]);
   const [selectedDateAppointments, setSelectedDateAppointments] = useState<{date: Date, appts: any[]} | null>(null);
 
@@ -618,6 +618,14 @@ export default function TherapistPage() {
       const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
       if (patientData && patientData.phone) {
          const firstName = patientData.name.split(' ')[0];
+         const catStr = (rescheduleData as any).session_category || reschedulingAppt.session_category || 'sessao_avulsa';
+         const numVal = (rescheduleData as any).session_number || reschedulingAppt.session_number || 1;
+         let sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'consulta_inicial') sessionTypeName = 'Consulta Inicial 🌟';
+         if (catStr === 'sessao_avulsa') sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'sessao_pacote') sessionTypeName = 'Sessão de Pacote 📦 (Sessão ' + numVal + ')';
+         if (catStr === 'retorno') sessionTypeName = 'Retorno 🔄';
+
          let msg = `Olá, *${firstName}*! 👋\n\nConfirmamos o cancelamento da sua sessão na *Clínica Tzion Terapias*.\n\n📅 *Data original:* ${dataFormatada} às ${horaFormatada}
 👤 *Terapeuta:* ${therapistData?.name || 'Terapeuta'}\n\nSe precisar reagendar, entre em contato conosco! 💙`;
          await sendWhatsAppMessage(event.patient_id, patientData.phone, msg, 'appointment_cancelled');
@@ -625,6 +633,14 @@ export default function TherapistPage() {
 
       if (therapistData && therapistData.phone) {
          const firstNameT = therapistData.name.split(' ')[0];
+         const catStr = (rescheduleData as any).session_category || reschedulingAppt.session_category || 'sessao_avulsa';
+         const numVal = (rescheduleData as any).session_number || reschedulingAppt.session_number || 1;
+         let sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'consulta_inicial') sessionTypeName = 'Consulta Inicial 🌟';
+         if (catStr === 'sessao_avulsa') sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'sessao_pacote') sessionTypeName = 'Sessão de Pacote 📦 (Sessão ' + numVal + ')';
+         if (catStr === 'retorno') sessionTypeName = 'Retorno 🔄';
+
          let msg = `Olá, *${firstNameT}*! ⚠️\n\nA sessão com o(a) paciente *${patientName}* agendada para ${dataFormatada} às ${horaFormatada} foi *cancelada/desmarcada*.`;
          await sendWhatsAppMessage(null, therapistData.phone, msg, 'appointment_cancelled_therapist');
       }
@@ -647,13 +663,13 @@ export default function TherapistPage() {
   };
 
   const handleOpenAppointmentModal = () => {
-    setNewApp({ patient_id: '', start_time: '', type: 'Presencial', room_id: '' });
+    setNewApp({ patient_id: '', start_time: '', type: 'Presencial', room_id: '', session_category: 'sessao_avulsa', session_number: 1 });
     setShowAppointmentModal(true);
   };
 
   const handleCloseAppointmentModal = () => {
     setShowAppointmentModal(false);
-    setNewApp({ patient_id: '', start_time: '', type: 'Presencial', room_id: '' });
+    setNewApp({ patient_id: '', start_time: '', type: 'Presencial', room_id: '', session_category: 'sessao_avulsa', session_number: 1 });
   };
 
   const handleOpenRescheduleModal = (app: any) => {
@@ -662,8 +678,10 @@ export default function TherapistPage() {
       setRescheduleData({
          date: initialDate,
          time: '',
-         type: app.type || 'Presencial'
-      });
+         type: app.type || 'Presencial',
+         session_category: app.session_category || 'sessao_avulsa',
+         session_number: app.session_number || 1
+      } as any);
   };
 
   const handleRescheduleAppointment = async () => {
@@ -686,7 +704,9 @@ export default function TherapistPage() {
         .update({
           start_time: startTime,
           end_time: endTime,
-          type: finalType
+          type: finalType,
+          session_category: (rescheduleData as any).session_category || reschedulingAppt.session_category || 'sessao_avulsa',
+          session_number: (rescheduleData as any).session_number || reschedulingAppt.session_number || null
         })
         .eq('id', reschedulingAppt.id);
 
@@ -747,7 +767,15 @@ export default function TherapistPage() {
       const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
       if (patientData && patientData.phone) {
          const firstName = patientData.name.split(' ')[0];
-         let msg = `Olá, *${firstName}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* ${dataFormatada}\n⏰ *Novo Horário:* ${newTime}\n📍 *Modalidade:* ${finalType}\n\n`;
+         const catStr = (rescheduleData as any).session_category || reschedulingAppt.session_category || 'sessao_avulsa';
+         const numVal = (rescheduleData as any).session_number || reschedulingAppt.session_number || 1;
+         let sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'consulta_inicial') sessionTypeName = 'Consulta Inicial 🌟';
+         if (catStr === 'sessao_avulsa') sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'sessao_pacote') sessionTypeName = 'Sessão de Pacote 📦 (Sessão ' + numVal + ')';
+         if (catStr === 'retorno') sessionTypeName = 'Retorno 🔄';
+
+         let msg = `Olá, *${firstName}*! ✨\n\nSua sessão na *Clínica Tzion Terapias* foi reagendada com sucesso!\n\n📅 *Nova Data:* ${dataFormatada}\n⏰ *Novo Horário:* ${newTime}\n📍 *Modalidade:* ${finalType}\n🏷️ *Atendimento:* ${sessionTypeName}\n\n`;
          if (finalType === 'Online') {
             if (reschedulingAppt.meet_link) {
                msg += `💻 *Acesso à Sessão Online:*\n🔗 ${reschedulingAppt.meet_link}\n\n`;
@@ -763,6 +791,14 @@ export default function TherapistPage() {
 
       if (therapistData && therapistData.phone) {
          const firstNameT = therapistData.name.split(' ')[0];
+         const catStr = (rescheduleData as any).session_category || reschedulingAppt.session_category || 'sessao_avulsa';
+         const numVal = (rescheduleData as any).session_number || reschedulingAppt.session_number || 1;
+         let sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'consulta_inicial') sessionTypeName = 'Consulta Inicial 🌟';
+         if (catStr === 'sessao_avulsa') sessionTypeName = 'Sessão Avulsa 🎯';
+         if (catStr === 'sessao_pacote') sessionTypeName = 'Sessão de Pacote 📦 (Sessão ' + numVal + ')';
+         if (catStr === 'retorno') sessionTypeName = 'Retorno 🔄';
+
          let msg = `Olá, *${firstNameT}*! 🔄\n\nA sessão do paciente *${patientName}* foi reagendada.\n\n📅 *Novo horário:* ${dataFormatada} às ${newTime}\n📍 *Modalidade:* ${finalType}\n`;
          if (finalType === 'Online' && reschedulingAppt.meet_link) {
             msg += `\n🔗 *Link do Meet da Sessão:*\n${reschedulingAppt.meet_link}`;
@@ -915,7 +951,9 @@ export default function TherapistPage() {
       type: newApp.type,
       therapist_id: finalTherapistId,
       room_id: newApp.room_id || null,
-      status: 'scheduled'
+      status: 'scheduled',
+      session_category: (newApp as any).session_category || 'sessao_avulsa',
+      session_number: (newApp as any).session_number || null
     }]).select('id').single();
     
     if (!error && createdAppt) {
@@ -1047,11 +1085,19 @@ export default function TherapistPage() {
       // 3. Envia WhatsApps
       const { sendWhatsAppMessage } = await import('@/src/lib/whatsapp');
       if (patientData && patientData.phone) {
+         const catStrNew = (newApp as any).session_category || 'sessao_avulsa';
+         const numValNew = (newApp as any).session_number || 1;
+         let sessionTypeNameNew = 'Sessão Avulsa 🎯';
+         if (catStrNew === 'consulta_inicial') sessionTypeNameNew = 'Consulta Inicial 🌟';
+         if (catStrNew === 'sessao_avulsa') sessionTypeNameNew = 'Sessão Avulsa 🎯';
+         if (catStrNew === 'sessao_pacote') sessionTypeNameNew = 'Sessão de Pacote 📦 (Sessão ' + numValNew + ')';
+         if (catStrNew === 'retorno') sessionTypeNameNew = 'Retorno 🔄';
+
          let mensagem = `Olá, *${patientData.name.split(' ')[0]}*! ✨\n\n`;
          mensagem += `Seu agendamento na *Clínica Tzion Terapias* está confirmado!\n\n`;
          mensagem += `📅 *Data:* ${dataFormatada}\n`;
          mensagem += `⏰ *Horário:* ${horaFormatada}\n`;
-         mensagem += `📍 *Modalidade:* ${newApp.type}\n\n`;
+         mensagem += `📍 *Modalidade:* ${newApp.type}\n🏷️ *Atendimento:* ${sessionTypeNameNew}\n\n`;
 
          if (meetLink && newApp.type === 'Online') {
              mensagem += `💻 *Acesso à Sessão Online:*\n🔗 ${meetLink}\n\n`;
@@ -1079,7 +1125,7 @@ export default function TherapistPage() {
       }
 
       setShowAppointmentModal(false);
-      setNewApp({ patient_id: '', start_time: '', type: 'Presencial', room_id: '' });
+      setNewApp({ patient_id: '', start_time: '', type: 'Presencial', room_id: '', session_category: 'sessao_avulsa', session_number: 1 });
       fetchData();
     } else {
       alert('Erro ao realizar agendamento.');
@@ -3035,6 +3081,45 @@ export default function TherapistPage() {
                         </button>
                     </div>
                  </div>
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Atendimento</label>
+                    <div className="grid grid-cols-2 gap-3">
+                       {([
+                         { value: 'consulta_inicial', label: 'Consulta Inicial', emoji: '🌟' },
+                         { value: 'sessao_avulsa',    label: 'Sessão Avulsa',    emoji: '🎯' },
+                         { value: 'sessao_pacote',   label: 'Sessão de Pacote', emoji: '📦' },
+                         { value: 'retorno',          label: 'Retorno',          emoji: '🔄' },
+                       ] as const).map(({ value, label, emoji }) => (
+                         <button
+                           key={value}
+                           type="button"
+                           onClick={() => setNewApp({ ...newApp, session_category: value } as any)}
+                           className={cn(
+                             "py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all text-sm",
+                             (newApp as any).session_category === value
+                               ? "bg-violet-50 border-violet-500 text-violet-700 shadow-sm"
+                               : "bg-slate-50 border-transparent text-slate-400 hover:border-slate-200"
+                           )}
+                         >
+                           <span>{emoji}</span> {label}
+                         </button>
+                       ))}
+                    </div>
+                 </div>
+                 {(newApp as any).session_category === 'sessao_pacote' && (
+                   <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Qual sessão do pacote?</label>
+                      <select
+                         value={(newApp as any).session_number || 1}
+                         onChange={(e) => setNewApp({...newApp, session_number: parseInt(e.target.value)} as any)}
+                         className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none appearance-none font-bold text-slate-700 cursor-pointer"
+                      >
+                         {[1,2,3,4,5,6,7,8,9,10,11,12].map(num => (
+                            <option key={num} value={num}>Sessão {num}</option>
+                         ))}
+                      </select>
+                   </div>
+                 )}
                  <button 
                   onClick={handleCreateAppointment}
                   className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-bold shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
@@ -3069,7 +3154,13 @@ export default function TherapistPage() {
                        </div>
                        <div>
                          <h4 className="font-bold text-slate-900 text-lg">{app.patients?.name || app.leads?.name || 'Paciente'}</h4>
-                         <p className="text-sm text-slate-500 font-medium">{app.service_type || 'Sessão de Terapia'}</p>
+                         <p className="text-sm text-slate-500 font-medium flex items-center gap-1.5">
+                           {app.session_category === 'consulta_inicial' && <><span>🌟</span> Consulta Inicial</>}
+                           {app.session_category === 'sessao_avulsa'    && <><span>🎯</span> Sessão Avulsa</>}
+                           {app.session_category === 'sessao_pacote'    && <><span>📦</span> Sessão de Pacote</>}
+                           {app.session_category === 'retorno'          && <><span>🔄</span> Retorno</>}
+                           {!app.session_category                       && (app.service_type || 'Sessão de Terapia')}
+                         </p>
                        </div>
                      </div>
                      <div className="flex items-center gap-4">
@@ -3160,6 +3251,47 @@ export default function TherapistPage() {
                          </button>
                      </div>
                   </div>
+
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo de Atendimento</label>
+                     <div className="grid grid-cols-2 gap-3">
+                        {([
+                          { value: 'consulta_inicial', label: 'Consulta Inicial', emoji: '🌟' },
+                          { value: 'sessao_avulsa',    label: 'Sessão Avulsa',    emoji: '🎯' },
+                          { value: 'sessao_pacote',    label: 'Sessão de Pacote', emoji: '📦' },
+                          { value: 'retorno',          label: 'Retorno',          emoji: '🔄' },
+                        ] as const).map(({ value, label, emoji }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setRescheduleData({ ...rescheduleData, session_category: value } as any)}
+                            className={cn(
+                              "py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 border-2 transition-all text-sm",
+                              (rescheduleData as any).session_category === value
+                                ? "bg-violet-50 border-violet-500 text-violet-700 shadow-sm"
+                                : "bg-slate-50 border-transparent text-slate-400 hover:border-slate-200"
+                            )}
+                          >
+                            <span>{emoji}</span> {label}
+                          </button>
+                        ))}
+                     </div>
+                  </div>
+
+                  {(rescheduleData as any).session_category === 'sessao_pacote' && (
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Qual sessão do pacote?</label>
+                        <select
+                           value={(rescheduleData as any).session_number || 1}
+                           onChange={(e) => setRescheduleData({...rescheduleData, session_number: parseInt(e.target.value)} as any)}
+                           className="w-full p-5 bg-white border-2 border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 rounded-2xl outline-none font-bold text-slate-700 text-lg transition-all"
+                        >
+                           {[1,2,3,4,5,6,7,8,9,10,11,12].map(num => (
+                              <option key={num} value={num}>Sessão {num}</option>
+                           ))}
+                        </select>
+                     </div>
+                  )}
 
                   <div className="space-y-2">
                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nova Data</label>
