@@ -186,31 +186,26 @@ export default function SessionLogger() {
         return;
       }
 
-      // 4. Consulta ESTRITAMENTE as sessões do terapeuta selecionado
+      // 4. Consulta ESTRITAMENTE as sessões do terapeuta selecionado com dados do paciente e terapeuta
       const apptQuery = supabase
         .from('appointments')
-        .select('*')
+        .select('*, patients(id, name), therapists(id, name)')
         .eq('therapist_id', targetTherapistId)
         .gte('start_time', `${today}T00:00:00`)
         .lte('start_time', `${today}T23:59:59`)
         .order('start_time', { ascending: true });
 
-      const [apptsRes, patientsRes] = await Promise.all([
-        apptQuery,
-        supabase.from('patients').select('id, name')
-      ]);
-
-      const patientsMap = new Map((patientsRes.data || []).map(p => [p.id, p.name]));
+      const apptsRes = await apptQuery;
 
       const formatted = (apptsRes.data || []).filter(a => a.status !== 'completed').map(a => ({
         id: a.id,
         patientId: a.patient_id,
-        patient: patientsMap.get(a.patient_id) || 'Paciente Não Encontrado',
+        patient: a.patients?.name || 'Paciente',
         time: new Date(a.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }),
         type: a.type || 'Presencial',
         therapy: 'Terapia Integrativa',
         therapistId: a.therapist_id,
-        therapist: therapistsMap.get(a.therapist_id) || 'Terapeuta'
+        therapist: a.therapists?.name || therapistsMap.get(a.therapist_id) || 'Terapeuta'
       }));
 
       setAppointments(formatted);

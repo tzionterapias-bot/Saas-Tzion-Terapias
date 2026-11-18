@@ -194,7 +194,24 @@ export default function TherapistPage() {
       ];
 
       if (loadStatic) {
-        promises.push(Promise.resolve(supabase.from('patients').select('*').order('name')));
+        const fetchAllPatientsTherapist = async () => {
+          let all: any[] = [];
+          let from = 0;
+          const step = 1000;
+          while (true) {
+            const { data, error } = await supabase
+              .from('patients')
+              .select('*')
+              .order('name')
+              .range(from, from + step - 1);
+            if (error || !data || data.length === 0) break;
+            all.push(...data);
+            if (data.length < step) break;
+            from += step;
+          }
+          return { data: all };
+        };
+        promises.push(fetchAllPatientsTherapist());
         promises.push(Promise.resolve(supabase.from('therapists').select('*').eq('id', therapistId).maybeSingle()));
         promises.push(Promise.resolve(supabase.from('rooms').select('id, name, color').eq('status', 'active')));
       }

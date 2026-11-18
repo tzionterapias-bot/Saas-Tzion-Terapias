@@ -107,25 +107,34 @@ export default function PatientList() {
     try {
       const myTId = currentTId !== undefined ? currentTId : therapistId;
 
-      const { data, error } = await supabase
-        .from('patients')
-        .select(`
-          id, name, email, phone, cpf, cep, gender, birth_date, status, created_at,
-          address, address_number, neighborhood, city, state, profession, marital_status,
-          guardian_name, guardian_cpf,
-          patient_anamnesis ( id ),
-          patient_contracts ( status )
-        `)
-        .neq('status', 'Lead')
-        .order('created_at', { ascending: false });
+      let allPatients: any[] = [];
+      let from = 0;
+      const step = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('patients')
+          .select(`
+            id, name, email, phone, cpf, cep, gender, birth_date, status, created_at,
+            address, address_number, neighborhood, city, state, profession, marital_status,
+            guardian_name, guardian_cpf,
+            patient_anamnesis ( id ),
+            patient_contracts ( status )
+          `)
+          .neq('status', 'Lead')
+          .order('created_at', { ascending: false })
+          .range(from, from + step - 1);
 
-      if (error) {
-        console.error("Error fetching patients:", error);
+        if (error) {
+          console.error("Error fetching patients chunk:", error);
+          break;
+        }
+        if (!data || data.length === 0) break;
+        allPatients.push(...data);
+        if (data.length < step) break;
+        from += step;
       }
 
-      if (!error && data) {
-        setPatients(data);
-      }
+      setPatients(allPatients);
     } catch (err) {
       console.error("Exception fetching patients:", err);
     } finally {

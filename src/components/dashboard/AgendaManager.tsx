@@ -127,7 +127,23 @@ export default function AgendaManager() {
       ];
 
       if (loadStatic) {
-        promises.push(Promise.resolve(supabase.from('patients').select('id, name, cpf, status')));
+        const fetchAllPatientsAgenda = async () => {
+          let all: any[] = [];
+          let from = 0;
+          const step = 1000;
+          while (true) {
+            const { data, error } = await supabase
+              .from('patients')
+              .select('id, name, cpf, status')
+              .range(from, from + step - 1);
+            if (error || !data || data.length === 0) break;
+            all.push(...data);
+            if (data.length < step) break;
+            from += step;
+          }
+          return { data: all };
+        };
+        promises.push(fetchAllPatientsAgenda());
         promises.push(Promise.resolve(supabase.from('therapists').select('id, name, room_id').eq('active', true)));
         promises.push(Promise.resolve(supabase.from('patient_packages').select('*, services(name), patient_package_items(*, services(name))').eq('status', 'active')));
         promises.push(Promise.resolve(supabase.from('rooms').select('id, name, color').eq('status', 'active')));
