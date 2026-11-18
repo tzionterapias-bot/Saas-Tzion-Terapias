@@ -44,7 +44,7 @@ import { useNPSPoller } from '@/src/hooks/useNPSPoller';
 
 // Componente invisível para rodar o polling do NPS
 function NPSDaemon() {
-  // useNPSPoller(); // Desativado no frontend — agora executado pelo backend server.ts
+  useNPSPoller();
   return null;
 }
 

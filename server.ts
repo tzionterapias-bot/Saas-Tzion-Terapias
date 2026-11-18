@@ -1243,13 +1243,18 @@ async function startServer() {
   });
 
   // --- SECURE CRON ENDPOINTS FOR SERVERLESS DEPLOYMENTS ---
+  const isAuthorizedCron = (req: any): boolean => {
+    const isVercelCron = req.headers['x-vercel-cron'] === '1' || req.headers['user-agent'] === 'vercel-cron/1.0';
+    if (isVercelCron) return true;
+    const authHeader = req.headers.authorization;
+    const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
+    const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
+    return Boolean(cronKey && cronKey === expectedKey);
+  };
+
   app.get("/api/cron/campaigns", async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
-      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
-      
-      if (!cronKey || cronKey !== expectedKey) {
+      if (!isAuthorizedCron(req)) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
@@ -1265,11 +1270,7 @@ async function startServer() {
 
   app.get("/api/cron/reminders", async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
-      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
-      
-      if (!cronKey || cronKey !== expectedKey) {
+      if (!isAuthorizedCron(req)) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
@@ -1285,11 +1286,7 @@ async function startServer() {
 
   app.get("/api/cron/retention", async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
-      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
-      
-      if (!cronKey || cronKey !== expectedKey) {
+      if (!isAuthorizedCron(req)) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
@@ -1304,11 +1301,7 @@ async function startServer() {
 
   app.get("/api/cron/nps", async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
-      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
-      
-      if (!cronKey || cronKey !== expectedKey) {
+      if (!isAuthorizedCron(req)) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
@@ -1323,11 +1316,7 @@ async function startServer() {
 
   app.get("/api/cron/finance", async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
-      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
-      
-      if (!cronKey || cronKey !== expectedKey) {
+      if (!isAuthorizedCron(req)) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
@@ -1342,11 +1331,7 @@ async function startServer() {
 
   app.get("/api/cron/tickets", async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      const cronKey = req.query.key || (authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : null);
-      const expectedKey = process.env.CRON_SECRET || process.env.VITE_EVOLUTION_GLOBAL_KEY || "tzion-cron-secret";
-      
-      if (!cronKey || cronKey !== expectedKey) {
+      if (!isAuthorizedCron(req)) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 

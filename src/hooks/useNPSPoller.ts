@@ -4,9 +4,15 @@ import { getSystemBaseUrl } from '@/src/utils/systemUrl';
 
 export function useNPSPoller() {
   useEffect(() => {
+    let isChecking = false;
     // Roda a cada 1 minuto (60000 ms)
     const intervalId = setInterval(async () => {
+      if (isChecking) return;
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return; // Executa apenas se houver sessão autenticada
+
+        isChecking = true;
         // Busca as configurações de NPS
         const { data: setts } = await supabase.from('settings').select('value').eq('key', 'nps_settings').maybeSingle();
         const npsSettings = setts?.value;
@@ -56,6 +62,8 @@ export function useNPSPoller() {
         }
       } catch (e) {
         console.error('Erro no polling do NPS:', e);
+      } finally {
+        isChecking = false;
       }
     }, 60000); // 1 minuto
 
