@@ -56,7 +56,16 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
     if (!patient?.id) return;
     setLoading(true);
     try {
-      const [appRes, recRes, evoRes, payRes, packRes, conRes, docRes, anaRes] = await Promise.all([
+      const [
+        appSettled,
+        recSettled,
+        evoSettled,
+        paySettled,
+        packSettled,
+        conSettled,
+        docSettled,
+        anaSettled
+      ] = await Promise.allSettled([
         supabase.from('appointments').select('*, therapists(name)').eq('patient_id', patient.id),
         supabase.from('medical_records').select('*, therapists(name)').eq('patient_id', patient.id),
         supabase.from('patient_evolutions').select('*, therapists(name)').eq('patient_id', patient.id),
@@ -67,36 +76,57 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
         supabase.from('patient_anamnesis').select('*').eq('patient_id', patient.id).maybeSingle()
       ]);
 
-      const appointments = appRes.data || [];
-      const records = recRes.data || [];
-      const evolutions = evoRes.data || [];
-      const payments = payRes.data || [];
-      const pkgs = packRes.data || [];
-      const contracts = conRes.data || [];
-      const docs = docRes.data || [];
+      const getSafeData = <T,>(settled: PromiseSettledResult<{ data: T | null; error: any }>, defaultVal: T): T => {
+        if (settled.status === 'fulfilled' && !settled.value.error && settled.value.data) {
+          return settled.value.data;
+        }
+        if (settled.status === 'rejected') {
+          console.warn('[PATIENT PROFILE] Query rejected:', settled.reason);
+        } else if (settled.value.error) {
+          console.warn('[PATIENT PROFILE] Supabase query error:', settled.value.error);
+        }
+        return defaultVal;
+      };
+
+      const appointments = getSafeData(appSettled, []);
+      const records = getSafeData(recSettled, []);
+      const evolutions = getSafeData(evoSettled, []);
+      const payments = getSafeData(paySettled, []);
+      const pkgs = getSafeData(packSettled, []);
+      const contracts = getSafeData(conSettled, []);
+      const docs = getSafeData(docSettled, []);
+      const anaData = anaSettled.status === 'fulfilled' && !anaSettled.value.error ? anaSettled.value.data : null;
 
       setPackages(pkgs);
       setDocuments(docs);
       setPatientNotes(evolutions);
 
-      if (anaRes.data) {
-        setAnamnesisData(anaRes.data);
-        setAnamnesisResponses(anaRes.data.responses || {});
-        setAnamnesisComplaint(anaRes.data.complaint || '');
-        if (anaRes.data.template_id) {
-          const { data: tmpl } = await supabase.from('clinical_templates').select('*').eq('id', anaRes.data.template_id).maybeSingle();
-          setAnamnesisTemplate(tmpl);
+      if (anaData) {
+        setAnamnesisData(anaData);
+        setAnamnesisResponses(anaData.responses || {});
+        setAnamnesisComplaint(anaData.complaint || '');
+        if (anaData.template_id) {
+          try {
+            const { data: tmpl } = await supabase.from('clinical_templates').select('*').eq('id', anaData.template_id).maybeSingle();
+            if (tmpl) setAnamnesisTemplate(tmpl);
+          } catch (tErr) {
+            console.warn('[PATIENT PROFILE] Erro ao carregar template da anamnese:', tErr);
+          }
         }
       }
-      if (!anaRes.data?.template_id) {
-        const { data: activeTmpls } = await supabase
-          .from('clinical_templates')
-          .select('*')
-          .eq('category', 'anamnesis')
-          .eq('active', true)
-          .order('created_at', { ascending: false });
-        if (activeTmpls && activeTmpls.length > 0) {
-          setAnamnesisTemplate(activeTmpls[0]);
+      if (!anaData?.template_id) {
+        try {
+          const { data: activeTmpls } = await supabase
+            .from('clinical_templates')
+            .select('*')
+            .eq('category', 'anamnesis')
+            .eq('active', true)
+            .order('created_at', { ascending: false });
+          if (activeTmpls && activeTmpls.length > 0) {
+            setAnamnesisTemplate(activeTmpls[0]);
+          }
+        } catch (tErr) {
+          console.warn('[PATIENT PROFILE] Erro ao buscar templates ativos de anamnese:', tErr);
         }
       }
 
@@ -160,7 +190,10 @@ function PatientProfileModalContent({ patient, onClose }: PatientProfileModalPro
       });
 
       // 4. Contracts
-      const baseUrlForContracts = await getSystemBaseUrl();
+      let baseUrlForContracts = 'https://app.tzionterapias.com.br';
+      try {
+        baseUrlForContracts = await getSystemBaseUrl();
+      } catch (_) {}
       contracts.forEach(contract => {
           const date = new Date(contract.created_at || new Date());
           events.push({
