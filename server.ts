@@ -1802,6 +1802,14 @@ async function startRemindersWorker() {
 
 async function runDailyRemindersBackend() {
   try {
+    const { data: setts } = await supabase.from('settings').select('value').eq('key', 'notifications').maybeSingle();
+    const config = setts?.value || {};
+
+    if (config.sessionReminders === false) {
+      console.log('[WORKER][REMINDERS] Lembretes de sessão desativados nas configurações globais. Abortando execução.');
+      return;
+    }
+
     // Buscar agendamentos para o dia seguinte considerando o fuso horário de Brasília (America/Sao_Paulo)
     const now = new Date();
     const formatter = new Intl.DateTimeFormat('sv-SE', {
@@ -1822,6 +1830,10 @@ async function runDailyRemindersBackend() {
     const startOfTomorrow = `${tomorrowStr}T03:00:00.000Z`;
     const startOfDayAfter = `${dayAfterStr}T03:00:00.000Z`;
 
+    // Início de hoje em Brasília (para deduplicação estrita de envios)
+    const todayBRT = formatter.format(now);
+    const startOfTodayUTC = `${todayBRT}T03:00:00.000Z`;
+
     const { data: appointments, error } = await supabase
       .from('appointments')
       .select('*, patients(id, phone, name), therapists(name, phone)')
@@ -1834,21 +1846,52 @@ async function runDailyRemindersBackend() {
       return;
     }
 
+    const reminderTpl = config.sessionReminderMessage || 'Olá, {{nome}}! 🌟 Passando para lembrar do seu agendamento AMANHÃ às {{horario}} com {{terapeuta}}. Modalidade: {{modalidade}}. Confirma sua presença? Responda com SIM ou NÃO.';
+
     if (appointments && appointments.length > 0) {
       console.log(`[WORKER][REMINDERS] Found ${appointments.length} appointments for tomorrow.`);
       for (const app of appointments) {
         const time = new Date(app.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
-        // Lembrete para o Paciente
-        if (app.patients?.phone) {
-          const msgPatient = `Olá, ${app.patients.name}! 🌟 Passando para lembrar do seu agendamento AMANHÃ às ${time} com ${app.therapists?.name || 'seu terapeuta'}. Modalidade: ${app.type || 'Presencial'}. Confirma sua presença? Responda com SIM ou NÃO.`;
-          await sendWhatsAppBackend(app.patients.id, app.patients.phone, msgPatient, 'appointment_reminder');
+        // Lembrete para o Paciente com deduplicação
+        if (app.patients?.phone && app.patients.id) {
+          const { data: existingPatientLog } = await supabase
+            .from('communications_log')
+            .select('id')
+            .eq('patient_id', app.patients.id)
+            .eq('trigger_event', 'appointment_reminder')
+            .gte('created_at', startOfTodayUTC)
+            .limit(1);
+
+          if (!existingPatientLog || existingPatientLog.length === 0) {
+            const msgPatient = reminderTpl
+              .replace(/\{\{nome\}\}/g, app.patients.name || 'Paciente')
+              .replace(/\{\{horario\}\}/g, time)
+              .replace(/\{\{terapeuta\}\}/g, app.therapists?.name || 'seu terapeuta')
+              .replace(/\{\{modalidade\}\}/g, app.type || 'Presencial');
+
+            await sendWhatsAppBackend(app.patients.id, app.patients.phone, msgPatient, 'appointment_reminder');
+          } else {
+            console.log(`[WORKER][REMINDERS] Lembrete já enviado hoje para o paciente ${app.patients.name}. Pulando.`);
+          }
         }
 
-        // Lembrete para o Terapeuta
-        if (app.therapists?.phone) {
-          const msgTherapist = `Olá, ${app.therapists.name}! 📅 Lembrete de Agenda: Você tem uma sessão AMANHÃ às ${time} com o paciente ${app.patients?.name}. Modalidade: ${app.type || 'Presencial'}. Prepare-se!`;
-          await sendWhatsAppBackend(null, app.therapists.phone, msgTherapist, 'appointment_reminder_therapist');
+        // Lembrete para o Terapeuta com deduplicação
+        if (app.therapists?.phone && app.patients?.name) {
+          const { data: existingTherapistLog } = await supabase
+            .from('communications_log')
+            .select('id')
+            .eq('trigger_event', 'appointment_reminder_therapist')
+            .ilike('content', `%${app.patients.name}%`)
+            .gte('created_at', startOfTodayUTC)
+            .limit(1);
+
+          if (!existingTherapistLog || existingTherapistLog.length === 0) {
+            const msgTherapist = `Olá, ${app.therapists.name}! 📅 Lembrete de Agenda: Você tem uma sessão AMANHÃ às ${time} com o paciente ${app.patients.name}. Modalidade: ${app.type || 'Presencial'}. Prepare-se!`;
+            await sendWhatsAppBackend(null, app.therapists.phone, msgTherapist, 'appointment_reminder_therapist');
+          } else {
+            console.log(`[WORKER][REMINDERS] Lembrete para terapeuta sobre paciente ${app.patients.name} já enviado hoje. Pulando.`);
+          }
         }
       }
     }
@@ -1866,6 +1909,7 @@ async function runDailyBirthdaysBackend() {
     };
 
     if (config.birthdayReminder === false) {
+      console.log('[WORKER][REMINDERS] Lembretes de aniversário desativados nas configurações globais.');
       return;
     }
 
@@ -1881,6 +1925,7 @@ async function runDailyBirthdaysBackend() {
     }
 
     const todayBRT = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+    const startOfTodayUTC = `${todayBRT}T03:00:00.000Z`;
     const [, currentMonth, currentDay] = todayBRT.split('-').map(Number);
 
     if (patients && patients.length > 0) {
@@ -1890,8 +1935,21 @@ async function runDailyBirthdaysBackend() {
         
         if (birthMonth === currentMonth && birthDay === currentDay) {
           if (p.phone) {
-            const msg = (config.birthdayMessage || 'Olá, {{nome}}! 🎂✨\nA equipe da Tzion Terapias deseja um feliz aniversário! Que este novo ano seja repleto de evolução, paz e conquistas. Parabéns!').replace(/\{\{nome\}\}/g, p.name || 'Paciente');
-            await sendWhatsAppBackend(p.id, p.phone, msg, 'birthday_wishes');
+            // Deduplicação no banco: verifica se já enviou parabéns hoje
+            const { data: existingBday } = await supabase
+              .from('communications_log')
+              .select('id')
+              .eq('patient_id', p.id)
+              .eq('trigger_event', 'birthday_wishes')
+              .gte('created_at', startOfTodayUTC)
+              .limit(1);
+
+            if (!existingBday || existingBday.length === 0) {
+              const msg = (config.birthdayMessage || 'Olá, {{nome}}! 🎂✨\nA equipe da Tzion Terapias deseja um feliz aniversário! Que este novo ano seja repleto de evolução, paz e conquistas. Parabéns!').replace(/\{\{nome\}\}/g, p.name || 'Paciente');
+              await sendWhatsAppBackend(p.id, p.phone, msg, 'birthday_wishes');
+            } else {
+              console.log(`[WORKER][REMINDERS] Aniversário já enviado hoje para o paciente ${p.name}. Pulando.`);
+            }
           }
         }
       }
@@ -1975,6 +2033,20 @@ async function runDailyRetentionBackend() {
       }
 
       if (isInactive30Days && patient.phone) {
+        // Deduplicação: não reenviar retenção se já foi enviada nos últimos 25 dias
+        const twentyFiveDaysAgo = new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: existingRetention } = await supabase
+          .from('communications_log')
+          .select('id')
+          .eq('patient_id', patient.id)
+          .eq('trigger_event', 'retention_reminder')
+          .gte('created_at', twentyFiveDaysAgo)
+          .limit(1);
+
+        if (existingRetention && existingRetention.length > 0) {
+          continue;
+        }
+
         const firstName = patient.name.split(' ')[0];
         const msg = `Olá, *${firstName}*! ✨\n\nHá algum tempo não nos vemos na Tzion Terapias. Como você está se sentindo?\n\nPassando para lembrar da importância de manter a constância no seu processo terapêutico e autocuidado. Que tal agendar a sua próxima sessão de retorno?\n\nEntre em contato conosco para escolher um horário. Esperamos você! 💙`;
         console.log(`[WORKER][RETENTION] Sending retention message to patient ${patient.name} (${patient.phone})`);
@@ -2063,6 +2135,7 @@ async function sendWhatsAppBackend(patientId: string | null, phone: string, mess
     type: 'whatsapp',
     trigger_event: triggerEvent,
     status: status,
+    recipient_phone: phone,
     content: message
   }]);
 }

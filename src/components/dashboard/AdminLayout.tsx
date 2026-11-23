@@ -9,7 +9,6 @@ import {
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/src/lib/utils';
 import { useAuth } from '@/src/contexts/AuthContext';
-import { processDailyReminders, processDailyBirthdays } from '@/src/lib/reminders';
 import MobilePatientList from './MobilePatientList';
 import MobileDashboard from './MobileDashboard';
 const menuCategories = [
@@ -354,8 +353,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (!user) {
       navigate('/login');
     } else {
-      processDailyReminders();
-      processDailyBirthdays();
       loadDynamicNotifications();
     }
 
